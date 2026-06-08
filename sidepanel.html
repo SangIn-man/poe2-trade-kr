@@ -187,6 +187,31 @@
     .equip-min-value { cursor:ns-resize; color:#80d040; font-weight:700; user-select:none; border-bottom:1px dotted rgba(255,200,100,0.4); transition:background 0.1s; }
     .equip-min-value:hover { background:rgba(255,200,100,0.1); border-radius:2px; }
 
+    /* 필터 이름 인라인 편집 */
+    .filter-name-edit {
+      cursor: pointer;
+      border-radius: 3px;
+      padding: 1px 3px;
+      transition: background 0.15s;
+      display: inline-block;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .filter-name-edit:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .filter-name-edit[contenteditable="true"] {
+      background: rgba(255,255,255,0.12);
+      outline: 1px solid rgba(255,255,255,0.3);
+      cursor: text;
+      min-width: 40px;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
+    }
+
     /* 카드 인라인 카테고리 뱃지 (공통 베이스 + 개별 색상) */
     .cat-badge {
       display:inline-block; padding:2px 6px; border-radius:3px; font-size:11px;

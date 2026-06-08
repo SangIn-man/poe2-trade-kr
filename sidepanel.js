@@ -219,7 +219,7 @@ function makeCard(f) {
     <div class="filter-card-head" data-id="${f.id}">
       <span class="card-arrow">▶</span>
       <div class="card-title">
-        <div class="card-name" style="color:${rarityColor}">${esc(f.name)}</div>
+        <div class="card-name" style="color:${rarityColor}"><span class="filter-name-edit" contenteditable="false" title="클릭해서 이름 편집">${esc(f.name)}</span></div>
         <div class="card-sub">${summary.join(' · ') || '저장된 아이템'}</div>
       </div>
       <div class="card-badges">
@@ -253,8 +253,51 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, button')) return;
+    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, .filter-name-edit, button')) return;
     wrap.classList.toggle('open');
+  });
+
+  // Inline name editing
+  const nameEl = wrap.querySelector('.filter-name-edit');
+  let _prevName = f.name;
+
+  nameEl.addEventListener('click', e => {
+    e.stopPropagation();
+    if (nameEl.contentEditable === 'true') return;
+    _prevName = nameEl.textContent;
+    nameEl.contentEditable = 'true';
+    nameEl.focus();
+    const range = document.createRange();
+    range.selectNodeContents(nameEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+
+  const saveName = () => {
+    nameEl.contentEditable = 'false';
+    const newName = nameEl.textContent.trim();
+    if (!newName) {
+      nameEl.textContent = _prevName;
+      return;
+    }
+    if (newName === _prevName) return;
+    f.name = newName;
+    _prevName = newName;
+    persist();
+  };
+
+  nameEl.addEventListener('blur', saveName);
+
+  nameEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      nameEl.blur();
+    }
+    if (e.key === 'Escape') {
+      nameEl.textContent = _prevName;
+      nameEl.contentEditable = 'false';
+    }
   });
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
