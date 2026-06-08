@@ -59,7 +59,7 @@
     .card-title { flex:1; min-width:0; }
     .card-name { font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .card-sub { font-size:10px; color:var(--text-dim); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .card-badges { display:flex; gap:3px; flex-shrink:0; }
+    .card-badges { display:flex; gap:3px; flex-shrink:0; align-items:center; }
     .badge { font-size:9px; padding:1px 5px; border-radius:8px; font-weight:600; border:1px solid transparent; }
     .badge-cat  { background:#1e1808; border-color:#3a2808; color:#a07030; }
     .badge-rare   { color:#f0c830; border-color:#5a4010; background:#1e1808; }
@@ -97,11 +97,8 @@
     .info-chip.req   { border-color:#1a2a3a; color:#4080c0; }
     .info-chip.price { border-color:#1a3a1a; color:#60b030; }
 
-    .card-edit-btns { display:flex; gap:5px; padding:8px 10px; }
-    .btn-edit-s { flex:1; background:var(--bg3); border:1px solid var(--border2); color:var(--gold-dim); padding:5px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
-    .btn-edit-s:hover { color:var(--gold-lt); border-color:var(--gold); }
-    .btn-del-s { background:#150c0c; border:1px solid #3a1010; color:#804040; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
-    .btn-del-s:hover { color:#d06060; }
+    .btn-delete-small { margin-left:auto; background:none; border:none; color:#ff6060; cursor:pointer; font-size:14px; padding:0 4px; opacity:0.5; transition:opacity 0.15s; line-height:1; flex-shrink:0; }
+    .btn-delete-small:hover { opacity:1; }
 
     /* Result */
     .result-area { padding:8px 10px; background:#0a0908; border-top:1px solid var(--border); }

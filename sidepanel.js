@@ -228,6 +228,7 @@ function makeCard(f) {
         ${catLabel ? `<span class="badge badge-cat">${catLabel}</span>` : ''}
         ${f.rarity ? `<span class="badge ${rarityClass}">${f.rarity}</span>` : ''}
         ${f.typeLine ? `<span class="badge type-line-badge ${f.typeLineActive !== false ? 'active' : 'inactive'}" title="클릭해서 기반 유형 필터 토글">${esc(f.typeLine)}</span>` : ''}
+        <button class="btn-delete-small" data-id="${f.id}" title="필터 삭제">×</button>
       </div>
     </div>
 
@@ -248,15 +249,11 @@ function makeCard(f) {
         ${statRows}
       </div>` : ''}
       <div id="result-${f.id}"></div>
-      <div class="card-edit-btns">
-        <button class="btn-edit-s" data-id="${f.id}">✏️ 편집</button>
-        <button class="btn-del-s"  data-id="${f.id}">✕ 삭제</button>
-      </div>
     </div>
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, .filter-name-edit, .type-line-badge, button')) return;
+    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
     wrap.classList.toggle('open');
   });
 
@@ -305,8 +302,7 @@ function makeCard(f) {
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
-  wrap.querySelector('.btn-edit-s').addEventListener('click', () => openModal(f.id));
-  wrap.querySelector('.btn-del-s').addEventListener('click', () => delFilter(f.id));
+  wrap.querySelector('.btn-delete-small').addEventListener('click', e => { e.stopPropagation(); delFilter(f.id); });
 
   // typeLine badge toggle
   const typeLineBadgeEl = wrap.querySelector('.type-line-badge');
