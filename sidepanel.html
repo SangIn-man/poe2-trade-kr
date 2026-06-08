@@ -226,6 +226,12 @@
     .cat-badge-fractured  { background:#4a3a00; color:#ffd060; }
     .cat-badge-crafted    { background:#003a3a; color:#60ffdd; }
     .cat-badge-rune       { background:#4a2800; color:#ffaa60; }
+
+    /* 기반 유형(typeLine) 뱃지 */
+    .type-line-badge { cursor:pointer; transition:opacity .15s, text-decoration .15s; font-size:9px; padding:1px 5px; border-radius:8px; font-weight:600; border:1px solid transparent; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; }
+    .type-line-badge.active   { background:#1e2a10; border-color:#3a5018; color:#ffd060; }
+    .type-line-badge.inactive { background:#1a1a1a; border-color:#333; color:#666; text-decoration:line-through; }
+    .type-line-badge:hover { opacity:0.75; }
   </style>
 </head>
 <body>

@@ -496,21 +496,23 @@ async function buildFilterFromApi(item, listing) {
     statLines: []
   };
   const filter = {
-    id:         Date.now() + Math.random(),
-    name:       item.name || item.typeLine || '이름없는 아이템',
-    category:   guessCategoryFromItem(item),
-    rarity:     FRAME_TYPES[item.frameType] || '',
-    itemName:   item.name || item.typeLine || '',
-    ilvlMin:    0,
-    ilvlMax:    null,
-    areaLvlMin: 0,
-    reqLvlMin:  0,
-    priceMax:   0,
-    equipment:  [],
-    stats:      [],
-    note:       '',
-    sourceHash: '',
-    savedAt:    new Date().toISOString()
+    id:             Date.now() + Math.random(),
+    name:           item.name || item.typeLine || '이름없는 아이템',
+    category:       guessCategoryFromItem(item),
+    rarity:         FRAME_TYPES[item.frameType] || '',
+    itemName:       item.name || item.typeLine || '',
+    typeLine:       item.typeLine || item.baseType || '',
+    typeLineActive: true,
+    ilvlMin:        0,
+    ilvlMax:        null,
+    areaLvlMin:     0,
+    reqLvlMin:      0,
+    priceMax:       0,
+    equipment:      [],
+    stats:          [],
+    note:           '',
+    sourceHash:     '',
+    savedAt:        new Date().toISOString()
   };
 
   // ilvl
@@ -562,11 +564,25 @@ async function buildFilterFromApi(item, listing) {
         });
         return;
       }
-      const parsedValue = extractStatValueFromText(label);
+      let parsedValue = extractStatValueFromText(label);
       const fallbackId = fallbackIds[modIdx] || fallbackIds[0] || '';
       const statId = resolveTradeStatId(label, cat, fallbackId);
       const isResolved = !!(statId || fallbackId);
       const resolvedId = statId || fallbackId || `${cat}.unknown_${simpleHash(label + ':' + fallbackId)}`;
+
+      // Negate value when label says "감소" (reduction) but the API stat tracks it as
+      // an "증가" (increase) with a negative value.  Simple rule: if the mod text
+      // contains "감소" and does NOT contain "증가", and the resolved ID is not
+      // unknown, flip the sign so the stored value/min are negative.
+      // This avoids double-negating values that are already negative from parsing.
+      const labelText = stripTags(label);
+      const hasReduction = /감소/.test(labelText);
+      const hasIncrease  = /증가/.test(labelText);
+      const isNegativeStat = hasReduction && !hasIncrease && !resolvedId.includes('unknown');
+      if (isNegativeStat && isFinite(parsedValue) && parsedValue > 0) {
+        parsedValue = -parsedValue;
+      }
+
       debug.statLines.push({
         category: cat,
         modIdx,
@@ -576,10 +592,11 @@ async function buildFilterFromApi(item, listing) {
         fallbackId,
         resolvedId,
         matched: isResolved,
-        active: isResolved && isFinite(parsedValue) && parsedValue > 0
+        negated: isNegativeStat,
+        active: isResolved && isFinite(parsedValue) && parsedValue !== 0
       });
 
-      if (isFinite(parsedValue) && parsedValue > 0) {
+      if (isFinite(parsedValue) && parsedValue !== 0) {
         upsertStatFilter(filter.stats, {
           label,
           id:         resolvedId,

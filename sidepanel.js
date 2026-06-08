@@ -50,6 +50,8 @@ function normalizeSavedFilter(filter) {
   if (!filter || typeof filter !== 'object') return filter;
   filter.reqLvlMin = 0;
   filter.priceMax = 0;
+  if (!filter.typeLine) filter.typeLine = '';
+  if (filter.typeLineActive == null) filter.typeLineActive = true;
   filter.equipment = Array.isArray(filter.equipment) ? filter.equipment : [];
   filter.stats = Array.isArray(filter.stats) ? filter.stats : [];
   filter.equipment.forEach(e => {
@@ -225,6 +227,7 @@ function makeCard(f) {
       <div class="card-badges">
         ${catLabel ? `<span class="badge badge-cat">${catLabel}</span>` : ''}
         ${f.rarity ? `<span class="badge ${rarityClass}">${f.rarity}</span>` : ''}
+        ${f.typeLine ? `<span class="badge type-line-badge ${f.typeLineActive !== false ? 'active' : 'inactive'}" title="클릭해서 기반 유형 필터 토글">${esc(f.typeLine)}</span>` : ''}
       </div>
     </div>
 
@@ -253,7 +256,7 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, .filter-name-edit, button')) return;
+    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, .filter-name-edit, .type-line-badge, button')) return;
     wrap.classList.toggle('open');
   });
 
@@ -304,6 +307,18 @@ function makeCard(f) {
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
   wrap.querySelector('.btn-edit-s').addEventListener('click', () => openModal(f.id));
   wrap.querySelector('.btn-del-s').addEventListener('click', () => delFilter(f.id));
+
+  // typeLine badge toggle
+  const typeLineBadgeEl = wrap.querySelector('.type-line-badge');
+  if (typeLineBadgeEl) {
+    typeLineBadgeEl.addEventListener('click', e => {
+      e.stopPropagation();
+      f.typeLineActive = f.typeLineActive === false;
+      typeLineBadgeEl.classList.toggle('active', f.typeLineActive !== false);
+      typeLineBadgeEl.classList.toggle('inactive', f.typeLineActive === false);
+      persist();
+    });
+  }
 
   // Feature 2: stat row inline delete buttons
   wrap.querySelectorAll('.stat-delete-btn').forEach(btn => {
@@ -449,6 +464,7 @@ function buildQuery(f) {
   const tf = {};
   if (f.rarity)   tf.rarity   = { option: f.rarity };
   if (f.category) tf.category = { option: f.category };
+  if (f.typeLine && f.typeLineActive !== false) tf.type = { option: f.typeLine };
   if (Object.keys(tf).length) q.query.filters.type_filters = { filters: tf };
 
   const mf = {};
