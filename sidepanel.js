@@ -193,7 +193,7 @@ function makeCard(f) {
     const isDesecrated = s.id && s.id.startsWith('desecrated.');
     const hasPrefix = s.id && (s.id.startsWith('desecrated.') || s.id.startsWith('explicit.'));
     const badgeHtml = hasPrefix
-      ? `<button class="card-badge-${isDesecrated ? 'desecrated' : 'explicit'}" data-filter-id="${f.id}" data-stat-idx="${i}" title="클릭하여 훼손/비고정 전환">${isDesecrated ? '훼손' : ''}</button>`
+      ? `<button class="card-badge-${isDesecrated ? 'desecrated' : 'explicit'}" data-filter-id="${f.id}" data-stat-idx="${i}" title="클릭하여 훼손/비고정 전환">${isDesecrated ? '훼손' : '비고정'}</button>`
       : '';
     return `<div class="stat-row-item" style="${active?'':'opacity:.4'}" data-stat-idx="${i}">
       ${badgeHtml}
@@ -221,8 +221,9 @@ function makeCard(f) {
     </div>
 
     <div class="card-quick">
-      <button class="btn-search-q" data-id="${f.id}">🔍 거래소에서 검색</button>
-      <button class="btn-open-q"   data-id="${f.id}">🌐 KR거래소</button>
+      <button class="btn-search-q"   data-id="${f.id}">🔍 새창</button>
+      <button class="btn-search-cur" data-id="${f.id}">🔗 현재창</button>
+      <button class="btn-open-q"     data-id="${f.id}">🌐 KR거래소</button>
     </div>
 
     <div class="card-detail">
@@ -247,7 +248,8 @@ function makeCard(f) {
     if (e.target.closest('.card-badge-desecrated, .card-badge-explicit, .stat-delete-btn, .stat-min-value')) return;
     wrap.classList.toggle('open');
   });
-  wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id); });
+  wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
+  wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
   wrap.querySelector('.btn-edit-s').addEventListener('click', () => openModal(f.id));
   wrap.querySelector('.btn-del-s').addEventListener('click', () => delFilter(f.id));
@@ -310,20 +312,22 @@ function makeCard(f) {
       persist();
       // Update badge in-place
       badge.className = `card-badge-${newPrefix}`;
-      badge.textContent = newPrefix === 'desecrated' ? '훼손' : '';
+      badge.textContent = newPrefix === 'desecrated' ? '훼손' : '비고정';
     });
   });
 
   return wrap;
 }
 
-async function doSearch(id) {
+async function doSearch(id, openInNew = true) {
   const f = getCurrentFilters().find(x => String(x.id) === String(id));
   if (!f) return;
   const rd  = document.getElementById(`result-${id}`);
-  const btn = document.querySelector(`.btn-search-q[data-id="${id}"]`);
+  const btnNew = document.querySelector(`.btn-search-q[data-id="${id}"]`);
+  const btnCur = document.querySelector(`.btn-search-cur[data-id="${id}"]`);
   rd.innerHTML = `<div class="result-area"><div style="text-align:center;padding:10px;color:#6a5a3a"><span class="spin"></span> 검색 ID 발급 중...</div></div>`;
-  if (btn) { btn.classList.add('loading'); btn.innerHTML = '<span class="spin"></span> 검색 중'; }
+  if (btnNew) { btnNew.classList.add('loading'); btnNew.disabled = true; btnNew.innerHTML = '<span class="spin"></span> 검색 중'; }
+  if (btnCur) { btnCur.classList.add('loading'); btnCur.disabled = true; btnCur.innerHTML = '<span class="spin"></span>'; }
 
   try {
     const query = buildQuery(f);
@@ -349,13 +353,22 @@ async function doSearch(id) {
     const sData = await res.json();
     if (!sData.id) throw new Error('검색 ID를 받지 못했습니다');
     const url = `${KR_TRADE_BASE}/${encodeURIComponent(settings.league)}/${sData.id}`;
-    chrome.tabs.create({ url });
+    if (openInNew) {
+      chrome.tabs.create({ url });
+    } else {
+      chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+        if (tabs && tabs[0]) chrome.tabs.update(tabs[0].id, { url });
+        else chrome.tabs.create({ url });
+      });
+    }
     const total = (sData.total || 0).toLocaleString();
-    rd.innerHTML = `<div class="result-area"><div style="text-align:center;padding:10px;color:#80d040;font-size:11px">✅ 거래소에 검색 결과를 열었습니다 (총 ${total}개)<br/><a href="${url}" target="_blank" style="color:#5080a0;font-size:10px">다시 열기 →</a></div></div>`;
+    const openLabel = openInNew ? '새 탭에' : '현재 탭에서';
+    rd.innerHTML = `<div class="result-area"><div style="text-align:center;padding:10px;color:#80d040;font-size:11px">✅ 거래소 검색 결과를 ${openLabel} 열었습니다 (총 ${total}개)<br/><a href="${url}" target="_blank" style="color:#5080a0;font-size:10px">다시 열기 →</a></div></div>`;
   } catch(err) {
     rd.innerHTML = `<div class="result-area"><div class="result-error">⚠️ ${esc(err.message)}</div></div>`;
   } finally {
-    if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔍 거래소에서 검색'; }
+    if (btnNew) { btnNew.classList.remove('loading'); btnNew.disabled = false; btnNew.innerHTML = '🔍 새창'; }
+    if (btnCur) { btnCur.classList.remove('loading'); btnCur.disabled = false; btnCur.innerHTML = '🔗 현재창'; }
   }
 }
 
