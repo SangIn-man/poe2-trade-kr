@@ -180,14 +180,14 @@ function makeCard(f) {
     f.note       ? `<span class="info-chip">📝 ${esc(f.note)}</span>` : '',
   ].join('');
 
-  const equipmentRows = (f.equipment||[]).map(s => {
+  const equipmentRows = (f.equipment||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
     return `<div class="stat-row-item" style="${active?'':'opacity:.4'}">
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
         ${origText}
-        <span class="stat-min-val">${s.min}+</span>
+        <span class="equip-min-value" data-filter-id="${f.id}" data-equip-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>
         <span class="stat-max-val">~∞</span>
       </span>
     </div>`;
@@ -253,7 +253,7 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, button')) return;
+    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, button')) return;
     wrap.classList.toggle('open');
   });
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
@@ -298,6 +298,26 @@ function makeCard(f) {
       persist();
       // Update display text in-place without full re-render
       span.textContent = target.stats[statIdx].min + '+';
+    }, { passive: false });
+  });
+
+  // Feature: mouse wheel on equip-min-value spans to adjust equipment min value
+  wrap.querySelectorAll('.equip-min-value').forEach(span => {
+    span.addEventListener('wheel', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const filterId = span.dataset.filterId;
+      const equipIdx = parseInt(span.dataset.equipIdx, 10);
+      const arr = getCurrentFilters();
+      const target = arr.find(x => String(x.id) === String(filterId));
+      if (!target || !target.equipment || !target.equipment[equipIdx]) return;
+      const delta = e.deltaY < 0 ? 1 : -1;
+      target.equipment[equipIdx].min = Math.max(0, (Number(target.equipment[equipIdx].min) || 0) + delta);
+      updateFilterSourceHash(target);
+      persist();
+      // Update display text in-place without full re-render
+      span.textContent = target.equipment[equipIdx].min + '+';
     }, { passive: false });
   });
 
