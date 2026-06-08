@@ -128,6 +128,10 @@ const persist = () => chrome.storage.local.set({ filtersByLeague, settings });
 
 function render() {
   const list = document.getElementById('filterList');
+  // Preserve which cards are currently open before re-render
+  const openIds = new Set(
+    Array.from(list.querySelectorAll('.filter-card.open')).map(el => el.id.replace('card-', ''))
+  );
   const current = getCurrentFilters();
   if (!current.length) {
     list.innerHTML = `
@@ -141,7 +145,11 @@ function render() {
     return;
   }
   list.innerHTML = '';
-  current.slice().reverse().forEach(f => list.appendChild(makeCard(f)));
+  current.slice().reverse().forEach(f => {
+    const card = makeCard(f);
+    if (openIds.has(String(f.id))) card.classList.add('open');
+    list.appendChild(card);
+  });
 }
 
 function makeCard(f) {
