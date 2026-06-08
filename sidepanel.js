@@ -54,7 +54,11 @@ function normalizeSavedFilter(filter) {
   filter.stats.forEach(s => {
     if (!s) return;
     if (s.active == null) s.active = true;
-    if (s.value != null && isFinite(Number(s.value))) s.min = roundFilterNumber(s.value);
+    if (s.value != null && isFinite(Number(s.value))) {
+      // Preserve the sign for negative stats (감소 stats stored as negative values).
+      const sign = Number(s.value) < 0 ? -1 : 1;
+      s.min = sign * roundFilterNumber(s.value);
+    }
     // Migrate: if id is unknown but fallbackId is valid, promote fallbackId → id
     if (s.id && s.id.includes('unknown') && s.fallbackId && !s.fallbackId.includes('unknown')) {
       s.id = s.fallbackId;
@@ -175,16 +179,23 @@ function makeCard(f) {
     </div>`;
   }).join('');
 
-  const statRows = (f.stats||[]).map(s => {
+  const statRows = (f.stats||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
-    return `<div class="stat-row-item" style="${active?'':'opacity:.4'}">
+    const isDesecrated = s.id && s.id.startsWith('desecrated.');
+    const hasPrefix = s.id && (s.id.startsWith('desecrated.') || s.id.startsWith('explicit.'));
+    const badgeHtml = hasPrefix
+      ? `<button class="card-badge-${isDesecrated ? 'desecrated' : 'explicit'}" data-filter-id="${f.id}" data-stat-idx="${i}" title="클릭하여 훼손/비고정 전환">${isDesecrated ? '훼손' : ''}</button>`
+      : '';
+    return `<div class="stat-row-item" style="${active?'':'opacity:.4'}" data-stat-idx="${i}">
+      ${badgeHtml}
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
         ${origText}
-        <span class="stat-min-val">${s.min}+</span>
+        <span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>
         <span class="stat-max-val">~∞</span>
       </span>
+      <button class="stat-delete-btn" data-filter-id="${f.id}" data-stat-idx="${i}" title="이 스탯 삭제">×</button>
     </div>`;
   }).join('');
 
@@ -224,11 +235,77 @@ function makeCard(f) {
     </div>
   `;
 
-  wrap.querySelector('.filter-card-head').addEventListener('click', () => wrap.classList.toggle('open'));
+  wrap.querySelector('.filter-card-head').addEventListener('click', e => {
+    if (e.target.closest('.card-badge-desecrated, .card-badge-explicit, .stat-delete-btn, .stat-min-value')) return;
+    wrap.classList.toggle('open');
+  });
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
   wrap.querySelector('.btn-edit-s').addEventListener('click', () => openModal(f.id));
   wrap.querySelector('.btn-del-s').addEventListener('click', () => delFilter(f.id));
+
+  // Feature 2: stat row inline delete buttons
+  wrap.querySelectorAll('.stat-delete-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const filterId = btn.dataset.filterId;
+      const statIdx  = parseInt(btn.dataset.statIdx, 10);
+      const arr = getCurrentFilters();
+      const target = arr.find(x => String(x.id) === String(filterId));
+      if (!target || !target.stats) return;
+      target.stats.splice(statIdx, 1);
+      updateFilterSourceHash(target);
+      persist();
+      // Re-render only this card in-place
+      const newCard = makeCard(target);
+      wrap.replaceWith(newCard);
+      // Keep card open if it was open
+      if (wrap.classList.contains('open')) newCard.classList.add('open');
+    });
+  });
+
+  // Feature: mouse wheel on stat-min-value spans to adjust min value
+  wrap.querySelectorAll('.stat-min-value').forEach(span => {
+    span.addEventListener('wheel', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const filterId = span.dataset.filterId;
+      const statIdx  = parseInt(span.dataset.statIdx, 10);
+      const arr = getCurrentFilters();
+      const target = arr.find(x => String(x.id) === String(filterId));
+      if (!target || !target.stats || !target.stats[statIdx]) return;
+      const delta = e.deltaY < 0 ? 1 : -1;
+      target.stats[statIdx].min = (Number(target.stats[statIdx].min) || 0) + delta;
+      updateFilterSourceHash(target);
+      persist();
+      // Update display text in-place without full re-render
+      span.textContent = target.stats[statIdx].min + '+';
+    }, { passive: false });
+  });
+
+  // Feature: desecrated/explicit badge toggle on filter cards
+  wrap.querySelectorAll('.card-badge-desecrated, .card-badge-explicit').forEach(badge => {
+    badge.addEventListener('click', e => {
+      e.stopPropagation();
+      const filterId = badge.dataset.filterId;
+      const statIdx  = parseInt(badge.dataset.statIdx, 10);
+      const arr = getCurrentFilters();
+      const target = arr.find(x => String(x.id) === String(filterId));
+      if (!target || !target.stats || !target.stats[statIdx]) return;
+      const stat = target.stats[statIdx];
+      if (!stat.id) return;
+      const isDesecrated = stat.id.startsWith('desecrated.');
+      const newPrefix = isDesecrated ? 'explicit' : 'desecrated';
+      const withoutPrefix = stat.id.replace(/^[^.]+\./, '');
+      stat.id = `${newPrefix}.${withoutPrefix}`;
+      updateFilterSourceHash(target);
+      persist();
+      // Update badge in-place
+      badge.className = `card-badge-${newPrefix}`;
+      badge.textContent = newPrefix === 'desecrated' ? '훼손' : '';
+    });
+  });
+
   return wrap;
 }
 
@@ -302,7 +379,12 @@ function buildQuery(f) {
       ? s.id
       : (s.fallbackId && !s.fallbackId.includes('unknown') ? s.fallbackId : null);
     if (!effectiveId) return;
-    statFilters.push({ id: effectiveId, value: { min: Number(s.min) }, disabled: false });
+    // Negative stats (감소/reduction mods) are stored with negative min values.
+    // The trade API requires these to be queried with `max` (not `min`) so that
+    // items with a roll of -35 or better (more negative = more reduction) are found.
+    const minVal = Number(s.min);
+    const statValue = minVal < 0 ? { max: minVal } : { min: minVal };
+    statFilters.push({ id: effectiveId, value: statValue, disabled: false });
   });
   if (statFilters.length) {
     q.query.stats[0].filters = statFilters;
@@ -353,6 +435,19 @@ function bindModal() {
   document.getElementById('overlay').addEventListener('click', e => {
     if (e.target===document.getElementById('overlay')) closeModal();
   });
+
+  // Feature 3: mouse wheel on focused number inputs inside the modal
+  document.querySelector('.modal').addEventListener('wheel', e => {
+    const inp = e.target;
+    if (inp.tagName !== 'INPUT' || inp.type !== 'number') return;
+    if (document.activeElement !== inp) return;
+    e.preventDefault();
+    // deltaY > 0 = scroll down = decrease value; < 0 = scroll up = increase value
+    const delta = e.deltaY > 0 ? -1 : 1;
+    const current = parseFloat(inp.value) || 0;
+    inp.value = current + delta;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  }, { passive: false });
 }
 
 function openModal(id) {
@@ -388,10 +483,21 @@ function openModal(id) {
     const active = s.active !== false;
     const row = document.createElement('div');
     row.className = 'stat-edit-row';
+
+    // Feature 1: desecrated badge
+    const isDesecrated = s.id && s.id.startsWith('desecrated.');
+    const badgeHtml = (isDesecrated || (s.id && s.id.startsWith('explicit.')))
+      ? `<button class="${isDesecrated ? 'badge-desecrated' : 'badge-explicit'}"
+           data-idx="${i}"
+           data-prefix="${isDesecrated ? 'desecrated' : 'explicit'}"
+           title="클릭하여 훼손/비고정 전환">${isDesecrated ? '훼손' : '비고정'}</button>`
+      : '';
+
     row.innerHTML = `
       <button class="stat-toggle ${active?'':'off'}" data-idx="${i}" title="활성/비활성">${active?'✅':'⬜'}</button>
       <span class="stat-edit-label" title="${esc(s.label)}">${esc(s.label)}</span>
-      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.min}" min="0" step="1" title="최솟값"/>
+      ${badgeHtml}
+      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.min}" step="1" title="최솟값 (감소 스탯은 음수)"/>
     `;
     row.querySelector('.stat-toggle').addEventListener('click', function() {
       const isOn = !this.classList.contains('off');
@@ -399,6 +505,19 @@ function openModal(id) {
       this.textContent = isOn ? '⬜' : '✅';
       this.closest('.stat-edit-row').style.opacity = isOn ? '.4' : '1';
     });
+
+    // Feature 1: badge click → toggle desecrated ↔ explicit
+    const badge = row.querySelector('.badge-desecrated, .badge-explicit');
+    if (badge) {
+      badge.addEventListener('click', function() {
+        const currentPrefix = this.dataset.prefix;
+        const newPrefix = currentPrefix === 'desecrated' ? 'explicit' : 'desecrated';
+        this.dataset.prefix = newPrefix;
+        this.className = newPrefix === 'desecrated' ? 'badge-desecrated' : 'badge-explicit';
+        this.textContent = newPrefix === 'desecrated' ? '훼손' : '비고정';
+      });
+    }
+
     sl.appendChild(row);
   });
 
@@ -431,6 +550,15 @@ function saveModal() {
     const toggle = row.querySelector('.stat-toggle');
     f.stats[i].active = !toggle.classList.contains('off');
     f.stats[i].min    = parseFloat(row.querySelector('.stat-edit-min').value)||0;
+
+    // Feature 1: apply badge prefix toggle to the stat id
+    const badge = row.querySelector('.badge-desecrated, .badge-explicit');
+    if (badge && f.stats[i].id) {
+      const newPrefix = badge.dataset.prefix; // 'desecrated' or 'explicit'
+      // Replace the leading prefix segment (everything before the first dot)
+      const withoutPrefix = f.stats[i].id.replace(/^[^.]+\./, '');
+      f.stats[i].id = `${newPrefix}.${withoutPrefix}`;
+    }
   });
 
   updateFilterSourceHash(f);
