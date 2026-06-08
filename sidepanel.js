@@ -1,5 +1,11 @@
 'use strict';
 
+const CATEGORY_PREFIXES = ['explicit','implicit','desecrated','enchant','fractured','crafted','rune'];
+const CATEGORY_LABELS = {
+  explicit: '비고정', implicit: '고정', desecrated: '훼손',
+  enchant: '인챈트', fractured: '분열됨', crafted: '제작', rune: '룬'
+};
+
 const KR_TRADE_BASE = 'https://poe.game.daum.net/trade2/search/poe2';
 const KR_API_SEARCH = (l) => `https://poe.game.daum.net/api/trade2/search/poe2/${l}`;
 const DEFAULT_LEAGUE = 'Runes of Aldur';
@@ -190,11 +196,13 @@ function makeCard(f) {
   const statRows = (f.stats||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
-    const isDesecrated = s.id && s.id.startsWith('desecrated.');
-    const hasPrefix = s.id && (s.id.startsWith('desecrated.') || s.id.startsWith('explicit.'));
-    const badgeHtml = hasPrefix
-      ? `<button class="card-badge-${isDesecrated ? 'desecrated' : 'explicit'}" data-filter-id="${f.id}" data-stat-idx="${i}" title="클릭하여 훼손/비고정 전환">${isDesecrated ? '훼손' : '비고정'}</button>`
-      : '';
+    const rawId = s.id || s.fallbackId || '';
+    const prefixMatch = rawId.match(/^([^.]+)\./);
+    const prefix = prefixMatch ? prefixMatch[1] : null;
+    const knownPrefix = prefix && CATEGORY_LABELS[prefix] ? prefix : null;
+    const badgeHtml = knownPrefix
+      ? `<button class="cat-badge cat-badge-${knownPrefix}" data-stat-idx="${i}">${CATEGORY_LABELS[knownPrefix]}</button>`
+      : (prefix ? `<button class="cat-badge cat-badge-explicit" data-stat-idx="${i}" style="opacity:0.5">${prefix}</button>` : '');
     return `<div class="stat-row-item" style="${active?'':'opacity:.4'}" data-stat-idx="${i}">
       ${badgeHtml}
       <span class="stat-label-t">${esc(s.label)}</span>
@@ -245,7 +253,7 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.card-badge-desecrated, .card-badge-explicit, .stat-delete-btn, .stat-min-value')) return;
+    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, button')) return;
     wrap.classList.toggle('open');
   });
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
@@ -293,26 +301,27 @@ function makeCard(f) {
     }, { passive: false });
   });
 
-  // Feature: desecrated/explicit badge toggle on filter cards
-  wrap.querySelectorAll('.card-badge-desecrated, .card-badge-explicit').forEach(badge => {
+  // Feature: category badge cycle on filter cards
+  wrap.querySelectorAll('.cat-badge').forEach(badge => {
     badge.addEventListener('click', e => {
       e.stopPropagation();
-      const filterId = badge.dataset.filterId;
-      const statIdx  = parseInt(badge.dataset.statIdx, 10);
-      const arr = getCurrentFilters();
-      const target = arr.find(x => String(x.id) === String(filterId));
-      if (!target || !target.stats || !target.stats[statIdx]) return;
-      const stat = target.stats[statIdx];
-      if (!stat.id) return;
-      const isDesecrated = stat.id.startsWith('desecrated.');
-      const newPrefix = isDesecrated ? 'explicit' : 'desecrated';
-      const withoutPrefix = stat.id.replace(/^[^.]+\./, '');
-      stat.id = `${newPrefix}.${withoutPrefix}`;
-      updateFilterSourceHash(target);
-      persist();
+      e.stopImmediatePropagation();
+      const statIdx = parseInt(badge.dataset.statIdx, 10);
+      const stat = f.stats[statIdx];
+      if (!stat || !stat.id) return;
+      const match = stat.id.match(/^([^.]+)\.(.+)$/);
+      if (!match) return;
+      const [, curPrefix, rest] = match;
+      const curIdx = CATEGORY_PREFIXES.indexOf(curPrefix);
+      // If unknown prefix, start from explicit (index 0), else advance by 1
+      const nextPrefix = CATEGORY_PREFIXES[(curIdx + 1) % CATEGORY_PREFIXES.length];
+      stat.id = `${nextPrefix}.${rest}`;
       // Update badge in-place
-      badge.className = `card-badge-${newPrefix}`;
-      badge.textContent = newPrefix === 'desecrated' ? '훼손' : '비고정';
+      badge.textContent = CATEGORY_LABELS[nextPrefix] || nextPrefix;
+      badge.className = `cat-badge cat-badge-${nextPrefix}`;
+      badge.style.opacity = '';
+      updateFilterSourceHash(f);
+      persist();
     });
   });
 
@@ -505,13 +514,17 @@ function openModal(id) {
     const row = document.createElement('div');
     row.className = 'stat-edit-row';
 
-    // Feature 1: desecrated badge
-    const isDesecrated = s.id && s.id.startsWith('desecrated.');
-    const badgeHtml = (isDesecrated || (s.id && s.id.startsWith('explicit.')))
-      ? `<button class="${isDesecrated ? 'badge-desecrated' : 'badge-explicit'}"
+    // Category badge: show for all known prefixes, cycle on click
+    const rawId = s.id || s.fallbackId || '';
+    const prefixM = rawId.match(/^([^.]+)\./);
+    const curPfx = prefixM ? prefixM[1] : 'explicit';
+    const knownPfx = CATEGORY_LABELS[curPfx] ? curPfx : null;
+    const badgeHtml = rawId
+      ? `<button class="cat-badge cat-badge-${knownPfx || 'explicit'}"
            data-idx="${i}"
-           data-prefix="${isDesecrated ? 'desecrated' : 'explicit'}"
-           title="클릭하여 훼손/비고정 전환">${isDesecrated ? '훼손' : '비고정'}</button>`
+           data-prefix="${curPfx}"
+           title="클릭하여 카테고리 전환"
+           style="${knownPfx ? '' : 'opacity:0.5'}">${CATEGORY_LABELS[curPfx] || curPfx}</button>`
       : '';
 
     row.innerHTML = `
@@ -527,15 +540,17 @@ function openModal(id) {
       this.closest('.stat-edit-row').style.opacity = isOn ? '.4' : '1';
     });
 
-    // Feature 1: badge click → toggle desecrated ↔ explicit
-    const badge = row.querySelector('.badge-desecrated, .badge-explicit');
+    // Category badge cycle in modal
+    const badge = row.querySelector('.cat-badge');
     if (badge) {
       badge.addEventListener('click', function() {
         const currentPrefix = this.dataset.prefix;
-        const newPrefix = currentPrefix === 'desecrated' ? 'explicit' : 'desecrated';
-        this.dataset.prefix = newPrefix;
-        this.className = newPrefix === 'desecrated' ? 'badge-desecrated' : 'badge-explicit';
-        this.textContent = newPrefix === 'desecrated' ? '훼손' : '비고정';
+        const curIdx = CATEGORY_PREFIXES.indexOf(currentPrefix);
+        const nextPrefix = CATEGORY_PREFIXES[(curIdx + 1) % CATEGORY_PREFIXES.length];
+        this.dataset.prefix = nextPrefix;
+        this.className = `cat-badge cat-badge-${nextPrefix}`;
+        this.style.opacity = '';
+        this.textContent = CATEGORY_LABELS[nextPrefix] || nextPrefix;
       });
     }
 
@@ -572,11 +587,10 @@ function saveModal() {
     f.stats[i].active = !toggle.classList.contains('off');
     f.stats[i].min    = parseFloat(row.querySelector('.stat-edit-min').value)||0;
 
-    // Feature 1: apply badge prefix toggle to the stat id
-    const badge = row.querySelector('.badge-desecrated, .badge-explicit');
+    // Apply category badge prefix to the stat id
+    const badge = row.querySelector('.cat-badge');
     if (badge && f.stats[i].id) {
-      const newPrefix = badge.dataset.prefix; // 'desecrated' or 'explicit'
-      // Replace the leading prefix segment (everything before the first dot)
+      const newPrefix = badge.dataset.prefix;
       const withoutPrefix = f.stats[i].id.replace(/^[^.]+\./, '');
       f.stats[i].id = `${newPrefix}.${withoutPrefix}`;
     }

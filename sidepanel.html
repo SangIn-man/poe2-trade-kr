@@ -171,11 +171,8 @@
     .modal-btns .btn-cancel-m { background:var(--bg3); border:1px solid var(--border2); color:var(--text-dim); padding:7px 14px; border-radius:5px; cursor:pointer; font-size:12px; }
     .modal-btns .btn-save-m { flex:1; background:linear-gradient(135deg,#6a3a08,#a86018); border:1px solid #c87828; color:var(--gold-lt); padding:7px; border-radius:5px; cursor:pointer; font-size:12px; font-weight:700; }
 
-    /* 훼손(desecrated) 뱃지 토글 */
-    .badge-desecrated { font-size:10px; padding:1px 4px; border-radius:3px; background:#5a1e1e; color:#ff8080; cursor:pointer; margin-left:4px; border:none; }
-    .badge-desecrated:hover { background:#7a2e2e; }
-    .badge-explicit { font-size:10px; padding:1px 4px; border-radius:3px; background:#1e3a5a; color:#80b4ff; cursor:pointer; margin-left:4px; border:none; }
-    .badge-explicit:hover { background:#2e4a7a; }
+    /* 모달 안 cat-badge 크기 조정 */
+    .stat-edit-row .cat-badge { font-size:10px; padding:1px 5px; min-width:auto; margin-right:0; margin-left:2px; }
 
     /* 스탯 행 삭제 버튼 */
     .stat-row-item { position:relative; }
@@ -186,19 +183,20 @@
     .stat-min-value { cursor:ns-resize; color:#80d040; font-weight:700; user-select:none; border-bottom:1px dotted rgba(127,255,127,0.4); transition:background 0.1s; }
     .stat-min-value:hover { background:rgba(127,255,127,0.1); border-radius:2px; }
 
-    /* 카드 인라인 desecrated/explicit 뱃지 */
-    .card-badge-desecrated {
+    /* 카드 인라인 카테고리 뱃지 (공통 베이스 + 개별 색상) */
+    .cat-badge {
       display:inline-block; padding:2px 6px; border-radius:3px; font-size:11px;
-      background:#5a1e1e; color:#ff8080; cursor:pointer; margin-right:4px;
-      user-select:none; min-width:32px; text-align:center; border:none; flex-shrink:0;
+      cursor:pointer; margin-right:4px; user-select:none; min-width:36px;
+      text-align:center; border:none; flex-shrink:0; transition:opacity 0.15s;
     }
-    .card-badge-desecrated:hover { background:#7a2e2e; }
-    .card-badge-explicit {
-      display:inline-block; padding:2px 6px; border-radius:3px; font-size:11px;
-      background:#1e3350; color:#80aaff; cursor:pointer; margin-right:4px;
-      user-select:none; min-width:32px; text-align:center; border:none; flex-shrink:0;
-    }
-    .card-badge-explicit:hover { background:#2a4470; }
+    .cat-badge:hover { opacity:0.8; }
+    .cat-badge-explicit   { background:#1e3350; color:#80aaff; }
+    .cat-badge-implicit   { background:#2a2a2a; color:#aaaaaa; }
+    .cat-badge-desecrated { background:#5a1e1e; color:#ff8080; }
+    .cat-badge-enchant    { background:#3a1e5a; color:#cc80ff; }
+    .cat-badge-fractured  { background:#4a3a00; color:#ffd060; }
+    .cat-badge-crafted    { background:#003a3a; color:#60ffdd; }
+    .cat-badge-rune       { background:#4a2800; color:#ffaa60; }
   </style>
 </head>
 <body>
