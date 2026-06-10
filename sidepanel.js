@@ -843,15 +843,11 @@ async function loadNinjaRates() {
   });
 }
 
-function getIconUrl(ninjaImagePath) {
-  try {
-    const base64Part = ninjaImagePath.split('/')[3];
-    const decoded = JSON.parse(atob(base64Part));
-    const f = decoded[2].f;
-    return `https://web.poecdn.com/image/Art/${f}.png`;
-  } catch (e) {
-    return null;
-  }
+function loadNinjaImage(img, ninjaPath) {
+  fetch('https://poe.ninja' + ninjaPath)
+    .then(r => r.blob())
+    .then(blob => { img.src = URL.createObjectURL(blob); })
+    .catch(() => { img.style.display = 'none'; });
 }
 
 function renderNinjaRates(data) {
@@ -882,7 +878,7 @@ function renderNinjaRates(data) {
 
     const img = document.createElement('img');
     img.className = 'ninja-icon';
-    img.src = getIconUrl(divineItem.image) || '';
+    loadNinjaImage(img, divineItem.image);
     img.alt = divineItem.name;
     img.width = 24;
     img.height = 24;
@@ -913,7 +909,7 @@ function renderNinjaRates(data) {
 
     const img = document.createElement('img');
     img.className = 'ninja-icon';
-    img.src = getIconUrl(item.image) || '';
+    loadNinjaImage(img, item.image);
     img.alt = item.name;
     img.width = 24;
     img.height = 24;
