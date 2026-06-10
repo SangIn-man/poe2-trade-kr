@@ -162,8 +162,34 @@ function render() {
 }
 
 function currencyLabel(currency) {
-  const labels = { divine: '신성석', exalted: '숭고석', chaos: '혼돈석' };
-  return labels[currency] || currency || '';
+  const map = {
+    'divine': 'div',
+    'exalted': 'ex',
+    'chaos': 'chaos',
+    'annulment': 'ann',
+    'blessed': 'bles',
+    'transmutation': 'trans',
+    'augmentation': 'aug',
+    'alteration': 'alt',
+    'regal': 'reg',
+    'vaal': 'vaal',
+    'jewellers': 'jew',
+    'fusing': 'fuse',
+    'chromatic': 'chrom',
+    'chance': 'chance',
+    'scouring': 'scour',
+    'alchemy': 'alch',
+    'orb-of-conflict': 'conflict',
+    'greater-jewellers': 'g.jew',
+    'perfect-jewellers': 'p.jew',
+    'artificers': 'art',
+    'glassblowers': 'glass',
+    'mirror': 'mirror',
+    'fracturing': 'frac',
+    'enkindling': 'enk',
+    'instilling': 'inst',
+  };
+  return map[currency] || currency;
 }
 
 function makeCard(f) {
