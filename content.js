@@ -648,19 +648,38 @@ async function handlePobCopy(row, btn) {
   btn.disabled = true;
 
   try {
-    const fetchUrl = `https://www.pathofexile.com/api/trade2/fetch/${itemId}?query=&realm=poe2`;
-    const res = await fetch(fetchUrl, { credentials: 'include' });
-    if (!res.ok) throw new Error(`API 응답 오류 (HTTP ${res.status})`);
-    const data = await res.json();
+    const data = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: 'FETCH_POB', itemId }, res => {
+        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+        if (!res || !res.ok) return reject(new Error(res?.error || 'fetch failed'));
+        resolve(res.data);
+      });
+    });
+
     const result = data?.result?.[0];
     if (!result?.item) throw new Error('아이템 데이터 없음');
 
     const pobText = buildPoBFormat(result.item);
-    await navigator.clipboard.writeText(pobText);
+
+    // clipboard 복사 (navigator.clipboard 우선, execCommand fallback)
+    try {
+      await navigator.clipboard.writeText(pobText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = pobText;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
 
     btn.textContent = '✓';
     setTimeout(() => { btn.textContent = '📋'; btn.disabled = false; }, 1500);
   } catch (e) {
+    console.error('[PoB Copy]', e);
     btn.textContent = '✗';
     showToast('PoB 복사 실패: ' + e.message, 'err');
     setTimeout(() => { btn.textContent = '📋'; btn.disabled = false; }, 1500);
