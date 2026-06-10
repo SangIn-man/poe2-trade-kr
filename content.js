@@ -32,21 +32,35 @@ function getApiBase() {
 // ─── button injection ─────────────────────────────────
 function injectStarButton(row) {
   const priceDiv = row.querySelector('.price') || row.querySelector('.listing-price');
-  const btn = document.createElement('button');
-  btn.className = 'poe2tq-star-btn';
-  btn.textContent = '⭐ 즐겨찾기';
-  btn.title = 'PoE2 Trade Quick에 필터로 저장';
 
-  btn.addEventListener('click', async (e) => {
+  const starBtn = document.createElement('button');
+  starBtn.className = 'poe2tq-star-btn';
+  starBtn.textContent = '⭐ 즐겨찾기';
+  starBtn.title = 'PoE2 Trade Quick에 필터로 저장';
+
+  starBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     e.preventDefault();
-    await handleStar(btn, row);
+    await handleStar(starBtn, row);
+  });
+
+  const pobBtn = document.createElement('button');
+  pobBtn.className = 'pob-copy-btn';
+  pobBtn.textContent = '📋';
+  pobBtn.title = 'PoB 형식으로 클립보드에 복사';
+
+  pobBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await handlePobCopy(row, pobBtn);
   });
 
   if (priceDiv?.parentNode) {
-    priceDiv.parentNode.insertBefore(btn, priceDiv.nextSibling);
+    priceDiv.parentNode.insertBefore(starBtn, priceDiv.nextSibling);
+    priceDiv.parentNode.insertBefore(pobBtn, starBtn.nextSibling);
   } else {
-    row.appendChild(btn);
+    row.appendChild(starBtn);
+    row.appendChild(pobBtn);
   }
 }
 
@@ -508,6 +522,7 @@ async function buildFilterFromApi(item, listing) {
     areaLvlMin:     0,
     reqLvlMin:      0,
     priceMax:       0,
+    savedPrice:     listing?.price ? { amount: listing.price.amount, currency: listing.price.currency } : null,
     equipment:      [],
     stats:          [],
     note:           '',
@@ -622,6 +637,113 @@ async function buildFilterFromApi(item, listing) {
 
   filter.sourceHash = simpleHash(buildQuerySignature(filter));
   return { filter, debug };
+}
+
+// ─── PoB copy ─────────────────────────────────────────
+async function handlePobCopy(row, btn) {
+  const itemId = row.dataset.id;
+  if (!itemId) return;
+
+  btn.textContent = '…';
+  btn.disabled = true;
+
+  try {
+    const queryId = getQueryId() || '';
+    const apiUrl = `${getApiBase()}/fetch/${encodeURIComponent(itemId)}?query=${encodeURIComponent(queryId)}&realm=poe2`;
+    const res = await fetch(apiUrl, { credentials: 'include' });
+    if (!res.ok) throw new Error(`API 응답 오류 (HTTP ${res.status})`);
+    const data = await res.json();
+    const result = data?.result?.[0];
+    if (!result?.item) throw new Error('아이템 데이터 없음');
+
+    const pobText = buildPoBFormat(result.item);
+    await navigator.clipboard.writeText(pobText);
+
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = '📋'; btn.disabled = false; }, 1500);
+  } catch (e) {
+    btn.textContent = '✗';
+    showToast('PoB 복사 실패: ' + e.message, 'err');
+    setTimeout(() => { btn.textContent = '📋'; btn.disabled = false; }, 1500);
+  }
+}
+
+function buildPoBFormat(item) {
+  const lines = [];
+
+  // 1. 아이템 이름 / 베이스 타입
+  if (item.name) lines.push(stripTags(item.name));
+  lines.push(stripTags(item.baseType || item.typeLine || ''));
+
+  // 2. Unique ID
+  if (item.id) lines.push(`Unique ID: ${item.id}`);
+
+  // 3. Item Level
+  if (item.ilvl != null) lines.push(`Item Level: ${item.ilvl}`);
+
+  // 4. Quality — properties 배열에서 'Quality' 항목 파싱
+  const allProps = [
+    ...(item.properties || []),
+    ...(item.additionalProperties || [])
+  ];
+  const qualityProp = allProps.find(p => /quality/i.test(stripTags(p?.name || '')));
+  if (qualityProp) {
+    const qval = Array.isArray(qualityProp.values) && qualityProp.values[0]
+      ? stripTags(qualityProp.values[0][0]).replace(/[^0-9]/g, '')
+      : '';
+    if (qval) lines.push(`Quality: ${qval}`);
+  }
+
+  // 5. Sockets
+  if (Array.isArray(item.sockets) && item.sockets.length > 0) {
+    lines.push(`Sockets: ${item.sockets.map(() => 'S').join(' ')}`);
+  }
+
+  // 6. Runes (소켓에 낀 아이템)
+  if (Array.isArray(item.socketedItems) && item.socketedItems.length > 0) {
+    item.socketedItems.forEach(si => {
+      const runeName = stripTags(si.name || si.typeLine || '');
+      if (runeName) lines.push(`Rune: ${runeName}`);
+    });
+  }
+
+  // 7. Level Requirement
+  if (Array.isArray(item.requirements)) {
+    const lvlReq = item.requirements.find(r => /^level$/i.test(stripTags(r?.name || '')));
+    if (lvlReq && Array.isArray(lvlReq.values) && lvlReq.values[0]) {
+      lines.push(`LevelReq: ${stripTags(lvlReq.values[0][0])}`);
+    }
+  }
+
+  // 8. Implicits block
+  const implicitLines = [];
+  (item.runeMods || []).forEach(m => implicitLines.push(`{enchant}{rune}${stripTags(m)}`));
+  (item.bondedMods || []).forEach(m => implicitLines.push(`{enchant}{rune}${stripTags(m)}`));
+  (item.enchantMods || []).forEach(m => implicitLines.push(`{enchant}${stripTags(m)}`));
+  (item.implicitMods || []).forEach(m => implicitLines.push(stripTags(m)));
+
+  lines.push(`Implicits: ${implicitLines.length}`);
+  implicitLines.forEach(l => lines.push(l));
+
+  // 9. Explicit mods
+  const craftedSet = new Set((item.craftedMods || []).map(m => stripTags(m)));
+  const fracturedSet = new Set((item.fracturedMods || []).map(m => stripTags(m)));
+  const desecratedSet = new Set((item.desecratedMods || item.corruptedMods || []).map(m => stripTags(m)));
+
+  (item.fracturedMods || []).forEach(m => lines.push(`{fractured}${stripTags(m)}`));
+
+  (item.explicitMods || []).forEach(m => {
+    const text = stripTags(m);
+    if (!craftedSet.has(text) && !fracturedSet.has(text) && !desecratedSet.has(text)) {
+      lines.push(text);
+    }
+  });
+
+  (item.desecratedMods || item.corruptedMods || []).forEach(m => lines.push(`{desecrated}${stripTags(m)}`));
+
+  (item.craftedMods || []).forEach(m => lines.push(`{crafted}${stripTags(m)}`));
+
+  return lines.join('\n');
 }
 
 // ─── toast ────────────────────────────────────────────
