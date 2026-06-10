@@ -844,57 +844,92 @@ async function loadNinjaRates() {
 }
 
 function renderNinjaRates(data) {
+  const container = document.getElementById('ninja-currency-list');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const itemMap = {};
+  (data.core?.items || []).forEach(item => { itemMap[item.id] = item; });
+
+  const rates = data.core?.rates || {};
   const lines = data.lines || [];
-
-  // Divine Orb 기준값 찾기
-  const divine = lines.find(l => l.currencyTypeName === 'Divine Orb');
-  const divChaos = divine ? divine.chaosEquivalent : 1;
-
-  // chaosEquivalent 기준 내림차순 정렬 (가치 높은 것부터)
-  const sorted = [...lines].sort((a, b) => (b.chaosEquivalent || 0) - (a.chaosEquivalent || 0));
 
   const updated = document.getElementById('ninja-last-updated');
   if (updated) updated.textContent = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' 기준';
 
-  const container = document.getElementById('ninja-currency-list');
-  container.innerHTML = '';
-
-  if (!sorted.length) {
-    container.innerHTML = '<div class="ninja-loading">데이터 없음</div>';
+  if (!lines.length) {
+    container.innerHTML = '<div class="ninja-empty">데이터 없음</div>';
     return;
   }
 
-  sorted.forEach(line => {
-    const name = line.currencyTypeName || '';
-    const chaos = line.chaosEquivalent || 0;
-    const divVal = divChaos > 0 ? (chaos / divChaos) : 0;
+  // divine 먼저 (기준 통화)
+  const divineItem = itemMap['divine'];
+  if (divineItem) {
+    const row = document.createElement('div');
+    row.className = 'ninja-row ninja-row-divine';
 
-    const change = line.receiveSparkLine?.totalChange || 0;
-    const changeClass = change >= 0 ? 'ninja-change-pos' : 'ninja-change-neg';
-    const changeText = change !== 0 ? `${change > 0 ? '+' : ''}${change.toFixed(1)}%` : '';
+    const img = document.createElement('img');
+    img.className = 'ninja-icon';
+    img.src = 'https://poe.ninja' + divineItem.image;
+    img.alt = divineItem.name;
+    img.width = 24;
+    img.height = 24;
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+    row.appendChild(img);
 
-    const divText = divVal >= 1 ? `${divVal.toFixed(1)} div` : divVal > 0 ? `${(divVal * 100).toFixed(1)}% div` : '-';
-    const chaosText = chaos >= 1 ? `${Math.round(chaos)}c` : chaos > 0 ? `${chaos.toFixed(2)}c` : '-';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'ninja-name';
+    nameSpan.textContent = divineItem.name;
+    row.appendChild(nameSpan);
+
+    const rateSpan = document.createElement('span');
+    rateSpan.className = 'ninja-chaos';
+    rateSpan.textContent = '기준 통화';
+    row.appendChild(rateSpan);
+
+    container.appendChild(row);
+  }
+
+  lines.forEach(line => {
+    if (line.id === 'divine') return; // 위에서 처리함
+
+    const item = itemMap[line.id];
+    if (!item) return;
 
     const row = document.createElement('div');
     row.className = 'ninja-row';
 
-    if (line.icon) {
-      const img = document.createElement('img');
-      img.className = 'ninja-icon';
-      img.src = line.icon;
-      img.addEventListener('error', () => { img.style.display = 'none'; });
-      row.appendChild(img);
-    } else {
-      const placeholder = document.createElement('span');
-      placeholder.style.cssText = 'width:24px;display:inline-block';
-      row.appendChild(placeholder);
-    }
+    const img = document.createElement('img');
+    img.className = 'ninja-icon';
+    img.src = 'https://poe.ninja' + item.image;
+    img.alt = item.name;
+    img.width = 24;
+    img.height = 24;
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+    row.appendChild(img);
 
-    row.innerHTML += `<span class="ninja-name">${esc(name)}</span>
-      <span class="ninja-div">${divText}</span>
-      <span class="ninja-chaos">${chaosText}</span>
-      <span class="${changeClass}">${changeText}</span>`;
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'ninja-name';
+    nameSpan.textContent = item.name;
+    row.appendChild(nameSpan);
+
+    // 1 div 당 개수 계산: core.rates[id] 우선, 없으면 1/primaryValue
+    let perDiv = rates[line.id];
+    if (perDiv == null && line.primaryValue > 0) {
+      perDiv = +(1 / line.primaryValue).toFixed(1);
+    }
+    const rateSpan = document.createElement('span');
+    rateSpan.className = 'ninja-div';
+    rateSpan.textContent = perDiv != null ? `1div = ${perDiv}` : '-';
+    row.appendChild(rateSpan);
+
+    const change = line.sparkline?.totalChange ?? 0;
+    const changeClass = change >= 0 ? 'ninja-change-up' : 'ninja-change-down';
+    const changeSpan = document.createElement('span');
+    changeSpan.className = changeClass;
+    changeSpan.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
+    row.appendChild(changeSpan);
 
     container.appendChild(row);
   });
@@ -903,15 +938,11 @@ function renderNinjaRates(data) {
 function updateRateBadge(data) {
   const badge = document.getElementById('ninja-rate-badge');
   if (!badge) return;
-
-  const lines = data.lines || [];
-  const divine = lines.find(l => l.currencyTypeName === 'Divine Orb');
-  const exalted = lines.find(l => l.currencyTypeName === 'Exalted Orb');
-
-  if (divine && exalted && exalted.chaosEquivalent > 0) {
-    const rate = Math.round(divine.chaosEquivalent / exalted.chaosEquivalent);
-    badge.textContent = `1 div ≈ ${rate} ex`;
-  } else if (divine) {
-    badge.textContent = `1 div ≈ ${Math.round(divine.chaosEquivalent)} c`;
+  const exRate = data.core?.rates?.exalted;
+  if (exRate) {
+    badge.textContent = `1div = ${exRate}ex`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
   }
 }
