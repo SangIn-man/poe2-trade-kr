@@ -883,7 +883,7 @@ function renderNinjaRates(data) {
       const img = document.createElement('img');
       img.className = 'ninja-icon';
       img.src = line.icon;
-      img.onerror = () => { img.style.display = 'none'; };
+      img.addEventListener('error', () => { img.style.display = 'none'; });
       row.appendChild(img);
     } else {
       const placeholder = document.createElement('span');
