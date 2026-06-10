@@ -1033,6 +1033,11 @@ const NINJA_CATEGORIES = [
   { label: '에센스', type: 'Essences' },
   { label: '징조', type: 'Ritual' },
   { label: '환영 액체', type: 'Delirium' },
+  { label: '심연', type: 'Abyss' },
+  { label: '혈통', type: 'LineageSupportGems' },
+  { label: '탐험', type: 'Expedition' },
+  { label: '균열', type: 'Breach' },
+  { label: '베리시움', type: 'Verisium' },
 ];
 
 let currentNinjaCategory = 'Currency';
