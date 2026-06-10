@@ -50,6 +50,7 @@ function normalizeSavedFilter(filter) {
   if (!filter || typeof filter !== 'object') return filter;
   filter.reqLvlMin = 0;
   filter.priceMax = 0;
+  if (filter.savedPrice === undefined) filter.savedPrice = null;
   if (!filter.typeLine) filter.typeLine = '';
   if (filter.typeLineActive == null) filter.typeLineActive = true;
   filter.equipment = Array.isArray(filter.equipment) ? filter.equipment : [];
@@ -160,6 +161,11 @@ function render() {
   });
 }
 
+function currencyLabel(currency) {
+  const labels = { divine: '신성석', exalted: '숭고석', chaos: '혼돈석' };
+  return labels[currency] || currency || '';
+}
+
 function makeCard(f) {
   const wrap = document.createElement('div');
   wrap.className = 'filter-card';
@@ -228,6 +234,7 @@ function makeCard(f) {
         ${catLabel ? `<span class="badge badge-cat">${catLabel}</span>` : ''}
         ${f.rarity ? `<span class="badge ${rarityClass}">${f.rarity}</span>` : ''}
         ${f.typeLine ? `<span class="badge type-line-badge ${f.typeLineActive !== false ? 'active' : 'inactive'}" title="클릭해서 기반 유형 필터 토글">${esc(f.typeLine)}</span>` : ''}
+        ${f.savedPrice ? `<span class="saved-price-badge">저장 시 ${f.savedPrice.amount} ${currencyLabel(f.savedPrice.currency)}</span>` : ''}
         <button class="btn-delete-small" data-id="${f.id}" title="필터 삭제">×</button>
       </div>
     </div>
@@ -468,7 +475,12 @@ function buildQuery(f) {
   if (f.areaLvlMin) mf.area_level = { min: Number(f.areaLvlMin) };
   if (Object.keys(mf).length) q.query.filters.misc_filters = { filters: mf };
 
-  q.query.filters.trade_filters = { filters: { sale_type: { option: 'priced' } } };
+  q.query.filters.trade_filters = {
+    filters: {
+      sale_type: { option: 'priced' },
+      indexed: { option: 'any' }
+    }
+  };
 
   const equipmentFilters = {};
   (f.equipment || []).forEach(e => {
