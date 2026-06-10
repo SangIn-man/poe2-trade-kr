@@ -463,7 +463,7 @@ async function doSearch(id, openInNew = true) {
 }
 
 function buildQuery(f) {
-  const q = { query:{ filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
+  const q = { query:{ status:{ option:'securable' }, filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
   const tf = {};
   if (f.rarity)   tf.rarity   = { option: f.rarity };
   if (f.category) tf.category = { option: f.category };
