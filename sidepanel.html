@@ -341,7 +341,7 @@
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
-        <span id="ninja-rate-badge" class="ninja-rate-badge" onclick="switchTopTab('economy')" title="클릭하면 Economy 탭으로 이동">1 div = ... ex</span>
+        <span id="ninja-rate-badge" class="ninja-rate-badge" title="클릭하면 Economy 탭으로 이동">1 div = ... ex</span>
         <span class="league-badge" id="leagueBadge" title="클릭하여 리그 전환">Runes of Aldur</span>
       </div>
     </div>
@@ -350,8 +350,8 @@
 
   <!-- Top-level tab bar: TradeQuick / Economy -->
   <div class="top-tab-bar">
-    <button class="top-tab-btn active" id="top-tab-trade" onclick="switchTopTab('trade')">TradeQuick</button>
-    <button class="top-tab-btn" id="top-tab-economy" onclick="switchTopTab('economy')">Economy</button>
+    <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
+    <button class="top-tab-btn" id="top-tab-economy">Economy</button>
   </div>
 
   <!-- TradeQuick panel (existing content) -->
@@ -416,7 +416,7 @@
   <div class="top-panel" id="top-panel-economy">
     <div class="economy-header">
       <span>Currency Exchange Rates</span>
-      <button id="ninja-refresh-btn" onclick="loadNinjaRates()" title="새로고침">↻</button>
+      <button id="ninja-refresh-btn" title="새로고침">↻</button>
       <span id="ninja-last-updated" class="ninja-updated"></span>
     </div>
     <div id="ninja-currency-list" class="ninja-currency-list">

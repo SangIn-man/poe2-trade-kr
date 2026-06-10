@@ -100,6 +100,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (needsRender) render();
   });
 
+  // Top-tab buttons (replaced inline onclick to comply with MV3 CSP)
+  document.getElementById('top-tab-trade').addEventListener('click', () => switchTopTab('trade'));
+  document.getElementById('top-tab-economy').addEventListener('click', () => switchTopTab('economy'));
+  document.getElementById('ninja-rate-badge').addEventListener('click', () => switchTopTab('economy'));
+  document.getElementById('ninja-refresh-btn').addEventListener('click', () => loadNinjaRates());
+
   // 환율 배지 초기 로드 (백그라운드)
   setTimeout(() => loadNinjaRates(), 1000);
 });
@@ -850,13 +856,18 @@ function renderNinjaRates(data) {
   const updated = document.getElementById('ninja-last-updated');
   if (updated) updated.textContent = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' 기준';
 
-  const html = sorted.map(line => {
+  const container = document.getElementById('ninja-currency-list');
+  container.innerHTML = '';
+
+  if (!sorted.length) {
+    container.innerHTML = '<div class="ninja-loading">데이터 없음</div>';
+    return;
+  }
+
+  sorted.forEach(line => {
     const name = line.currencyTypeName || '';
     const chaos = line.chaosEquivalent || 0;
     const divVal = divChaos > 0 ? (chaos / divChaos) : 0;
-    const iconHtml = line.icon
-      ? `<img class="ninja-icon" src="${line.icon}" onerror="this.style.display='none'">`
-      : '<span style="width:24px;display:inline-block"></span>';
 
     const change = line.receiveSparkLine?.totalChange || 0;
     const changeClass = change >= 0 ? 'ninja-change-pos' : 'ninja-change-neg';
@@ -865,16 +876,28 @@ function renderNinjaRates(data) {
     const divText = divVal >= 1 ? `${divVal.toFixed(1)} div` : divVal > 0 ? `${(divVal * 100).toFixed(1)}% div` : '-';
     const chaosText = chaos >= 1 ? `${Math.round(chaos)}c` : chaos > 0 ? `${chaos.toFixed(2)}c` : '-';
 
-    return `<div class="ninja-row">
-      ${iconHtml}
-      <span class="ninja-name">${esc(name)}</span>
+    const row = document.createElement('div');
+    row.className = 'ninja-row';
+
+    if (line.icon) {
+      const img = document.createElement('img');
+      img.className = 'ninja-icon';
+      img.src = line.icon;
+      img.onerror = () => { img.style.display = 'none'; };
+      row.appendChild(img);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.style.cssText = 'width:24px;display:inline-block';
+      row.appendChild(placeholder);
+    }
+
+    row.innerHTML += `<span class="ninja-name">${esc(name)}</span>
       <span class="ninja-div">${divText}</span>
       <span class="ninja-chaos">${chaosText}</span>
-      <span class="${changeClass}">${changeText}</span>
-    </div>`;
-  }).join('');
+      <span class="${changeClass}">${changeText}</span>`;
 
-  document.getElementById('ninja-currency-list').innerHTML = html || '<div class="ninja-loading">데이터 없음</div>';
+    container.appendChild(row);
+  });
 }
 
 function updateRateBadge(data) {
