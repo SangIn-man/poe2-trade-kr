@@ -894,7 +894,9 @@ function renderNinjaRates(data) {
   const updated = document.getElementById('ninja-last-updated');
   if (updated) updated.textContent = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' 기준';
 
-  const items = data.core?.items || [];
+  // withItems=true 파라미터로 최상위 items 배열에 모든 카테고리 아이템 이미지 포함됨.
+  // 없는 경우 core.items(Currency 전용)로 폴백.
+  const items = data.items || data.core?.items || [];
   const lines = data.lines || [];
 
   if (lines.length === 0) {
