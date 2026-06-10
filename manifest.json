@@ -7,7 +7,8 @@
   "host_permissions": [
     "https://poe.game.daum.net/*",
     "https://www.pathofexile.com/*",
-    "https://poe.ninja/*"
+    "https://poe.ninja/*",
+    "https://web.poecdn.com/*"
   ],
   "action": {
     "default_title": "PoE2 Trade Quick",

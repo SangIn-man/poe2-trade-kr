@@ -844,13 +844,8 @@ async function loadNinjaRates() {
 }
 
 function loadNinjaImage(img, ninjaPath) {
-  chrome.runtime.sendMessage(
-    { type: 'FETCH_IMAGE', url: 'https://poe.ninja' + ninjaPath },
-    resp => {
-      if (resp?.ok) img.src = resp.dataUrl;
-      else img.style.display = 'none';
-    }
-  );
+  img.src = 'https://web.poecdn.com' + ninjaPath;
+  img.onerror = () => { img.style.display = 'none'; };
 }
 
 function renderNinjaRates(data) {
