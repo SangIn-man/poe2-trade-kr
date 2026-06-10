@@ -844,10 +844,13 @@ async function loadNinjaRates() {
 }
 
 function loadNinjaImage(img, ninjaPath) {
-  fetch('https://poe.ninja' + ninjaPath)
-    .then(r => r.blob())
-    .then(blob => { img.src = URL.createObjectURL(blob); })
-    .catch(() => { img.style.display = 'none'; });
+  chrome.runtime.sendMessage(
+    { type: 'FETCH_IMAGE', url: 'https://poe.ninja' + ninjaPath },
+    resp => {
+      if (resp?.ok) img.src = resp.dataUrl;
+      else img.style.display = 'none';
+    }
+  );
 }
 
 function renderNinjaRates(data) {
