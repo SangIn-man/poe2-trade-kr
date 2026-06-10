@@ -872,6 +872,7 @@ function renderNinjaRates(data) {
     const img = document.createElement('img');
     img.className = 'ninja-icon';
     img.src = 'https://poe.ninja' + divineItem.image;
+    img.referrerPolicy = 'no-referrer';
     img.alt = divineItem.name;
     img.width = 24;
     img.height = 24;
@@ -903,6 +904,7 @@ function renderNinjaRates(data) {
     const img = document.createElement('img');
     img.className = 'ninja-icon';
     img.src = 'https://poe.ninja' + item.image;
+    img.referrerPolicy = 'no-referrer';
     img.alt = item.name;
     img.width = 24;
     img.height = 24;
@@ -925,7 +927,7 @@ function renderNinjaRates(data) {
     row.appendChild(rateSpan);
 
     const change = line.sparkline?.totalChange ?? 0;
-    const changeClass = change >= 0 ? 'ninja-change-up' : 'ninja-change-down';
+    const changeClass = change >= 0 ? 'ninja-change-pos' : 'ninja-change-neg';
     const changeSpan = document.createElement('span');
     changeSpan.className = changeClass;
     changeSpan.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
