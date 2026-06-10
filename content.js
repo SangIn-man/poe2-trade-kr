@@ -648,9 +648,8 @@ async function handlePobCopy(row, btn) {
   btn.disabled = true;
 
   try {
-    const queryId = getQueryId() || '';
-    const apiUrl = `${getApiBase()}/fetch/${encodeURIComponent(itemId)}?query=${encodeURIComponent(queryId)}&realm=poe2`;
-    const res = await fetch(apiUrl, { credentials: 'include' });
+    const fetchUrl = `https://www.pathofexile.com/api/trade2/fetch/${itemId}?query=&realm=poe2`;
+    const res = await fetch(fetchUrl, { credentials: 'include' });
     if (!res.ok) throw new Error(`API 응답 오류 (HTTP ${res.status})`);
     const data = await res.json();
     const result = data?.result?.[0];
