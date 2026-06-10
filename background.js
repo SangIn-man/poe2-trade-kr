@@ -81,16 +81,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'FETCH_NINJA') {
     const league = msg.league || 'Standard';
-    fetch(`https://poe.ninja/api/data/currencyoverview?league=${encodeURIComponent(league)}&type=Currency&game=poe2`)
-      .then(r => r.json())
-      .then(data => sendResponse({ ok: true, data }))
-      .catch(() => {
-        // fallback: poe2 없이 시도
-        fetch(`https://poe.ninja/api/data/currencyoverview?league=${encodeURIComponent(league)}&type=Currency`)
-          .then(r => r.json())
+    const tryFetch = (url) => fetch(url).then(r => r.json());
+    tryFetch(`https://poe.ninja/api/data/currencyoverview?league=${encodeURIComponent(league)}&type=Currency`)
+      .then(data => {
+        if (data && Array.isArray(data.lines) && data.lines.length > 0) {
+          sendResponse({ ok: true, data });
+        } else {
+          return tryFetch(`https://poe.ninja/api/data/currencyoverview?league=Standard&type=Currency`)
+            .then(data2 => sendResponse({ ok: true, data: data2 }));
+        }
+      })
+      .catch(() =>
+        tryFetch(`https://poe.ninja/api/data/currencyoverview?league=Standard&type=Currency`)
           .then(data => sendResponse({ ok: true, data }))
-          .catch(e => sendResponse({ ok: false, error: e.message }));
-      });
+          .catch(e => sendResponse({ ok: false, error: e.message }))
+      );
     return true;
   }
 
