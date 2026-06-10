@@ -814,15 +814,9 @@ function simpleHash(str) {
 
 const NINJA_CATEGORIES = [
   { label: '커런시', type: 'Currency' },
-  { label: '조각', type: 'Fragment' },
-  { label: '젬', type: 'Gem' },
-  { label: '에센스', type: 'Essence' },
-  { label: '아이돌', type: 'Idol' },
-  { label: '룬', type: 'Rune' },
-  { label: '오멘', type: 'Omen' },
-  { label: '소울코어', type: 'SoulCore' },
-  { label: '감정', type: 'DistilledEmotion' },
-  { label: '촉매', type: 'Catalyst' },
+  { label: '에센스', type: 'Essences' },
+  { label: '징조', type: 'Ritual' },
+  { label: '환영 액체', type: 'Delirium' },
 ];
 
 let currentNinjaCategory = 'Currency';
@@ -895,91 +889,57 @@ function loadNinjaImage(img, ninjaPath) {
 function renderNinjaRates(data) {
   const container = document.getElementById('ninja-currency-list');
   if (!container) return;
-
   container.innerHTML = '';
-
-  const itemMap = {};
-  (data.core?.items || []).forEach(item => { itemMap[item.id] = item; });
-
-  const rates = data.core?.rates || {};
-  const lines = data.lines || [];
 
   const updated = document.getElementById('ninja-last-updated');
   if (updated) updated.textContent = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' 기준';
 
-  if (!lines.length) {
-    container.innerHTML = '<div class="ninja-empty">데이터 없음</div>';
+  const items = data.core?.items || [];
+  const lines = data.lines || [];
+
+  if (lines.length === 0) {
+    container.innerHTML = '<div style="padding:12px;color:#806040;text-align:center;">데이터 없음</div>';
     return;
   }
 
-  // divine 먼저 (기준 통화)
-  const divineItem = itemMap['divine'];
-  if (divineItem) {
-    const row = document.createElement('div');
-    row.className = 'ninja-row ninja-row-divine';
+  // id → {name, image} 맵 빌드
+  const itemMap = {};
+  items.forEach(item => { itemMap[item.id] = item; });
 
-    const img = document.createElement('img');
-    img.className = 'ninja-icon';
-    loadNinjaImage(img, divineItem.image);
-    img.alt = divineItem.name;
-    img.width = 24;
-    img.height = 24;
-    img.addEventListener('error', () => { img.style.display = 'none'; });
-    row.appendChild(img);
+  // primaryValue 내림차순 정렬
+  const sorted = [...lines].sort((a, b) => (b.primaryValue || 0) - (a.primaryValue || 0));
 
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'ninja-name';
-    nameSpan.textContent = divineItem.name;
-    row.appendChild(nameSpan);
+  sorted.forEach(line => {
+    const info = itemMap[line.id] || {};
+    const name = info.name || line.id;
+    const imageUrl = info.image ? 'https://web.poecdn.com' + info.image : null;
+    const value = line.primaryValue;
+    if (!value && value !== 0) return;
 
-    const rateSpan = document.createElement('span');
-    rateSpan.className = 'ninja-chaos';
-    rateSpan.textContent = '기준 통화';
-    row.appendChild(rateSpan);
-
-    container.appendChild(row);
-  }
-
-  lines.forEach(line => {
-    if (line.id === 'divine') return; // 위에서 처리함
-
-    const item = itemMap[line.id];
-    if (!item) return;
+    // 표시 형식: 값이 1 이상이면 "N/div", 미만이면 "1div = N개"
+    let priceText;
+    if (value >= 1) {
+      priceText = value.toFixed(value >= 10 ? 0 : 1) + '/div';
+    } else if (value > 0) {
+      priceText = '1div=' + Math.round(1 / value) + '개';
+    } else {
+      return;
+    }
 
     const row = document.createElement('div');
     row.className = 'ninja-row';
-
-    const img = document.createElement('img');
-    img.className = 'ninja-icon';
-    loadNinjaImage(img, item.image);
-    img.alt = item.name;
-    img.width = 24;
-    img.height = 24;
-    img.addEventListener('error', () => { img.style.display = 'none'; });
-    row.appendChild(img);
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'ninja-name';
-    nameSpan.textContent = item.name;
-    row.appendChild(nameSpan);
-
-    // 1 div 당 개수 계산: core.rates[id] 우선, 없으면 1/primaryValue
-    let perDiv = rates[line.id];
-    if (perDiv == null && line.primaryValue > 0) {
-      perDiv = +(1 / line.primaryValue).toFixed(1);
+    row.innerHTML = `
+      <img class="ninja-icon" src="" alt="">
+      <span class="ninja-name">${name}</span>
+      <span class="ninja-div">${priceText}</span>
+    `;
+    const img = row.querySelector('img');
+    if (imageUrl) {
+      img.src = imageUrl;
+      img.onerror = () => { img.style.display = 'none'; };
+    } else {
+      img.style.display = 'none';
     }
-    const rateSpan = document.createElement('span');
-    rateSpan.className = 'ninja-div';
-    rateSpan.textContent = perDiv != null ? `1div = ${perDiv}` : '-';
-    row.appendChild(rateSpan);
-
-    const change = line.sparkline?.totalChange ?? 0;
-    const changeClass = change >= 0 ? 'ninja-change-pos' : 'ninja-change-neg';
-    const changeSpan = document.createElement('span');
-    changeSpan.className = changeClass;
-    changeSpan.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
-    row.appendChild(changeSpan);
-
     container.appendChild(row);
   });
 }
