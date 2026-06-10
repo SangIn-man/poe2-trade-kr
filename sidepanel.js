@@ -106,6 +106,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('ninja-rate-badge').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('ninja-refresh-btn').addEventListener('click', () => loadNinjaRates());
 
+  // 카테고리 탭 초기 렌더
+  renderNinjaCategoryTabs();
+
   // 환율 배지 초기 로드 (백그라운드)
   setTimeout(() => loadNinjaRates(), 1000);
 });
@@ -809,37 +812,78 @@ function simpleHash(str) {
 
 // ── Economy tab ──────────────────────────────────────────────
 
+const NINJA_CATEGORIES = [
+  { label: '커런시', type: 'Currency' },
+  { label: '조각', type: 'Fragment' },
+  { label: '젬', type: 'Gem' },
+  { label: '에센스', type: 'Essence' },
+  { label: '아이돌', type: 'Idol' },
+  { label: '룬', type: 'Rune' },
+  { label: '오멘', type: 'Omen' },
+  { label: '소울코어', type: 'SoulCore' },
+  { label: '감정', type: 'DistilledEmotion' },
+  { label: '촉매', type: 'Catalyst' },
+];
+
+let currentNinjaCategory = 'Currency';
+
+function renderNinjaCategoryTabs() {
+  const container = document.getElementById('ninja-category-tabs');
+  if (!container) return;
+  container.innerHTML = '';
+  NINJA_CATEGORIES.forEach(cat => {
+    const btn = document.createElement('button');
+    btn.className = 'ninja-cat-btn' + (cat.type === currentNinjaCategory ? ' active' : '');
+    btn.textContent = cat.label;
+    btn.addEventListener('click', () => {
+      currentNinjaCategory = cat.type;
+      renderNinjaCategoryTabs();
+      refreshNinja();
+    });
+    container.appendChild(btn);
+  });
+}
+
 function switchTopTab(tabName) {
   document.querySelectorAll('.top-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.top-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`top-panel-${tabName}`).classList.add('active');
   document.getElementById(`top-tab-${tabName}`).classList.add('active');
-  if (tabName === 'economy') loadNinjaRates();
+  if (tabName === 'economy') { renderNinjaCategoryTabs(); loadNinjaRates(); }
 }
 
-let ninjaRatesCache = null;
-let ninjaLastFetch = 0;
+const ninjaCacheMap = {};   // key: `${league}::${itemType}` → { data, fetchedAt }
+
+function refreshNinja() {
+  // Force-reload current category (bypass cache)
+  const cacheKey = `${settings.league || 'Standard'}::${currentNinjaCategory}`;
+  delete ninjaCacheMap[cacheKey];
+  loadNinjaRates();
+}
 
 async function loadNinjaRates() {
+  const league = settings.league || 'Standard';
+  const itemType = currentNinjaCategory;
+  const cacheKey = `${league}::${itemType}`;
   const now = Date.now();
-  if (ninjaRatesCache && now - ninjaLastFetch < 5 * 60 * 1000) {
-    renderNinjaRates(ninjaRatesCache);
+
+  const cached = ninjaCacheMap[cacheKey];
+  if (cached && now - cached.fetchedAt < 5 * 60 * 1000) {
+    renderNinjaRates(cached.data);
+    if (itemType === 'Currency') updateRateBadge(cached.data);
     return;
   }
 
   document.getElementById('ninja-currency-list').innerHTML = '<div class="ninja-loading">로딩 중...</div>';
 
-  const league = settings.league || 'Standard';
-
-  chrome.runtime.sendMessage({ type: 'FETCH_NINJA', league }, res => {
+  chrome.runtime.sendMessage({ type: 'FETCH_NINJA', league, itemType }, res => {
     if (!res || !res.ok || !res.data) {
       document.getElementById('ninja-currency-list').innerHTML = '<div class="ninja-loading">데이터 로드 실패</div>';
       return;
     }
-    ninjaRatesCache = res.data;
-    ninjaLastFetch = Date.now();
+    ninjaCacheMap[cacheKey] = { data: res.data, fetchedAt: Date.now() };
     renderNinjaRates(res.data);
-    updateRateBadge(res.data);
+    if (itemType === 'Currency') updateRateBadge(res.data);
   });
 }
 

@@ -328,6 +328,34 @@
       line-height: 1.4;
     }
     #ninja-refresh-btn:hover { color: #c8a84a; border-color: #5a4a2a; }
+
+    .ninja-cat-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px 8px;
+      border-bottom: 1px solid #3a3020;
+    }
+    .ninja-cat-btn {
+      padding: 2px 8px;
+      font-size: 11px;
+      background: #2a2015;
+      color: #a09070;
+      border: 1px solid #3a3020;
+      border-radius: 3px;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+    .ninja-cat-btn:hover {
+      background: #3a3020;
+      color: #c8b88a;
+    }
+    .ninja-cat-btn.active {
+      background: #4a3a10;
+      color: #e8c84a;
+      border-color: #c8a84a;
+    }
   </style>
 </head>
 <body>
@@ -420,6 +448,7 @@
       <button id="ninja-refresh-btn" title="새로고침">↻</button>
       <span id="ninja-last-updated" class="ninja-updated"></span>
     </div>
+    <div id="ninja-category-tabs" class="ninja-cat-tabs"></div>
     <div id="ninja-currency-list" class="ninja-currency-list">
       <div class="ninja-loading">Economy 탭을 열면 자동으로 로딩됩니다</div>
     </div>
