@@ -843,6 +843,17 @@ async function loadNinjaRates() {
   });
 }
 
+function getIconUrl(ninjaImagePath) {
+  try {
+    const base64Part = ninjaImagePath.split('/')[3];
+    const decoded = JSON.parse(atob(base64Part));
+    const f = decoded[2].f;
+    return `https://web.poecdn.com/image/Art/${f}.png`;
+  } catch (e) {
+    return null;
+  }
+}
+
 function renderNinjaRates(data) {
   const container = document.getElementById('ninja-currency-list');
   if (!container) return;
@@ -871,8 +882,7 @@ function renderNinjaRates(data) {
 
     const img = document.createElement('img');
     img.className = 'ninja-icon';
-    img.src = 'https://poe.ninja' + divineItem.image;
-    img.referrerPolicy = 'no-referrer';
+    img.src = getIconUrl(divineItem.image) || '';
     img.alt = divineItem.name;
     img.width = 24;
     img.height = 24;
@@ -903,8 +913,7 @@ function renderNinjaRates(data) {
 
     const img = document.createElement('img');
     img.className = 'ninja-icon';
-    img.src = 'https://poe.ninja' + item.image;
-    img.referrerPolicy = 'no-referrer';
+    img.src = getIconUrl(item.image) || '';
     img.alt = item.name;
     img.width = 24;
     img.height = 24;
