@@ -356,6 +356,26 @@
       color: #e8c84a;
       border-color: #c8a84a;
     }
+    .ninja-search-wrap {
+      padding: 6px 8px 4px;
+    }
+    .ninja-search {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px 8px;
+      background: #1a1508;
+      border: 1px solid #3a3020;
+      border-radius: 3px;
+      color: #c8b88a;
+      font-size: 12px;
+      outline: none;
+    }
+    .ninja-search::placeholder {
+      color: #605040;
+    }
+    .ninja-search:focus {
+      border-color: #c8a84a;
+    }
   </style>
 </head>
 <body>
@@ -449,6 +469,9 @@
       <span id="ninja-last-updated" class="ninja-updated"></span>
     </div>
     <div id="ninja-category-tabs" class="ninja-cat-tabs"></div>
+    <div class="ninja-search-wrap">
+      <input type="text" id="ninja-search" class="ninja-search" placeholder="아이템 검색...">
+    </div>
     <div id="ninja-currency-list" class="ninja-currency-list">
       <div class="ninja-loading">Economy 탭을 열면 자동으로 로딩됩니다</div>
     </div>

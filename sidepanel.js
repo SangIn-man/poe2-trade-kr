@@ -309,6 +309,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 카테고리 탭 초기 렌더
   renderNinjaCategoryTabs();
 
+  // Economy 탭 검색창 이벤트
+  const ninjaSearchEl = document.getElementById('ninja-search');
+  if (ninjaSearchEl) {
+    ninjaSearchEl.addEventListener('input', applyNinjaSearch);
+  }
+
   // 환율 배지 초기 로드 (백그라운드)
   setTimeout(() => loadNinjaRates(), 1000);
 });
@@ -1012,6 +1018,16 @@ function simpleHash(str) {
 
 // ── Economy tab ──────────────────────────────────────────────
 
+function applyNinjaSearch() {
+  const query = (document.getElementById('ninja-search')?.value || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('#ninja-currency-list .ninja-row');
+  rows.forEach(row => {
+    const nameEl = row.querySelector('.ninja-name');
+    const text = (nameEl?.textContent || '').toLowerCase();
+    row.style.display = (!query || text.includes(query)) ? '' : 'none';
+  });
+}
+
 const NINJA_CATEGORIES = [
   { label: '커런시', type: 'Currency' },
   { label: '에센스', type: 'Essences' },
@@ -1031,6 +1047,8 @@ function renderNinjaCategoryTabs() {
     btn.textContent = cat.label;
     btn.addEventListener('click', () => {
       currentNinjaCategory = cat.type;
+      const searchEl = document.getElementById('ninja-search');
+      if (searchEl) searchEl.value = '';
       renderNinjaCategoryTabs();
       refreshNinja();
     });
@@ -1144,6 +1162,9 @@ function renderNinjaRates(data) {
     }
     container.appendChild(row);
   });
+
+  // 렌더 완료 후 현재 검색어로 즉시 필터링
+  applyNinjaSearch();
 }
 
 function updateRateBadge(data) {
