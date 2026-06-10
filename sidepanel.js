@@ -475,12 +475,7 @@ function buildQuery(f) {
   if (f.areaLvlMin) mf.area_level = { min: Number(f.areaLvlMin) };
   if (Object.keys(mf).length) q.query.filters.misc_filters = { filters: mf };
 
-  q.query.filters.trade_filters = {
-    filters: {
-      sale_type: { option: 'priced' },
-      indexed: { option: 'any' }
-    }
-  };
+  q.query.filters.trade_filters = { filters: { sale_type: { option: 'priced' } } };
 
   const equipmentFilters = {};
   (f.equipment || []).forEach(e => {
