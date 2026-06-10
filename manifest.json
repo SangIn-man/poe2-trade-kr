@@ -6,7 +6,8 @@
   "permissions": ["storage", "tabs", "sidePanel", "clipboardWrite"],
   "host_permissions": [
     "https://poe.game.daum.net/*",
-    "https://www.pathofexile.com/*"
+    "https://www.pathofexile.com/*",
+    "https://poe.ninja/*"
   ],
   "action": {
     "default_title": "PoE2 Trade Quick",

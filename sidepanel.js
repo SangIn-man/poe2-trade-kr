@@ -99,6 +99,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (needsRender) render();
   });
+
+  // 환율 배지 초기 로드 (백그라운드)
+  setTimeout(() => loadNinjaRates(), 1000);
 });
 
 async function loadData() {
@@ -260,7 +263,7 @@ function makeCard(f) {
         ${catLabel ? `<span class="badge badge-cat">${catLabel}</span>` : ''}
         ${f.rarity ? `<span class="badge ${rarityClass}">${f.rarity}</span>` : ''}
         ${f.typeLine ? `<span class="badge type-line-badge ${f.typeLineActive !== false ? 'active' : 'inactive'}" title="클릭해서 기반 유형 필터 토글">${esc(f.typeLine)}</span>` : ''}
-        ${f.savedPrice ? `<span class="saved-price-badge">저장 시 ${f.savedPrice.amount} ${currencyLabel(f.savedPrice.currency)}</span>` : ''}
+        ${f.savedPrice ? `<span class="saved-price-badge">${f.savedPrice.amount} ${currencyLabel(f.savedPrice.currency)}</span>` : ''}
         <button class="btn-delete-small" data-id="${f.id}" title="필터 삭제">×</button>
       </div>
     </div>
@@ -796,4 +799,96 @@ function simpleHash(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
   return Math.abs(h).toString(36);
+}
+
+// ── Economy tab ──────────────────────────────────────────────
+
+function switchTopTab(tabName) {
+  document.querySelectorAll('.top-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.top-tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`top-panel-${tabName}`).classList.add('active');
+  document.getElementById(`top-tab-${tabName}`).classList.add('active');
+  if (tabName === 'economy') loadNinjaRates();
+}
+
+let ninjaRatesCache = null;
+let ninjaLastFetch = 0;
+
+async function loadNinjaRates() {
+  const now = Date.now();
+  if (ninjaRatesCache && now - ninjaLastFetch < 5 * 60 * 1000) {
+    renderNinjaRates(ninjaRatesCache);
+    return;
+  }
+
+  document.getElementById('ninja-currency-list').innerHTML = '<div class="ninja-loading">로딩 중...</div>';
+
+  const league = settings.league || 'Standard';
+
+  chrome.runtime.sendMessage({ type: 'FETCH_NINJA', league }, res => {
+    if (!res || !res.ok || !res.data) {
+      document.getElementById('ninja-currency-list').innerHTML = '<div class="ninja-loading">데이터 로드 실패</div>';
+      return;
+    }
+    ninjaRatesCache = res.data;
+    ninjaLastFetch = Date.now();
+    renderNinjaRates(res.data);
+    updateRateBadge(res.data);
+  });
+}
+
+function renderNinjaRates(data) {
+  const lines = data.lines || [];
+
+  // Divine Orb 기준값 찾기
+  const divine = lines.find(l => l.currencyTypeName === 'Divine Orb');
+  const divChaos = divine ? divine.chaosEquivalent : 1;
+
+  // chaosEquivalent 기준 내림차순 정렬 (가치 높은 것부터)
+  const sorted = [...lines].sort((a, b) => (b.chaosEquivalent || 0) - (a.chaosEquivalent || 0));
+
+  const updated = document.getElementById('ninja-last-updated');
+  if (updated) updated.textContent = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) + ' 기준';
+
+  const html = sorted.map(line => {
+    const name = line.currencyTypeName || '';
+    const chaos = line.chaosEquivalent || 0;
+    const divVal = divChaos > 0 ? (chaos / divChaos) : 0;
+    const iconHtml = line.icon
+      ? `<img class="ninja-icon" src="${line.icon}" onerror="this.style.display='none'">`
+      : '<span style="width:24px;display:inline-block"></span>';
+
+    const change = line.receiveSparkLine?.totalChange || 0;
+    const changeClass = change >= 0 ? 'ninja-change-pos' : 'ninja-change-neg';
+    const changeText = change !== 0 ? `${change > 0 ? '+' : ''}${change.toFixed(1)}%` : '';
+
+    const divText = divVal >= 1 ? `${divVal.toFixed(1)} div` : divVal > 0 ? `${(divVal * 100).toFixed(1)}% div` : '-';
+    const chaosText = chaos >= 1 ? `${Math.round(chaos)}c` : chaos > 0 ? `${chaos.toFixed(2)}c` : '-';
+
+    return `<div class="ninja-row">
+      ${iconHtml}
+      <span class="ninja-name">${esc(name)}</span>
+      <span class="ninja-div">${divText}</span>
+      <span class="ninja-chaos">${chaosText}</span>
+      <span class="${changeClass}">${changeText}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('ninja-currency-list').innerHTML = html || '<div class="ninja-loading">데이터 없음</div>';
+}
+
+function updateRateBadge(data) {
+  const badge = document.getElementById('ninja-rate-badge');
+  if (!badge) return;
+
+  const lines = data.lines || [];
+  const divine = lines.find(l => l.currencyTypeName === 'Divine Orb');
+  const exalted = lines.find(l => l.currencyTypeName === 'Exalted Orb');
+
+  if (divine && exalted && exalted.chaosEquivalent > 0) {
+    const rate = Math.round(divine.chaosEquivalent / exalted.chaosEquivalent);
+    badge.textContent = `1 div ≈ ${rate} ex`;
+  } else if (divine) {
+    badge.textContent = `1 div ≈ ${Math.round(divine.chaosEquivalent)} c`;
+  }
 }

@@ -79,6 +79,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'FETCH_NINJA') {
+    const league = msg.league || 'Standard';
+    fetch(`https://poe.ninja/api/data/currencyoverview?league=${encodeURIComponent(league)}&type=Currency&game=poe2`)
+      .then(r => r.json())
+      .then(data => sendResponse({ ok: true, data }))
+      .catch(() => {
+        // fallback: poe2 없이 시도
+        fetch(`https://poe.ninja/api/data/currencyoverview?league=${encodeURIComponent(league)}&type=Currency`)
+          .then(r => r.json())
+          .then(data => sendResponse({ ok: true, data }))
+          .catch(e => sendResponse({ ok: false, error: e.message }));
+      });
+    return true;
+  }
+
   if (msg.type === 'FETCH_POB') {
     fetch(`https://www.pathofexile.com/api/trade2/fetch/${msg.itemId}?query=&realm=poe2`)
       .then(r => r.json())

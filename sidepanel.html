@@ -229,6 +229,104 @@
     .type-line-badge.active   { background:#1e2a10; border-color:#3a5018; color:#ffd060; }
     .type-line-badge.inactive { background:#1a1a1a; border-color:#333; color:#666; text-decoration:line-through; }
     .type-line-badge:hover { opacity:0.75; }
+
+    /* 저장 시 가격 참고 뱃지 */
+    .saved-price-badge { display:inline-block; font-size:10px; font-style:italic; color:#7a6a4a; background:rgba(60,40,10,0.4); border:1px solid #3a2e1a; border-radius:3px; padding:1px 5px; opacity:0.8; white-space:nowrap; }
+
+    /* Top-level panel tabs (TradeQuick / Economy) */
+    .top-tab-bar {
+      display: flex;
+      gap: 2px;
+      padding: 4px 8px 0;
+      background: #1a1208;
+      border-bottom: 1px solid #3a2e1a;
+      flex-shrink: 0;
+    }
+    .top-tab-btn {
+      flex: 1;
+      padding: 5px 8px;
+      background: transparent;
+      border: 1px solid #3a2e1a;
+      border-bottom: none;
+      color: #8a7a5a;
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 3px 3px 0 0;
+      font-family: inherit;
+    }
+    .top-tab-btn.active {
+      background: #2a1e0a;
+      color: #c8a84a;
+      border-color: #5a4a2a;
+    }
+    .ninja-rate-badge {
+      display: inline-block;
+      font-size: 11px;
+      color: #90c88a;
+      background: rgba(20,50,20,0.5);
+      border: 1px solid #2a5a2a;
+      border-radius: 3px;
+      padding: 1px 6px;
+      cursor: pointer;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+    .ninja-rate-badge:hover { background: rgba(30,70,30,0.6); }
+
+    /* Top-level panels */
+    .top-panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .top-panel.active { display: flex; }
+
+    /* Economy panel */
+    .ninja-currency-list {
+      padding: 6px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .ninja-currency-list::-webkit-scrollbar { width: 4px; }
+    .ninja-currency-list::-webkit-scrollbar-thumb { background: #3a2a10; border-radius: 2px; }
+    .ninja-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      border-bottom: 1px solid #2a2010;
+      font-size: 12px;
+    }
+    .ninja-row:hover { background: rgba(255,255,255,0.04); }
+    .ninja-icon {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+    .ninja-name { flex: 1; color: #c8b88a; }
+    .ninja-div { color: #c8a84a; font-weight: bold; min-width: 60px; text-align: right; }
+    .ninja-chaos { color: #8a8aaa; font-size: 11px; min-width: 60px; text-align: right; }
+    .ninja-change-pos { color: #6a8a6a; font-size: 10px; min-width: 36px; text-align: right; }
+    .ninja-change-neg { color: #8a5050; font-size: 10px; min-width: 36px; text-align: right; }
+    .ninja-loading { text-align: center; color: #7a6a4a; padding: 20px; }
+    .ninja-updated { font-size: 10px; color: #5a4a2a; margin-left: auto; }
+    .economy-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      color: #8a7a5a;
+      border-bottom: 1px solid #2a2010;
+      flex-shrink: 0;
+    }
+    #ninja-refresh-btn {
+      background: none;
+      border: 1px solid #3a2e1a;
+      color: #8a7a5a;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0 4px;
+      line-height: 1.4;
+    }
+    #ninja-refresh-btn:hover { color: #c8a84a; border-color: #5a4a2a; }
   </style>
 </head>
 <body>
@@ -242,63 +340,87 @@
           <p>한국 거래소 즐겨찾기</p>
         </div>
       </div>
-      <span class="league-badge" id="leagueBadge" title="클릭하여 리그 전환">Runes of Aldur</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span id="ninja-rate-badge" class="ninja-rate-badge" onclick="switchTopTab('economy')" title="클릭하면 Economy 탭으로 이동">1 div = ... ex</span>
+        <span class="league-badge" id="leagueBadge" title="클릭하여 리그 전환">Runes of Aldur</span>
+      </div>
     </div>
     <button class="btn-go-trade" id="btnGoTrade">🌐 한국 거래소 열기</button>
   </div>
 
-  <div class="hint-bar">
-    <span class="star-icon">⭐</span>
-    <span>거래소에서 아이템의 <strong>즐겨찾기</strong> 버튼을 눌러 필터를 저장하세요</span>
+  <!-- Top-level tab bar: TradeQuick / Economy -->
+  <div class="top-tab-bar">
+    <button class="top-tab-btn active" id="top-tab-trade" onclick="switchTopTab('trade')">TradeQuick</button>
+    <button class="top-tab-btn" id="top-tab-economy" onclick="switchTopTab('economy')">Economy</button>
   </div>
 
-  <div class="tabs">
-    <div class="tab active" data-tab="filters">⚔ 저장된 필터</div>
-    <div class="tab" data-tab="settings">⚙ 설정</div>
-  </div>
-
-  <div class="scroll-area">
-    <div class="tab-content active" id="tab-filters">
-      <div class="filter-list" id="filterList"></div>
+  <!-- TradeQuick panel (existing content) -->
+  <div class="top-panel active" id="top-panel-trade">
+    <div class="hint-bar">
+      <span class="star-icon">⭐</span>
+      <span>거래소에서 아이템의 <strong>즐겨찾기</strong> 버튼을 눌러 필터를 저장하세요</span>
     </div>
 
-    <div class="tab-content" id="tab-settings">
-      <div class="settings-block">
-        <h3>거래소 설정</h3>
-        <div class="setting-row">
-          <label>리그</label>
-          <input type="text" id="sLeague" list="leagueOptions" value="Runes of Aldur" placeholder="리그 이름 입력" autocomplete="off"/>
-          <datalist id="leagueOptions">
-            <option value="Runes of Aldur"></option>
-            <option value="HC Runes of Aldur"></option>
-            <option value="Standard"></option>
-            <option value="Hardcore"></option>
-          </datalist>
+    <div class="tabs">
+      <div class="tab active" data-tab="filters">⚔ 저장된 필터</div>
+      <div class="tab" data-tab="settings">⚙ 설정</div>
+    </div>
+
+    <div class="scroll-area">
+      <div class="tab-content active" id="tab-filters">
+        <div class="filter-list" id="filterList"></div>
+      </div>
+
+      <div class="tab-content" id="tab-settings">
+        <div class="settings-block">
+          <h3>거래소 설정</h3>
+          <div class="setting-row">
+            <label>리그</label>
+            <input type="text" id="sLeague" list="leagueOptions" value="Runes of Aldur" placeholder="리그 이름 입력" autocomplete="off"/>
+            <datalist id="leagueOptions">
+              <option value="Runes of Aldur"></option>
+              <option value="HC Runes of Aldur"></option>
+              <option value="Standard"></option>
+              <option value="Hardcore"></option>
+            </datalist>
+          </div>
+          <div class="setting-row">
+            <label>결과 표시 수</label>
+            <select id="sCount">
+              <option value="5">5개</option>
+              <option value="10" selected>10개</option>
+              <option value="20">20개</option>
+            </select>
+          </div>
         </div>
-        <div class="setting-row">
-          <label>결과 표시 수</label>
-          <select id="sCount">
-            <option value="5">5개</option>
-            <option value="10" selected>10개</option>
-            <option value="20">20개</option>
-          </select>
+        <div class="settings-block">
+          <h3>데이터 관리</h3>
+          <button class="btn-full btn-gold" id="btnExport">📤 필터 내보내기</button>
+          <button class="btn-full btn-muted" id="btnImportTrigger">📥 필터 가져오기</button>
+          <input type="file" id="fileImport" accept=".json" style="display:none"/>
+          <button class="btn-full btn-muted" id="btnExportDebug">🧾 디버그 로그 TXT 저장</button>
+          <button class="btn-full btn-muted" id="btnClearDebug">🧹 디버그 로그 비우기</button>
+          <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
+        </div>
+        <div class="notice">
+          🇰🇷 <strong>poe.game.daum.net</strong> 한국 거래소를 사용합니다.<br/>
+          거래소에서 아이템을 검색 후 <strong>⭐ 즐겨찾기</strong> 버튼을 클릭하면<br/>
+          자동으로 필터가 저장됩니다.<br/>
+          <a href="https://poe.game.daum.net/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
         </div>
       </div>
-      <div class="settings-block">
-        <h3>데이터 관리</h3>
-        <button class="btn-full btn-gold" id="btnExport">📤 필터 내보내기</button>
-        <button class="btn-full btn-muted" id="btnImportTrigger">📥 필터 가져오기</button>
-        <input type="file" id="fileImport" accept=".json" style="display:none"/>
-        <button class="btn-full btn-muted" id="btnExportDebug">🧾 디버그 로그 TXT 저장</button>
-        <button class="btn-full btn-muted" id="btnClearDebug">🧹 디버그 로그 비우기</button>
-        <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
-      </div>
-      <div class="notice">
-        🇰🇷 <strong>poe.game.daum.net</strong> 한국 거래소를 사용합니다.<br/>
-        거래소에서 아이템을 검색 후 <strong>⭐ 즐겨찾기</strong> 버튼을 클릭하면<br/>
-        자동으로 필터가 저장됩니다.<br/>
-        <a href="https://poe.game.daum.net/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
-      </div>
+    </div>
+  </div>
+
+  <!-- Economy panel -->
+  <div class="top-panel" id="top-panel-economy">
+    <div class="economy-header">
+      <span>Currency Exchange Rates</span>
+      <button id="ninja-refresh-btn" onclick="loadNinjaRates()" title="새로고침">↻</button>
+      <span id="ninja-last-updated" class="ninja-updated"></span>
+    </div>
+    <div id="ninja-currency-list" class="ninja-currency-list">
+      <div class="ninja-loading">Economy 탭을 열면 자동으로 로딩됩니다</div>
     </div>
   </div>
 </div>
