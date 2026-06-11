@@ -359,7 +359,148 @@ const ITEM_NAMES_KO = {
   "Veridical Starlit Ore": "진실한 별빛 광석",
   "Verisium": "베리시움",
   "Vorana's Crest of the Scythe": "보라나의 낫 문양",
-  "Warding Starlit Ore": "수호하는 별빛 광석"
+  "Warding Starlit Ore": "수호하는 별빛 광석",
+  "Adept Rune": "숙달 룬",
+  "Aldur's Legacy": "알두르의 유산",
+  "Ancient Rune of Animosity": "적대감의 고대 룬",
+  "Ancient Rune of Control": "통제의 고대 룬",
+  "Ancient Rune of Decay": "부패의 고대 룬",
+  "Ancient Rune of Detonation": "기폭의 고대 룬",
+  "Ancient Rune of Discovery": "발견의 고대 룬",
+  "Ancient Rune of Dueling": "결투의 고대 룬",
+  "Ancient Rune of Prowess": "기량의 고대 룬",
+  "Ancient Rune of Retaliation": "보복의 고대 룬",
+  "Ancient Rune of Shattering": "산산조각의 고대 룬",
+  "Ancient Rune of Splinters": "파편의 고대 룬",
+  "Ancient Rune of the Horde": "떼의 고대 룬",
+  "Ancient Rune of the Titan": "거신의 고대 룬",
+  "Ancient Rune of Witchcraft": "마술의 고대 룬",
+  "Astrid's Creativity": "아스트리드의 창의성",
+  "Betrayal of Aldur": "알두르의 배신",
+  "Body Rune": "육신 룬",
+  "Breath of Aldur": "알두르의 숨결",
+  "Cadigan's Epiphany": "캐디건의 통찰",
+  "Charging Rune": "충전 룬",
+  "Countess Seske's Rune of Archery": "세스케 백작 부인의 궁술의 룬",
+  "Courtesan Mannan's Rune of Cruelty": "매춘부 마난의 잔혹의 룬",
+  "Craiceann's Rune of Recovery": "크라칸의 회복의 룬",
+  "Craiceann's Rune of Warding": "크라칸의 수호의 룬",
+  "Desert Rune": "사막 룬",
+  "Farrul's Rune of Grace": "페룰의 은총의 룬",
+  "Farrul's Rune of the Chase": "페룰의 추격의 룬",
+  "Farrul's Rune of the Hunt": "페룰의 사냥의 룬",
+  "Fenumus' Rune of Agony": "페누무스의 괴로움의 룬",
+  "Fenumus' Rune of Draining": "페누무스의 고갈의 룬",
+  "Fenumus' Rune of Spinning": "페누무스의 회전의 룬",
+  "Glacial Rune": "빙하 룬",
+  "Greater Adept Rune": "상위 숙달 룬",
+  "Greater Body Rune": "상위 육신 룬",
+  "Greater Charging Rune": "상위 충전 룬",
+  "Greater Desert Rune": "상위 사막 룬",
+  "Greater Glacial Rune": "상위 빙하 룬",
+  "Greater Inspiration Rune": "상위 영감 룬",
+  "Greater Iron Rune": "상위 철 룬",
+  "Greater Mind Rune": "상위 정신 룬",
+  "Greater Rebirth Rune": "상위 부활 룬",
+  "Greater Resolve Rune": "상위 투지 룬",
+  "Greater Robust Rune": "상위 왕성 룬",
+  "Greater Rune of Alacrity": "기민성의 상위 룬",
+  "Greater Rune of Leadership": "통솔의 상위 룬",
+  "Greater Rune of Nobility": "고결성의 상위 룬",
+  "Greater Rune of Tithing": "십일조의 상위 룬",
+  "Greater Stone Rune": "상위 돌 룬",
+  "Greater Storm Rune": "상위 폭풍 룬",
+  "Greater Vision Rune": "상위 환영 룬",
+  "Greater Ward Rune": "상위 수호 룬",
+  "Hedgewitch Assandra's Rune of Wisdom": "산울마녀 아산드라의 지혜의 룬",
+  "Inspiration Rune": "영감 룬",
+  "Ire of Aldur": "알두르의 노여움",
+  "Iron Rune": "철 룬",
+  "Katla's Gloom": "카틀라의 순흑",
+  "Kolr's Hunt": "콜르의 사냥",
+  "Lady Hestra's Rune of Winter": "헤스트라 부인의 겨울의 룬",
+  "Lesser Adept Rune": "하위 숙달 룬",
+  "Lesser Body Rune": "하위 육신 룬",
+  "Lesser Desert Rune": "하위 사막 룬",
+  "Lesser Glacial Rune": "하위 빙하 룬",
+  "Lesser Inspiration Rune": "하위 영감 룬",
+  "Lesser Iron Rune": "하위 철 룬",
+  "Lesser Mind Rune": "하위 정신 룬",
+  "Lesser Rebirth Rune": "하위 부활 룬",
+  "Lesser Resolve Rune": "하위 투지 룬",
+  "Lesser Robust Rune": "하위 왕성 룬",
+  "Lesser Stone Rune": "하위 돌 룬",
+  "Lesser Storm Rune": "하위 폭풍 룬",
+  "Lesser Vision Rune": "하위 환영 룬",
+  "Lesser Ward Rune": "하위 수호 룬",
+  "Masterwork Rune": "일품 룬",
+  "Medved's Tending": "메드베드의 보살핌",
+  "Mind Rune": "정신 룬",
+  "Passion of Aldur": "알두르의 열정",
+  "Perfect Adept Rune": "완벽한 숙달 룬",
+  "Perfect Body Rune": "완벽한 육신 룬",
+  "Perfect Charging Rune": "완벽한 충전 룬",
+  "Perfect Desert Rune": "완벽한 사막 룬",
+  "Perfect Glacial Rune": "완벽한 빙하 룬",
+  "Perfect Inspiration Rune": "완벽한 영감 룬",
+  "Perfect Iron Rune": "완벽한 철 룬",
+  "Perfect Mind Rune": "완벽한 정신 룬",
+  "Perfect Rebirth Rune": "완벽한 부활 룬",
+  "Perfect Resolve Rune": "완벽한 투지 룬",
+  "Perfect Robust Rune": "완벽한 왕성한 룬",
+  "Perfect Stone Rune": "완벽한 돌 룬",
+  "Perfect Storm Rune": "완벽한 폭풍 룬",
+  "Perfect Vision Rune": "완벽한 환영 룬",
+  "Perfect Ward Rune": "완벽한 수호 룬",
+  "Rebirth Rune": "부활 룬",
+  "Resolve Rune": "투지 룬",
+  "Robust Rune": "왕성한 룬",
+  "Rune of Accumulation": "축적의 룬",
+  "Rune of Acrobatics": "곡예의 룬",
+  "Rune of Confrontation": "대적의 룬",
+  "Rune of Consistency": "일관성의 룬",
+  "Rune of Culmination": "고조의 룬",
+  "Rune of Foundations": "기초의 룬",
+  "Rune of Reach": "범위의 룬",
+  "Rune of Renown": "명성의 룬",
+  "Rune of the Blossom": "만개의 룬",
+  "Rune of the Hunt": "사냥의 룬",
+  "Rune of the Prism": "분광기의 룬",
+  "Rune of Vital Flame": "활력 불길의 룬",
+  "Rune of Vitality": "활력의 룬",
+  "Saqawal's Rune of Erosion": "사카왈의 침식의 룬",
+  "Saqawal's Rune of Memory": "사카왈의 기억의 룬",
+  "Saqawal's Rune of the Sky": "사카왈의 하늘의 룬",
+  "Serle's Triumph": "세를의 승리",
+  "Stone Rune": "돌 룬",
+  "Storm Rune": "폭풍 룬",
+  "Thane Girt's Rune of Wildness": "테인 거트의 야생의 룬",
+  "Thane Grannell's Rune of Mastery": "테인 그라넬의 숙련의 룬",
+  "Thane Leld's Rune of Spring": "테인 렐드의 봄의 룬",
+  "Thane Myrk's Rune of Summer": "테인 머크의 여름의 룬",
+  "The Greatwolf's Rune of Claws": "위대한 늑대의 발톱의 룬",
+  "The Greatwolf's Rune of Willpower": "위대한 늑대의 의지의 룬",
+  "Thrud's Might": "스루드의 완력",
+  "Uhtred's Sidereus": "우트레드의 성좌",
+  "Vision Rune": "환영 룬",
+  "Vorana's Carnage": "보라나의 학살",
+  "Ward Rune": "수호 룬",
+  "Warding Rune of Annihilation": "전멸의 수호하는 룬",
+  "Warding Rune of Armature": "골조의 수호하는 룬",
+  "Warding Rune of Bodyguards": "호위병의 수호하는 룬",
+  "Warding Rune of Courage": "용기의 수호하는 룬",
+  "Warding Rune of Desperation": "필사의 수호하는 룬",
+  "Warding Rune of Disintegration": "분해의 수호하는 룬",
+  "Warding Rune of Equinox": "지점의 수호하는 룬",
+  "Warding Rune of Glancing": "튕김의 수호하는 룬",
+  "Warding Rune of Heart": "심장의 수호하는 룬",
+  "Warding Rune of Hollowing": "공동화의 수호하는 룬",
+  "Warding Rune of Obsession": "집착의 수호하는 룬",
+  "Warding Rune of Protection": "보호의 수호하는 룬",
+  "Warding Rune of Reinforcement": "보강의 수호하는 룬",
+  "Warding Rune of Salvaging": "분해의 수호하는 룬",
+  "Warding Rune of Stability": "안정성의 수호하는 룬",
+  "Warding Rune of Symbiosis": "공생의 수호하는 룬"
 };
 
 const CATEGORY_PREFIXES = ['explicit','implicit','desecrated','enchant','fractured','crafted','rune'];
@@ -1200,9 +1341,11 @@ const NINJA_CATEGORIES = [
   { label: '탐험', type: 'Expedition' },
   { label: '균열', type: 'Breach' },
   { label: '베리시움', type: 'Verisium' },
+  { label: '룬', type: 'Runes' },
 ];
 
 let currentNinjaCategory = 'Currency';
+let currentExRate = null;  // 1div = N ex (Currency 탭 로드 시 갱신)
 
 function renderNinjaCategoryTabs() {
   const container = document.getElementById('ninja-category-tabs');
@@ -1303,12 +1446,17 @@ function renderNinjaRates(data) {
     const value = line.primaryValue;
     if (!value && value !== 0) return;
 
-    // 표시 형식: 값이 1 이상이면 "N/div", 미만이면 "1div = N개"
+    // 표시 형식: 1 이상이면 "N/div", 미만이면 ex 환산 (환율 없으면 "1div=N개" 폴백)
     let priceText;
     if (value >= 1) {
       priceText = value.toFixed(value >= 10 ? 0 : 1) + '/div';
     } else if (value > 0) {
-      priceText = '1div=' + Math.round(1 / value) + '개';
+      if (currentExRate) {
+        const exVal = value * currentExRate;
+        priceText = (exVal >= 10 ? Math.round(exVal) : exVal.toFixed(1)) + 'ex';
+      } else {
+        priceText = '1div=' + Math.round(1 / value) + '개';
+      }
     } else {
       return;
     }
@@ -1339,6 +1487,7 @@ function updateRateBadge(data) {
   if (!badge) return;
   const exRate = data.core?.rates?.exalted;
   if (exRate) {
+    currentExRate = exRate;
     badge.textContent = `1div = ${exRate}ex`;
     badge.style.display = '';
   } else {
