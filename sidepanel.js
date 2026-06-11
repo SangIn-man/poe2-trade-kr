@@ -1,5 +1,27 @@
 'use strict';
 
+const EXPEDITION_DATA = [
+  { category: '추천', rumor: '얼음장 처럼 추운 곳', region: '차디찬 절벽', effect: '다양한 제단 효과로 보상 강화, 다만 면역 제단 주의, 부활 무한' },
+  { category: '추천', rumor: '음산하고 끔찍한 곳', region: '불모의 신호섬', effect: '금고 다수 존재, 부활 무한' },
+  { category: '추천', rumor: '따뜻하지만 위험하다', region: '우거진 섬', effect: '경험치 증가 유적, 추가 몬스터 소환 가능, 부활 무한' },
+  { category: '보통', rumor: '아황산염!', region: '그을린 염초', effect: '희귀도 증가' },
+  { category: '보통', rumor: '끝없는 계곡', region: '바위투성이 반도', effect: '희귀 아이템 증가 보스방, 달주 유배자 2명' },
+  { category: '보통', rumor: '자유롭게 활보하는 이성', region: '풍이 든긴 프레리', effect: '아즈메리로 강화' },
+  { category: '보통', rumor: '흡수할 것이 없다', region: '고인 분지', effect: '넓은 폭발' },
+  { category: '비추', rumor: '무언가 수상하다', region: '표백된 모래톱', effect: '진주 목걸이 획득 가능' },
+  { category: '비추', rumor: '적어도 축축하지는 않다', region: '전장이 된 고랑', effect: '몬스터 효율 증가 가능, 몬스터가 자주 끼임' },
+  { category: '특수', rumor: '알려지지 않은 유적', region: '파헤쳐진 폐허', effect: '제단 3개 활성화 후 바닥의 제단 누르면 주변 지역 개방 됨' },
+  { category: '고유(중요)', rumor: '떨어진 별', region: '무너진 하늘의 황야', effect: '8룬 이하 아이템 선택 가능 (나오면 무조건 하세요)' },
+  { category: '고유', rumor: '반사하는 물', region: '분열된 호수', effect: '특수 베이스 장신구 획득' },
+  { category: '고유', rumor: '선량한 자', region: '한순간의 신', effect: '고유 아이템 선택(배건저)' },
+  { category: '고유', rumor: '가히 낙원이라고 불리는 곳', region: '매몰치 않은 낙원', effect: '경험치 3배, 아이템 없음' },
+  { category: '고유', rumor: '??(소문 모음)', region: '애조마이 거서', effect: '여러 고유 몸 처치, 준 보상' },
+  { category: '보스(추천)', rumor: '별 흡수자', region: '외딴 사원', effect: '우트레드\n- 우트레드의 별자리\n- 우트레드의 의례\n- 고갈된 마나 룬' },
+  { category: '보스(추천)', rumor: '몰락의 기원', region: '후미진 섬', effect: '올로스\n- 우트레드의 징조\n- 영웅적인 비극\n- 올로스의 결의\n- 올로스의 태양 문양' },
+  { category: '보스(추천)', rumor: '순원의 끝', region: '뻗어 가는 마을', effect: '매드배드\n- 보라나의 공성' },
+  { category: '보스(비추)', rumor: '최후의 보루', region: '음울한 낭떠러지', effect: '보라나' },
+];
+
 // poe2_item_translations_ko_updated.json 내용을 카테고리 구분 없이 단일 맵으로 병합
 const ITEM_NAMES_KO = {
   "Ancient Infuser": "고대 주입기",
@@ -516,11 +538,91 @@ const KNOWN_LEAGUES = ['Runes of Aldur', 'HC Runes of Aldur', 'Standard', 'Hardc
 const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Aldur': 'HC Runes of Aldur' };
 
 let filtersByLeague = {};
+let buildsByLeague = {};
+let buildUiByLeague = {};
 let settings = { league: DEFAULT_LEAGUE, resultCount: 10 };
 let editingId = null;
 
 const getCurrentFilters = () => filtersByLeague[settings.league] || [];
 const setCurrentFilters = (arr) => { filtersByLeague[settings.league] = arr; };
+const getCurrentBuilds = () => buildsByLeague[settings.league] || [];
+const setCurrentBuilds = (arr) => { buildsByLeague[settings.league] = arr; };
+const getCurrentBuildUi = () => {
+  if (!buildUiByLeague[settings.league]) buildUiByLeague[settings.league] = {};
+  return buildUiByLeague[settings.league];
+};
+
+function makeId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function makeBuildTab(name, type, key) {
+  return {
+    id: makeId(type || 'tab'),
+    key: key || '',
+    name,
+    type: type || 'custom',
+    filterIds: []
+  };
+}
+
+function makeBuild(name) {
+  const equipTab = makeBuildTab('장비', 'equipment', 'equipment');
+  const slateTab = makeBuildTab('서판', 'slate', 'slate');
+  return {
+    id: makeId('build'),
+    name: name || `새 빌드 ${getCurrentBuilds().length + 1}`,
+    tabs: [equipTab, slateTab],
+    activeTabId: equipTab.id,
+    savedAt: new Date().toISOString()
+  };
+}
+
+function normalizeBuildTab(tab, idx) {
+  if (!tab || typeof tab !== 'object') return null;
+  const type = tab.type || (tab.key === 'equipment' ? 'equipment' : tab.key === 'slate' ? 'slate' : 'custom');
+  const key = tab.key || (type === 'equipment' ? 'equipment' : type === 'slate' ? 'slate' : '');
+  return {
+    id: tab.id || makeId(type || `tab${idx}`),
+    key,
+    type,
+    name: String(tab.name || (key === 'equipment' ? '장비' : key === 'slate' ? '서판' : `탭 ${idx + 1}`)),
+    filterIds: Array.from(new Set(Array.isArray(tab.filterIds) ? tab.filterIds.map(String) : []))
+  };
+}
+
+function normalizeBuild(build, idx) {
+  if (!build || typeof build !== 'object') return null;
+  let tabs = Array.isArray(build.tabs) ? build.tabs.map(normalizeBuildTab).filter(Boolean) : [];
+
+  const ensureMandatory = (key, name, type) => {
+    let found = tabs.find(tab => tab.key === key || tab.type === type);
+    if (!found) {
+      found = makeBuildTab(name, type, key);
+      tabs.push(found);
+    } else {
+      found.key = key;
+      found.type = type;
+      if (!found.name) found.name = name;
+    }
+    return found;
+  };
+
+  const equipTab = ensureMandatory('equipment', '장비', 'equipment');
+  const slateTab = ensureMandatory('slate', '서판', 'slate');
+  const customTabs = tabs.filter(tab => tab.id !== equipTab.id && tab.id !== slateTab.id);
+  tabs = [equipTab, slateTab].concat(customTabs);
+
+  const activeTabId = tabs.some(tab => tab.id === build.activeTabId) ? build.activeTabId : tabs[0].id;
+
+  return {
+    id: build.id || makeId(`build${idx}`),
+    name: String(build.name || `빌드 ${idx + 1}`),
+    tabs,
+    activeTabId,
+    savedAt: build.savedAt || new Date().toISOString()
+  };
+}
 
 function buildQuerySignature(filter) {
   return JSON.stringify({
@@ -594,6 +696,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       filtersByLeague = changes.filtersByLeague.newValue || {};
       needsRender = true;
     }
+    if (changes.buildsByLeague) {
+      buildsByLeague = changes.buildsByLeague.newValue || {};
+      needsRender = true;
+    }
+    if (changes.buildUiByLeague) {
+      buildUiByLeague = changes.buildUiByLeague.newValue || {};
+      needsRender = true;
+    }
     if (changes.settings) {
       settings = { ...settings, ...(changes.settings.newValue || {}) };
       document.getElementById('leagueBadge').textContent = settings.league;
@@ -605,9 +715,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Top-tab buttons (replaced inline onclick to comply with MV3 CSP)
   document.getElementById('top-tab-trade').addEventListener('click', () => switchTopTab('trade'));
+  document.getElementById('top-tab-builds').addEventListener('click', () => switchTopTab('builds'));
   document.getElementById('top-tab-economy').addEventListener('click', () => switchTopTab('economy'));
+  document.getElementById('top-tab-expedition').addEventListener('click', () => switchTopTab('expedition'));
+  document.getElementById('expedition-search').addEventListener('input', e => renderExpedition(e.target.value));
   document.getElementById('ninja-rate-badge').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('ninja-refresh-btn').addEventListener('click', () => loadNinjaRates());
+  document.getElementById('btnBuildCreate').addEventListener('click', createBuildPreset);
 
   // 카테고리 탭 초기 렌더
   renderNinjaCategoryTabs();
@@ -623,9 +737,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadData() {
-  const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'settings']);
+  const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings']);
   if (r.settings) settings = { ...settings, ...r.settings };
   filtersByLeague = r.filtersByLeague || {};
+  buildsByLeague = r.buildsByLeague || {};
+  buildUiByLeague = r.buildUiByLeague || {};
   if (Array.isArray(r.filters) && r.filters.length && !r.filtersByLeague) {
     filtersByLeague[settings.league] = r.filters;
     await chrome.storage.local.set({ filtersByLeague });
@@ -644,17 +760,34 @@ async function loadData() {
       delete filtersByLeague[oldName];
       migrated = true;
     }
+    if (buildsByLeague[oldName]) {
+      const newName = LEAGUE_ALIASES[oldName];
+      const existingBuilds = buildsByLeague[newName] || [];
+      buildsByLeague[newName] = existingBuilds.concat(buildsByLeague[oldName]);
+      delete buildsByLeague[oldName];
+      migrated = true;
+    }
+    if (buildUiByLeague[oldName]) {
+      const newName = LEAGUE_ALIASES[oldName];
+      buildUiByLeague[newName] = { ...(buildUiByLeague[newName] || {}), ...(buildUiByLeague[oldName] || {}) };
+      delete buildUiByLeague[oldName];
+      migrated = true;
+    }
   }
   Object.keys(filtersByLeague).forEach(league => {
     filtersByLeague[league] = (filtersByLeague[league] || []).map(normalizeSavedFilter);
   });
-  await chrome.storage.local.set({ filtersByLeague, settings });
+  Object.keys(buildsByLeague).forEach(league => {
+    buildsByLeague[league] = (buildsByLeague[league] || []).map(normalizeBuild).filter(Boolean);
+  });
+  Object.keys(buildsByLeague).forEach(league => pruneDeletedFilterRefs(league));
+  await chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
   document.getElementById('sLeague').value = settings.league;
   document.getElementById('sCount').value = settings.resultCount;
   document.getElementById('leagueBadge').textContent = settings.league;
 }
 
-const persist = () => chrome.storage.local.set({ filtersByLeague, settings });
+const persist = () => chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
 
 function render() {
   const list = document.getElementById('filterList');
@@ -672,6 +805,7 @@ function render() {
         <div class="guide-step">2. 원하는 아이템 검색</div>
         <div class="guide-step">3. 아이템 옆 ⭐ 즐겨찾기 클릭</div>
       </div>`;
+    renderBuilds();
     return;
   }
   list.innerHTML = '';
@@ -680,6 +814,357 @@ function render() {
     if (openIds.has(String(f.id))) card.classList.add('open');
     list.appendChild(card);
   });
+  renderBuilds();
+}
+
+function getSelectedBuild() {
+  const builds = getCurrentBuilds();
+  if (!builds.length) return null;
+  const ui = getCurrentBuildUi();
+  let selected = builds.find(build => build.id === ui.selectedBuildId);
+  if (!selected) {
+    selected = builds[0];
+    ui.selectedBuildId = selected.id;
+  }
+  if (!selected.tabs.some(tab => tab.id === selected.activeTabId)) {
+    selected.activeTabId = selected.tabs[0]?.id || '';
+  }
+  return selected;
+}
+
+function getActiveBuildTab(build) {
+  if (!build) return null;
+  return build.tabs.find(tab => tab.id === build.activeTabId) || build.tabs[0] || null;
+}
+
+function getFilterById(filterId) {
+  return getCurrentFilters().find(filter => String(filter.id) === String(filterId)) || null;
+}
+
+function pruneDeletedFilterRefs(league = settings.league) {
+  const validIds = new Set((filtersByLeague[league] || []).map(filter => String(filter.id)));
+  let changed = false;
+  (buildsByLeague[league] || []).forEach(build => {
+    build.tabs.forEach(tab => {
+      const nextIds = (tab.filterIds || []).filter(id => validIds.has(String(id)));
+      if (nextIds.length !== (tab.filterIds || []).length) {
+        tab.filterIds = nextIds;
+        changed = true;
+      }
+    });
+  });
+  return changed;
+}
+
+function priceToDivine(savedPrice) {
+  if (!savedPrice) return null;
+  const amount = Number(savedPrice.amount);
+  if (!isFinite(amount) || amount <= 0) return null;
+  const currency = String(savedPrice.currency || '').toLowerCase();
+  if (currency === 'divine') return amount;
+  if (currency === 'exalted' && currentExRate && isFinite(currentExRate) && currentExRate > 0) {
+    return amount / currentExRate;
+  }
+  return null;
+}
+
+function getFilterValueMeta(filter) {
+  if (!filter) return null;
+  let score = 0;
+  let statCount = 0;
+  let equipmentCount = 0;
+
+  (filter.equipment || []).forEach(entry => {
+    if (entry.active === false || !entry.id) return;
+    const value = Math.abs(Number(entry.min != null ? entry.min : entry.value));
+    if (!isFinite(value) || value <= 0) return;
+    equipmentCount += 1;
+    score += value * 0.45 + 2;
+  });
+
+  (filter.stats || []).forEach(entry => {
+    if (entry.active === false) return;
+    const effectiveId = (entry.id && !entry.id.includes('unknown'))
+      ? entry.id
+      : (entry.fallbackId && !entry.fallbackId.includes('unknown') ? entry.fallbackId : '');
+    if (!effectiveId) return;
+    const value = Math.abs(Number(entry.min != null ? entry.min : entry.value));
+    if (!isFinite(value) || value <= 0) return;
+    const prefix = effectiveId.split('.')[0];
+    const weight = {
+      explicit: 1,
+      implicit: 0.92,
+      fractured: 0.9,
+      crafted: 0.82,
+      enchant: 0.8,
+      rune: 0.72,
+      desecrated: 0.7
+    }[prefix] || 0.88;
+    statCount += 1;
+    score += value * weight + 3;
+  });
+
+  score += statCount * 4 + equipmentCount * 2;
+  const roundedScore = Number(score.toFixed(1));
+  const priceDiv = priceToDivine(filter.savedPrice);
+  if (!priceDiv) return { score: roundedScore, priceDiv: null, ratio: null, tier: '', label: '' };
+
+  const ratio = Number((roundedScore / priceDiv).toFixed(1));
+  let tier = '';
+  let label = '';
+  if (ratio >= 120) {
+    tier = 'S';
+    label = `저평가 후보 ${ratio}/div`;
+  } else if (ratio >= 80) {
+    tier = 'A';
+    label = `가성비 좋음 ${ratio}/div`;
+  } else if (ratio >= 45) {
+    tier = 'B';
+    label = `준수 ${ratio}/div`;
+  }
+
+  return { score: roundedScore, priceDiv, ratio, tier, label };
+}
+
+function renderValueBadges(filter) {
+  const meta = getFilterValueMeta(filter);
+  if (!meta || !meta.score) return '';
+  const scoreBadge = `<span class="value-badge score">점수 ${meta.score}</span>`;
+  if (!meta.tier || !meta.label) return scoreBadge;
+  return `${scoreBadge}<span class="value-badge value-${meta.tier.toLowerCase()}">${esc(meta.label)}</span>`;
+}
+
+function summarizeFilter(filter) {
+  if (!filter) return '';
+  const parts = [];
+  if (filter.category) parts.push(filter.category);
+  if (filter.typeLine) parts.push(filter.typeLine);
+  const activeStatCount = (filter.stats || []).filter(stat => stat.active !== false).length;
+  const activeEquipCount = (filter.equipment || []).filter(entry => entry.active !== false).length;
+  if (activeEquipCount) parts.push(`장비 ${activeEquipCount}`);
+  if (activeStatCount) parts.push(`옵션 ${activeStatCount}`);
+  return parts.join(' · ');
+}
+
+function renderBuilds() {
+  const presetList = document.getElementById('buildPresetList');
+  const detail = document.getElementById('buildDetail');
+  if (!presetList || !detail) return;
+
+  const builds = getCurrentBuilds();
+  const selected = getSelectedBuild();
+
+  presetList.innerHTML = builds.length
+    ? builds.map(build => `<button class="build-pill ${selected && build.id === selected.id ? 'active' : ''}" data-build-id="${build.id}">${esc(build.name)}</button>`).join('')
+    : '';
+
+  presetList.querySelectorAll('.build-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      getCurrentBuildUi().selectedBuildId = btn.dataset.buildId;
+      persist();
+      renderBuilds();
+    });
+  });
+
+  if (!selected) {
+    detail.innerHTML = `
+      <div class="build-empty">
+        아직 빌드 프리셋이 없습니다.<br/>
+        자주 쓰는 장비/서판 검색 필터를 묶어서 관리해보세요.
+      </div>`;
+    return;
+  }
+
+  const activeTab = getActiveBuildTab(selected);
+  const currentFilters = getCurrentFilters().slice().reverse();
+  const usedIds = new Set((activeTab?.filterIds || []).map(String));
+  const availableOptions = currentFilters
+    .filter(filter => !usedIds.has(String(filter.id)))
+    .map(filter => `<option value="${filter.id}">${esc(filter.name)}</option>`)
+    .join('');
+
+  const tabButtons = selected.tabs.map(tab => {
+    const isLocked = tab.key === 'equipment' || tab.key === 'slate';
+    return `<button class="build-tab-btn ${tab.id === activeTab?.id ? 'active' : ''} ${isLocked ? 'locked' : ''}" data-tab-id="${tab.id}">${esc(tab.name)}</button>`;
+  }).join('');
+
+  const rows = (activeTab?.filterIds || []).map(filterId => {
+    const filter = getFilterById(filterId);
+    if (!filter) {
+      return `<div class="build-filter-row">
+        <div class="build-filter-meta">
+          <div class="build-filter-name" style="color:#9a6060">삭제된 필터</div>
+          <div class="build-filter-sub">기존 참조가 남아 있습니다</div>
+        </div>
+        <div class="build-filter-actions">
+          <button class="build-mini-btn danger" data-remove-build-filter="${filterId}">제거</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="build-filter-row">
+      <div class="build-filter-meta">
+        <div class="build-filter-name">${esc(filter.name)} ${renderValueBadges(filter)}</div>
+        <div class="build-filter-sub">${esc(summarizeFilter(filter))}</div>
+      </div>
+      <div class="build-filter-actions">
+        <button class="build-mini-btn" data-build-search-new="${filter.id}">새창</button>
+        <button class="build-mini-btn" data-build-search-cur="${filter.id}">현재창</button>
+        <button class="build-mini-btn danger" data-remove-build-filter="${filter.id}">제거</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  detail.innerHTML = `
+    <div class="build-section">
+      <div class="build-header-row">
+        <input type="text" class="build-name-edit" id="buildNameEdit" value="${esc(selected.name)}" />
+        <button class="btn-build-sub" id="btnBuildDelete">삭제</button>
+      </div>
+      <div class="build-meta-line">${esc(settings.league)} 리그 · ${selected.tabs.length}개 탭 · ${new Date(selected.savedAt).toLocaleDateString('ko-KR')}</div>
+      <div class="build-tab-bar">${tabButtons}</div>
+      <div class="build-tab-actions">
+        <button class="btn-build-sub" id="btnBuildAddTab">+ 탭 추가</button>
+        <button class="btn-build-sub" id="btnBuildRenameTab">탭 이름 변경</button>
+        <button class="btn-build-sub" id="btnBuildDeleteTab">탭 삭제</button>
+      </div>
+      <div class="build-filter-picker">
+        <select id="buildFilterSelect">
+          <option value="">필터 추가 선택...</option>
+          ${availableOptions}
+        </select>
+        <button class="btn-build-main" id="btnBuildAddFilter">필터 담기</button>
+      </div>
+      <div class="build-tab-state">${esc(activeTab?.name || '')} 탭에 ${(activeTab?.filterIds || []).length}개 필터</div>
+      <div class="build-filter-list">
+        ${rows || `<div class="build-empty">이 탭에는 아직 담긴 필터가 없습니다.</div>`}
+      </div>
+    </div>`;
+
+  const nameInput = document.getElementById('buildNameEdit');
+  nameInput.addEventListener('change', () => {
+    const nextName = nameInput.value.trim();
+    if (!nextName) {
+      nameInput.value = selected.name;
+      return;
+    }
+    selected.name = nextName;
+    persist();
+    renderBuilds();
+  });
+
+  detail.querySelectorAll('.build-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selected.activeTabId = btn.dataset.tabId;
+      persist();
+      renderBuilds();
+    });
+  });
+
+  document.getElementById('btnBuildDelete').addEventListener('click', () => deleteBuildPreset(selected.id));
+  document.getElementById('btnBuildAddTab').addEventListener('click', () => addBuildTab(selected.id));
+  document.getElementById('btnBuildRenameTab').addEventListener('click', () => renameBuildTab(selected.id));
+  document.getElementById('btnBuildDeleteTab').addEventListener('click', () => deleteBuildTab(selected.id));
+  document.getElementById('btnBuildAddFilter').addEventListener('click', () => {
+    const select = document.getElementById('buildFilterSelect');
+    if (!select.value) return;
+    addFilterToBuildTab(selected.id, select.value);
+  });
+
+  detail.querySelectorAll('[data-remove-build-filter]').forEach(btn => {
+    btn.addEventListener('click', () => removeFilterFromBuildTab(selected.id, btn.dataset.removeBuildFilter));
+  });
+  detail.querySelectorAll('[data-build-search-new]').forEach(btn => {
+    btn.addEventListener('click', () => doSearch(btn.dataset.buildSearchNew, true));
+  });
+  detail.querySelectorAll('[data-build-search-cur]').forEach(btn => {
+    btn.addEventListener('click', () => doSearch(btn.dataset.buildSearchCur, false));
+  });
+
+  const activeLocked = activeTab && (activeTab.key === 'equipment' || activeTab.key === 'slate');
+  document.getElementById('btnBuildDeleteTab').disabled = !!activeLocked;
+  document.getElementById('btnBuildDeleteTab').style.opacity = activeLocked ? '.45' : '1';
+  document.getElementById('btnBuildDeleteTab').title = activeLocked ? '장비/서판 탭은 삭제할 수 없습니다' : '';
+}
+
+function createBuildPreset() {
+  const name = prompt('새 빌드 이름을 입력하세요.', `새 빌드 ${getCurrentBuilds().length + 1}`);
+  if (name == null) return;
+  const build = makeBuild((name || '').trim() || undefined);
+  const builds = getCurrentBuilds().slice();
+  builds.push(build);
+  setCurrentBuilds(builds);
+  getCurrentBuildUi().selectedBuildId = build.id;
+  persist();
+  renderBuilds();
+}
+
+function deleteBuildPreset(buildId) {
+  const builds = getCurrentBuilds();
+  const target = builds.find(build => build.id === buildId);
+  if (!target) return;
+  if (!confirm(`"${target.name}" 빌드를 삭제할까요?`)) return;
+  setCurrentBuilds(builds.filter(build => build.id !== buildId));
+  const next = getCurrentBuilds()[0];
+  getCurrentBuildUi().selectedBuildId = next ? next.id : '';
+  persist();
+  renderBuilds();
+}
+
+function addBuildTab(buildId) {
+  const builds = getCurrentBuilds();
+  const build = builds.find(entry => entry.id === buildId);
+  if (!build) return;
+  const name = prompt('새 탭 이름을 입력하세요.', `탭 ${build.tabs.length - 1}`);
+  if (name == null) return;
+  const nextTab = makeBuildTab((name || '').trim() || `탭 ${build.tabs.length - 1}`, 'custom');
+  build.tabs.push(nextTab);
+  build.activeTabId = nextTab.id;
+  persist();
+  renderBuilds();
+}
+
+function renameBuildTab(buildId) {
+  const build = getCurrentBuilds().find(entry => entry.id === buildId);
+  const tab = getActiveBuildTab(build);
+  if (!build || !tab) return;
+  const name = prompt('탭 이름을 입력하세요.', tab.name);
+  if (name == null) return;
+  const nextName = name.trim();
+  if (!nextName) return;
+  tab.name = nextName;
+  persist();
+  renderBuilds();
+}
+
+function deleteBuildTab(buildId) {
+  const build = getCurrentBuilds().find(entry => entry.id === buildId);
+  const tab = getActiveBuildTab(build);
+  if (!build || !tab) return;
+  if (tab.key === 'equipment' || tab.key === 'slate') return;
+  if (!confirm(`"${tab.name}" 탭을 삭제할까요?`)) return;
+  build.tabs = build.tabs.filter(entry => entry.id !== tab.id);
+  build.activeTabId = build.tabs[0]?.id || '';
+  persist();
+  renderBuilds();
+}
+
+function addFilterToBuildTab(buildId, filterId) {
+  const build = getCurrentBuilds().find(entry => entry.id === buildId);
+  const tab = getActiveBuildTab(build);
+  if (!build || !tab || !filterId) return;
+  const refId = String(filterId);
+  if (!tab.filterIds.includes(refId)) tab.filterIds.push(refId);
+  persist();
+  renderBuilds();
+}
+
+function removeFilterFromBuildTab(buildId, filterId) {
+  const build = getCurrentBuilds().find(entry => entry.id === buildId);
+  const tab = getActiveBuildTab(build);
+  if (!build || !tab) return;
+  tab.filterIds = (tab.filterIds || []).filter(id => String(id) !== String(filterId));
+  persist();
+  renderBuilds();
 }
 
 function currencyLabel(currency) {
@@ -778,6 +1263,7 @@ function makeCard(f) {
         <div class="card-sub">${summary.join(' · ') || '저장된 아이템'}</div>
       </div>
       <div class="card-badges">
+        ${renderValueBadges(f)}
         ${catLabel ? `<span class="badge badge-cat">${catLabel}</span>` : ''}
         ${f.rarity ? `<span class="badge ${rarityClass}">${f.rarity}</span>` : ''}
         ${f.typeLine ? `<span class="badge type-line-badge ${f.typeLineActive !== false ? 'active' : 'inactive'}" title="클릭해서 기반 유형 필터 토글">${esc(f.typeLine)}</span>` : ''}
@@ -1060,6 +1546,7 @@ function openKR(id) {
 function delFilter(id) {
   if (!confirm('이 필터를 삭제할까요?')) return;
   setCurrentFilters(getCurrentFilters().filter(x => String(x.id) !== String(id)));
+  pruneDeletedFilterRefs();
   persist(); render();
 }
 
@@ -1249,7 +1736,7 @@ function bindSettings() {
 
 function bindImportExport() {
   document.getElementById('btnExport').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify({filtersByLeague,settings},null,2)],{type:'application/json'});
+    const blob = new Blob([JSON.stringify({filtersByLeague,buildsByLeague,buildUiByLeague,settings},null,2)],{type:'application/json'});
     const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`poe2-filters-${Date.now()}.json`});
     a.click(); URL.revokeObjectURL(a.href);
   });
@@ -1273,7 +1760,20 @@ function bindImportExport() {
         } else {
           alert('❌ 파일 형식 오류'); return;
         }
+        if (d.buildsByLeague) {
+          buildsByLeague = d.buildsByLeague;
+        }
+        if (d.buildUiByLeague) {
+          buildUiByLeague = d.buildUiByLeague;
+        }
         if (d.settings) settings = { ...settings, ...d.settings };
+        Object.keys(filtersByLeague).forEach(league => {
+          filtersByLeague[league] = (filtersByLeague[league] || []).map(normalizeSavedFilter);
+        });
+        Object.keys(buildsByLeague).forEach(league => {
+          buildsByLeague[league] = (buildsByLeague[league] || []).map(normalizeBuild).filter(Boolean);
+        });
+        Object.keys(buildsByLeague).forEach(league => pruneDeletedFilterRefs(league));
         persist(); render();
         document.getElementById('sLeague').value = settings.league;
         document.getElementById('leagueBadge').textContent = settings.league;
@@ -1285,6 +1785,7 @@ function bindImportExport() {
   document.getElementById('btnClear').addEventListener('click',()=>{
     if(confirm(`"${settings.league}" 리그의 모든 필터를 삭제할까요?`)){
       setCurrentFilters([]);
+      pruneDeletedFilterRefs(settings.league);
       persist(); render();
     }
   });
@@ -1366,12 +1867,50 @@ function renderNinjaCategoryTabs() {
   });
 }
 
+function renderExpedition(query) {
+  const tbody = document.getElementById('expedition-tbody');
+  if (!tbody) return;
+  const q = (query || '').trim().toLowerCase();
+  const CATEGORY_COLORS = {
+    '추천': '#4caf7d',
+    '보통': '#aaa',
+    '비추': '#e57373',
+    '특수': '#ba68c8',
+    '고유(중요)': '#ffd700',
+    '고유': '#f0a040',
+    '보스(추천)': '#64b5f6',
+    '보스(비추)': '#e57373',
+  };
+  const rows = q
+    ? EXPEDITION_DATA.filter(d =>
+        d.rumor.toLowerCase().includes(q) || d.region.toLowerCase().includes(q)
+      )
+    : EXPEDITION_DATA;
+  tbody.innerHTML = rows.map(d => {
+    const color = CATEGORY_COLORS[d.category] || '#aaa';
+    const effectHtml = esc(d.effect || '').replace(/\n/g, '<br>');
+    return `<tr class="expedition-row" style="border-bottom:1px solid #2a2a2a;">
+      <td style="padding:5px 6px;border:1px solid #2a2a2a;color:${color};font-weight:bold;white-space:nowrap;text-align:center;vertical-align:middle;">${d.category}</td>
+      <td style="padding:5px 6px;border:1px solid #2a2a2a;color:#ddd;vertical-align:middle;line-height:1.45;">${d.rumor}</td>
+      <td style="padding:5px 6px;border:1px solid #2a2a2a;vertical-align:top;line-height:1.45;">
+        <div style="color:#d6b56b;font-weight:600;margin-bottom:3px;word-break:keep-all;">${d.region}</div>
+        <div style="color:#bbb;font-size:10.5px;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;">${effectHtml}</div>
+      </td>
+    </tr>`;
+  }).join('');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:12px;text-align:center;color:#666;">검색 결과 없음</td></tr>';
+  }
+}
+
 function switchTopTab(tabName) {
   document.querySelectorAll('.top-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.top-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`top-panel-${tabName}`).classList.add('active');
   document.getElementById(`top-tab-${tabName}`).classList.add('active');
+  if (tabName === 'builds') { renderBuilds(); }
   if (tabName === 'economy') { renderNinjaCategoryTabs(); loadNinjaRates(); }
+  if (tabName === 'expedition') { renderExpedition(); }
 }
 
 const ninjaCacheMap = {};   // key: `${league}::${itemType}` → { data, fetchedAt }
@@ -1490,6 +2029,7 @@ function updateRateBadge(data) {
     currentExRate = exRate;
     badge.textContent = `1div = ${exRate}ex`;
     badge.style.display = '';
+    render();
   } else {
     badge.style.display = 'none';
   }

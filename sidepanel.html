@@ -376,6 +376,308 @@
     .ninja-search:focus {
       border-color: #c8a84a;
     }
+
+    /* Builds panel */
+    .builds-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+    .builds-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #2a2010;
+      background: #120e08;
+      flex-shrink: 0;
+    }
+    .builds-title {
+      font-size: 12px;
+      color: #c8a84a;
+      font-weight: 700;
+    }
+    .builds-subtitle {
+      margin-left: auto;
+      font-size: 10px;
+      color: #6a5a3a;
+      white-space: nowrap;
+    }
+    .btn-build-main,
+    .btn-build-sub {
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      padding: 5px 8px;
+    }
+    .btn-build-main {
+      background: linear-gradient(135deg,#6a3a08,#a86018);
+      border: 1px solid #c87828;
+      color: #f0d080;
+      font-weight: 700;
+    }
+    .btn-build-sub {
+      background: #18120a;
+      border: 1px solid #3a2e1a;
+      color: #a09070;
+    }
+    .btn-build-sub:hover,
+    .btn-build-main:hover {
+      filter: brightness(1.08);
+    }
+    .build-preset-list {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      border-bottom: 1px solid #2a2010;
+      background: #0f0c08;
+      flex-shrink: 0;
+    }
+    .build-preset-list::-webkit-scrollbar {
+      height: 4px;
+    }
+    .build-preset-list::-webkit-scrollbar-thumb {
+      background: #3a2a10;
+      border-radius: 2px;
+    }
+    .build-pill {
+      flex: 0 0 auto;
+      max-width: 150px;
+      border: 1px solid #3a2e1a;
+      background: #18120a;
+      color: #a09070;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: inherit;
+    }
+    .build-pill.active {
+      background: #3a2a10;
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-detail {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .build-detail::-webkit-scrollbar {
+      width: 4px;
+    }
+    .build-detail::-webkit-scrollbar-thumb {
+      background: #3a2a10;
+      border-radius: 2px;
+    }
+    .build-empty {
+      padding: 22px 14px;
+      text-align: center;
+      color: #7a6a4a;
+      font-size: 12px;
+      line-height: 1.7;
+      border: 1px dashed #3a2e1a;
+      border-radius: 6px;
+      background: #110d08;
+    }
+    .build-section {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 1px solid #2e2410;
+      border-radius: 6px;
+      background: #131108;
+    }
+    .build-header-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .build-name-edit {
+      flex: 1;
+      min-width: 0;
+      background: #0a0908;
+      border: 1px solid #3a2e1a;
+      border-radius: 4px;
+      color: #f0d080;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 6px 8px;
+      font-family: inherit;
+    }
+    .build-name-edit:focus {
+      outline: none;
+      border-color: #c8922a;
+    }
+    .build-meta-line {
+      font-size: 10px;
+      color: #6a5a3a;
+      margin-bottom: 10px;
+    }
+    .build-tab-bar {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      margin-bottom: 8px;
+    }
+    .build-tab-bar::-webkit-scrollbar {
+      height: 4px;
+    }
+    .build-tab-bar::-webkit-scrollbar-thumb {
+      background: #3a2a10;
+      border-radius: 2px;
+    }
+    .build-tab-btn {
+      flex: 0 0 auto;
+      border: 1px solid #3a2e1a;
+      background: #17120b;
+      color: #9a8460;
+      border-radius: 4px;
+      padding: 5px 9px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .build-tab-btn.active {
+      background: #3a2a10;
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-tab-btn.locked::after {
+      content: "•";
+      margin-left: 4px;
+      color: #5da060;
+    }
+    .build-tab-actions {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .build-filter-picker {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .build-filter-picker select {
+      flex: 1;
+      min-width: 0;
+      background: #0a0908;
+      border: 1px solid #3a2e1a;
+      border-radius: 4px;
+      color: #c8b88a;
+      padding: 6px 8px;
+      font-size: 11px;
+      font-family: inherit;
+    }
+    .build-filter-picker select:focus {
+      outline: none;
+      border-color: #c8922a;
+    }
+    .build-tab-state {
+      font-size: 10px;
+      color: #7a6a4a;
+      margin-bottom: 8px;
+    }
+    .build-filter-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .build-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: #0f0d09;
+      border: 1px solid #241d10;
+      border-radius: 5px;
+    }
+    .build-filter-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .build-filter-name {
+      font-size: 11px;
+      color: #d8c89a;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+    .build-filter-sub {
+      font-size: 10px;
+      color: #6a5a3a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .build-filter-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .build-mini-btn {
+      background: #18120a;
+      border: 1px solid #3a2e1a;
+      color: #a09070;
+      border-radius: 4px;
+      font-size: 10px;
+      padding: 4px 6px;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .build-mini-btn:hover {
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-mini-btn.danger {
+      color: #b86a6a;
+      border-color: #4a2020;
+      background: #130a0a;
+    }
+    .build-mini-btn.danger:hover {
+      color: #ff9090;
+      border-color: #703030;
+    }
+    .value-badge {
+      display: inline-block;
+      font-size: 9px;
+      border-radius: 999px;
+      padding: 2px 6px;
+      margin-left: 4px;
+      border: 1px solid transparent;
+      vertical-align: middle;
+    }
+    .value-badge.score {
+      color: #90b8ff;
+      background: #0b1320;
+      border-color: #203a60;
+    }
+    .value-badge.value-s {
+      color: #9fffb0;
+      background: #0d1d0f;
+      border-color: #2d6a34;
+    }
+    .value-badge.value-a {
+      color: #d8f090;
+      background: #17180a;
+      border-color: #5d6520;
+    }
+    .value-badge.value-b {
+      color: #f0d080;
+      background: #1d1508;
+      border-color: #6a4a12;
+    }
   </style>
 </head>
 <body>
@@ -400,7 +702,9 @@
   <!-- Top-level tab bar: TradeQuick / Economy -->
   <div class="top-tab-bar">
     <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
+    <button class="top-tab-btn" id="top-tab-builds">Builds</button>
     <button class="top-tab-btn" id="top-tab-economy">Economy</button>
+    <button class="top-tab-btn" id="top-tab-expedition">Expedition</button>
   </div>
 
   <!-- TradeQuick panel (existing content) -->
@@ -461,6 +765,19 @@
     </div>
   </div>
 
+  <!-- Builds panel -->
+  <div class="top-panel" id="top-panel-builds">
+    <div class="builds-panel">
+      <div class="builds-toolbar">
+        <span class="builds-title">빌드 프리셋</span>
+        <button class="btn-build-main" id="btnBuildCreate">+ 새 빌드</button>
+        <span class="builds-subtitle">장비 / 서판 / 커스텀 탭 구성</span>
+      </div>
+      <div class="build-preset-list" id="buildPresetList"></div>
+      <div class="build-detail" id="buildDetail"></div>
+    </div>
+  </div>
+
   <!-- Economy panel -->
   <div class="top-panel" id="top-panel-economy">
     <div class="economy-header">
@@ -475,6 +792,24 @@
     <div id="ninja-currency-list" class="ninja-currency-list">
       <div class="ninja-loading">Economy 탭을 열면 자동으로 로딩됩니다</div>
     </div>
+  </div>
+
+  <!-- Expedition panel -->
+  <div class="top-panel" id="top-panel-expedition" style="padding:10px;overflow-y:auto;">
+    <div style="margin-bottom:8px;">
+      <input type="text" id="expedition-search" placeholder="소문 또는 지역명 검색..." style="width:100%;box-sizing:border-box;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;">
+    </div>
+    <table id="expedition-table" style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead>
+        <tr style="background:#2a2a2a;color:#aaa;">
+          <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:70px;">분류</th>
+          <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:130px;">섬의 소문</th>
+          <th style="padding:5px 6px;border:1px solid #333;text-align:left;">지역 및 특징</th>
+        </tr>
+      </thead>
+      <tbody id="expedition-tbody">
+      </tbody>
+    </table>
   </div>
 </div>
 
