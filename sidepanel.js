@@ -532,7 +532,8 @@ const CATEGORY_LABELS = {
 };
 
 const KR_TRADE_BASE = 'https://poe.game.daum.net/trade2/search/poe2';
-const KR_API_SEARCH = (l) => `https://poe.game.daum.net/api/trade2/search/poe2/${l}`;
+const KR_API_BASE = 'https://poe.game.daum.net/api/trade2';
+const KR_API_SEARCH = (l) => `${KR_API_BASE}/search/poe2/${l}`;
 const DEFAULT_LEAGUE = 'Runes of Aldur';
 const KNOWN_LEAGUES = ['Runes of Aldur', 'HC Runes of Aldur', 'Standard', 'Hardcore'];
 const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Aldur': 'HC Runes of Aldur' };
@@ -715,13 +716,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Top-tab buttons (replaced inline onclick to comply with MV3 CSP)
   document.getElementById('top-tab-trade').addEventListener('click', () => switchTopTab('trade'));
-  document.getElementById('top-tab-builds').addEventListener('click', () => switchTopTab('builds'));
   document.getElementById('top-tab-economy').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('top-tab-expedition').addEventListener('click', () => switchTopTab('expedition'));
   document.getElementById('expedition-search').addEventListener('input', e => renderExpedition(e.target.value));
   document.getElementById('ninja-rate-badge').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('ninja-refresh-btn').addEventListener('click', () => loadNinjaRates());
-  document.getElementById('btnBuildCreate').addEventListener('click', createBuildPreset);
 
   // 카테고리 탭 초기 렌더
   renderNinjaCategoryTabs();
@@ -795,17 +794,22 @@ function render() {
   const openIds = new Set(
     Array.from(list.querySelectorAll('.filter-card.open')).map(el => el.id.replace('card-', ''))
   );
-  const current = getCurrentFilters();
+  renderBuilds();
+  const current = getVisibleFilters();
   if (!current.length) {
+    const selectedBuild = getSelectedBuild();
+    const activeTab = getActiveBuildTab(selectedBuild);
+    const emptyText = selectedBuild && activeTab
+      ? `"${esc(selectedBuild.name)} > ${esc(activeTab.name)}" 탭에 담긴 필터가 없습니다.`
+      : `<strong>${esc(settings.league)}</strong> 리그에 저장된 필터가 없습니다.`;
     list.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⭐</div>
-        <p><strong>${esc(settings.league)}</strong> 리그에 저장된 필터가 없습니다.</p>
+        <p>${emptyText}</p>
         <div class="guide-step">1. 아래 버튼으로 거래소 열기</div>
         <div class="guide-step">2. 원하는 아이템 검색</div>
         <div class="guide-step">3. 아이템 옆 ⭐ 즐겨찾기 클릭</div>
       </div>`;
-    renderBuilds();
     return;
   }
   list.innerHTML = '';
@@ -814,18 +818,15 @@ function render() {
     if (openIds.has(String(f.id))) card.classList.add('open');
     list.appendChild(card);
   });
-  renderBuilds();
 }
 
 function getSelectedBuild() {
-  const builds = getCurrentBuilds();
-  if (!builds.length) return null;
   const ui = getCurrentBuildUi();
+  if (!ui.selectedBuildId) ui.selectedBuildId = '__all__';
+  if (ui.selectedBuildId === '__all__') return null;
+  const builds = getCurrentBuilds();
   let selected = builds.find(build => build.id === ui.selectedBuildId);
-  if (!selected) {
-    selected = builds[0];
-    ui.selectedBuildId = selected.id;
-  }
+  if (!selected) return null;
   if (!selected.tabs.some(tab => tab.id === selected.activeTabId)) {
     selected.activeTabId = selected.tabs[0]?.id || '';
   }
@@ -839,6 +840,15 @@ function getActiveBuildTab(build) {
 
 function getFilterById(filterId) {
   return getCurrentFilters().find(filter => String(filter.id) === String(filterId)) || null;
+}
+
+function getVisibleFilters() {
+  const selectedBuild = getSelectedBuild();
+  const activeTab = getActiveBuildTab(selectedBuild);
+  const current = getCurrentFilters();
+  if (!selectedBuild || !activeTab) return current;
+  const allowedIds = new Set((activeTab.filterIds || []).map(String));
+  return current.filter(filter => allowedIds.has(String(filter.id)));
 }
 
 function pruneDeletedFilterRefs(league = settings.league) {
@@ -926,14 +936,6 @@ function getFilterValueMeta(filter) {
   return { score: roundedScore, priceDiv, ratio, tier, label };
 }
 
-function renderValueBadges(filter) {
-  const meta = getFilterValueMeta(filter);
-  if (!meta || !meta.score) return '';
-  const scoreBadge = `<span class="value-badge score">점수 ${meta.score}</span>`;
-  if (!meta.tier || !meta.label) return scoreBadge;
-  return `${scoreBadge}<span class="value-badge value-${meta.tier.toLowerCase()}">${esc(meta.label)}</span>`;
-}
-
 function summarizeFilter(filter) {
   if (!filter) return '';
   const parts = [];
@@ -947,34 +949,13 @@ function summarizeFilter(filter) {
 }
 
 function renderBuilds() {
-  const presetList = document.getElementById('buildPresetList');
-  const detail = document.getElementById('buildDetail');
-  if (!presetList || !detail) return;
-
+  const container = document.getElementById('buildQuickManager');
+  if (!container) return;
   const builds = getCurrentBuilds();
   const selected = getSelectedBuild();
-
-  presetList.innerHTML = builds.length
-    ? builds.map(build => `<button class="build-pill ${selected && build.id === selected.id ? 'active' : ''}" data-build-id="${build.id}">${esc(build.name)}</button>`).join('')
-    : '';
-
-  presetList.querySelectorAll('.build-pill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      getCurrentBuildUi().selectedBuildId = btn.dataset.buildId;
-      persist();
-      renderBuilds();
-    });
-  });
-
-  if (!selected) {
-    detail.innerHTML = `
-      <div class="build-empty">
-        아직 빌드 프리셋이 없습니다.<br/>
-        자주 쓰는 장비/서판 검색 필터를 묶어서 관리해보세요.
-      </div>`;
-    return;
-  }
-
+  const ui = getCurrentBuildUi();
+  const allPill = `<button class="build-pill ${!selected ? 'active' : ''}" data-build-id="__all__">전체</button>`;
+  const buildPills = builds.map(build => `<button class="build-pill ${selected && build.id === selected.id ? 'active' : ''}" data-build-id="${build.id}">${esc(build.name)}</button>`).join('');
   const activeTab = getActiveBuildTab(selected);
   const currentFilters = getCurrentFilters().slice().reverse();
   const usedIds = new Set((activeTab?.filterIds || []).map(String));
@@ -982,63 +963,57 @@ function renderBuilds() {
     .filter(filter => !usedIds.has(String(filter.id)))
     .map(filter => `<option value="${filter.id}">${esc(filter.name)}</option>`)
     .join('');
+  const tabButtons = selected
+    ? selected.tabs.map(tab => {
+        const isLocked = tab.key === 'equipment' || tab.key === 'slate';
+        return `<button class="build-tab-btn ${tab.id === activeTab?.id ? 'active' : ''} ${isLocked ? 'locked' : ''}" data-tab-id="${tab.id}">${esc(tab.name)}</button>`;
+      }).join('')
+    : '';
 
-  const tabButtons = selected.tabs.map(tab => {
-    const isLocked = tab.key === 'equipment' || tab.key === 'slate';
-    return `<button class="build-tab-btn ${tab.id === activeTab?.id ? 'active' : ''} ${isLocked ? 'locked' : ''}" data-tab-id="${tab.id}">${esc(tab.name)}</button>`;
-  }).join('');
-
-  const rows = (activeTab?.filterIds || []).map(filterId => {
-    const filter = getFilterById(filterId);
-    if (!filter) {
-      return `<div class="build-filter-row">
-        <div class="build-filter-meta">
-          <div class="build-filter-name" style="color:#9a6060">삭제된 필터</div>
-          <div class="build-filter-sub">기존 참조가 남아 있습니다</div>
-        </div>
-        <div class="build-filter-actions">
-          <button class="build-mini-btn danger" data-remove-build-filter="${filterId}">제거</button>
-        </div>
-      </div>`;
-    }
-    return `<div class="build-filter-row">
-      <div class="build-filter-meta">
-        <div class="build-filter-name">${esc(filter.name)} ${renderValueBadges(filter)}</div>
-        <div class="build-filter-sub">${esc(summarizeFilter(filter))}</div>
-      </div>
-      <div class="build-filter-actions">
-        <button class="build-mini-btn" data-build-search-new="${filter.id}">새창</button>
-        <button class="build-mini-btn" data-build-search-cur="${filter.id}">현재창</button>
-        <button class="build-mini-btn danger" data-remove-build-filter="${filter.id}">제거</button>
-      </div>
-    </div>`;
-  }).join('');
-
-  detail.innerHTML = `
+  container.innerHTML = `
     <div class="build-section">
-      <div class="build-header-row">
-        <input type="text" class="build-name-edit" id="buildNameEdit" value="${esc(selected.name)}" />
-        <button class="btn-build-sub" id="btnBuildDelete">삭제</button>
+      <div class="builds-toolbar" style="padding:0 0 8px;background:transparent;border-bottom:none;">
+        <span class="builds-title">빌드 보기</span>
+        <button class="btn-build-main" id="btnBuildCreateInline">+ 새 빌드</button>
+        <span class="builds-subtitle">${esc(settings.league)} 리그</span>
       </div>
-      <div class="build-meta-line">${esc(settings.league)} 리그 · ${selected.tabs.length}개 탭 · ${new Date(selected.savedAt).toLocaleDateString('ko-KR')}</div>
-      <div class="build-tab-bar">${tabButtons}</div>
-      <div class="build-tab-actions">
-        <button class="btn-build-sub" id="btnBuildAddTab">+ 탭 추가</button>
-        <button class="btn-build-sub" id="btnBuildRenameTab">탭 이름 변경</button>
-        <button class="btn-build-sub" id="btnBuildDeleteTab">탭 삭제</button>
+      <div class="build-preset-list" style="padding:0 0 8px;background:transparent;border-bottom:none;">
+        ${allPill}${buildPills}
       </div>
-      <div class="build-filter-picker">
-        <select id="buildFilterSelect">
-          <option value="">필터 추가 선택...</option>
-          ${availableOptions}
-        </select>
-        <button class="btn-build-main" id="btnBuildAddFilter">필터 담기</button>
-      </div>
-      <div class="build-tab-state">${esc(activeTab?.name || '')} 탭에 ${(activeTab?.filterIds || []).length}개 필터</div>
-      <div class="build-filter-list">
-        ${rows || `<div class="build-empty">이 탭에는 아직 담긴 필터가 없습니다.</div>`}
-      </div>
+      ${selected ? `
+        <div class="build-header-row">
+          <input type="text" class="build-name-edit" id="buildNameEdit" value="${esc(selected.name)}" />
+          <button class="btn-build-sub" id="btnBuildDelete">삭제</button>
+        </div>
+        <div class="build-meta-line">${selected.tabs.length}개 탭 · 현재 ${esc(activeTab?.name || '')} · 담긴 필터 ${(activeTab?.filterIds || []).length}개</div>
+        <div class="build-tab-bar">${tabButtons}</div>
+        <div class="build-tab-actions">
+          <button class="btn-build-sub" id="btnBuildAddTab">+ 탭 추가</button>
+          <button class="btn-build-sub" id="btnBuildRenameTab">탭 이름 변경</button>
+          <button class="btn-build-sub" id="btnBuildDeleteTab">탭 삭제</button>
+        </div>
+        <div class="build-filter-picker">
+          <select id="buildFilterSelect">
+            <option value="">현재 탭에 필터 추가...</option>
+            ${availableOptions}
+          </select>
+          <button class="btn-build-main" id="btnBuildAddFilter">추가</button>
+        </div>
+      ` : `
+        <div class="build-meta-line">전체 즐겨찾기를 보고 있습니다. 특정 빌드를 선택하면 해당 탭에 담긴 필터만 보입니다.</div>
+      `}
     </div>`;
+
+  container.querySelectorAll('.build-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ui.selectedBuildId = btn.dataset.buildId;
+      persist();
+      render();
+    });
+  });
+  document.getElementById('btnBuildCreateInline').addEventListener('click', createBuildPreset);
+
+  if (!selected) return;
 
   const nameInput = document.getElementById('buildNameEdit');
   nameInput.addEventListener('change', () => {
@@ -1049,14 +1024,14 @@ function renderBuilds() {
     }
     selected.name = nextName;
     persist();
-    renderBuilds();
+    render();
   });
 
-  detail.querySelectorAll('.build-tab-btn').forEach(btn => {
+  container.querySelectorAll('.build-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       selected.activeTabId = btn.dataset.tabId;
       persist();
-      renderBuilds();
+      render();
     });
   });
 
@@ -1068,16 +1043,6 @@ function renderBuilds() {
     const select = document.getElementById('buildFilterSelect');
     if (!select.value) return;
     addFilterToBuildTab(selected.id, select.value);
-  });
-
-  detail.querySelectorAll('[data-remove-build-filter]').forEach(btn => {
-    btn.addEventListener('click', () => removeFilterFromBuildTab(selected.id, btn.dataset.removeBuildFilter));
-  });
-  detail.querySelectorAll('[data-build-search-new]').forEach(btn => {
-    btn.addEventListener('click', () => doSearch(btn.dataset.buildSearchNew, true));
-  });
-  detail.querySelectorAll('[data-build-search-cur]').forEach(btn => {
-    btn.addEventListener('click', () => doSearch(btn.dataset.buildSearchCur, false));
   });
 
   const activeLocked = activeTab && (activeTab.key === 'equipment' || activeTab.key === 'slate');
@@ -1095,7 +1060,7 @@ function createBuildPreset() {
   setCurrentBuilds(builds);
   getCurrentBuildUi().selectedBuildId = build.id;
   persist();
-  renderBuilds();
+  render();
 }
 
 function deleteBuildPreset(buildId) {
@@ -1104,10 +1069,9 @@ function deleteBuildPreset(buildId) {
   if (!target) return;
   if (!confirm(`"${target.name}" 빌드를 삭제할까요?`)) return;
   setCurrentBuilds(builds.filter(build => build.id !== buildId));
-  const next = getCurrentBuilds()[0];
-  getCurrentBuildUi().selectedBuildId = next ? next.id : '';
+  getCurrentBuildUi().selectedBuildId = '__all__';
   persist();
-  renderBuilds();
+  render();
 }
 
 function addBuildTab(buildId) {
@@ -1120,7 +1084,7 @@ function addBuildTab(buildId) {
   build.tabs.push(nextTab);
   build.activeTabId = nextTab.id;
   persist();
-  renderBuilds();
+  render();
 }
 
 function renameBuildTab(buildId) {
@@ -1133,7 +1097,7 @@ function renameBuildTab(buildId) {
   if (!nextName) return;
   tab.name = nextName;
   persist();
-  renderBuilds();
+  render();
 }
 
 function deleteBuildTab(buildId) {
@@ -1145,7 +1109,7 @@ function deleteBuildTab(buildId) {
   build.tabs = build.tabs.filter(entry => entry.id !== tab.id);
   build.activeTabId = build.tabs[0]?.id || '';
   persist();
-  renderBuilds();
+  render();
 }
 
 function addFilterToBuildTab(buildId, filterId) {
@@ -1155,7 +1119,7 @@ function addFilterToBuildTab(buildId, filterId) {
   const refId = String(filterId);
   if (!tab.filterIds.includes(refId)) tab.filterIds.push(refId);
   persist();
-  renderBuilds();
+  render();
 }
 
 function removeFilterFromBuildTab(buildId, filterId) {
@@ -1164,7 +1128,267 @@ function removeFilterFromBuildTab(buildId, filterId) {
   if (!build || !tab) return;
   tab.filterIds = (tab.filterIds || []).filter(id => String(id) !== String(filterId));
   persist();
-  renderBuilds();
+  render();
+}
+
+const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
+
+function stripTradeTags(text) {
+  return String(text || '').replace(/<[^>]*>/g, '').trim();
+}
+
+function parseTradeFirstNumber(text) {
+  const match = stripTradeTags(text).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : NaN;
+}
+
+function roundTradeValue(value) {
+  if (!isFinite(value)) return NaN;
+  return Math.abs(value) % 1 === 0 ? Math.abs(value) : Number(Math.abs(value).toFixed(2));
+}
+
+function parseTradePropertyValue(name, rawValue) {
+  const text = stripTradeTags(rawValue).replace(/,/g, '');
+  const range = text.match(/(-?\d+(?:\.\d+)?)\s*[-~]\s*(-?\d+(?:\.\d+)?)/);
+  if (range) {
+    const a = Number(range[1]);
+    const b = Number(range[2]);
+    if (!isNaN(a) && !isNaN(b)) {
+      if (/damage/i.test(name) || /피해/.test(name)) return roundTradeValue((Math.abs(a) + Math.abs(b)) / 2);
+      return roundTradeValue(Math.max(Math.abs(a), Math.abs(b)));
+    }
+  }
+  return roundTradeValue(parseTradeFirstNumber(text));
+}
+
+function renderTradePropertyText(prop) {
+  const name = stripTradeTags(prop?.name || '');
+  const values = Array.isArray(prop?.values) ? prop.values.map(v => stripTradeTags(v?.[0])).filter(Boolean) : [];
+  const templated = name.replace(/\{(\d+)\}/g, (_, idx) => values[Number(idx)] || '');
+  if (values.length === 0) return templated.trim();
+  if (prop?.displayMode === 1) return `${values.join(' ')} ${templated}`.trim();
+  if (prop?.displayMode === 3) return templated.trim();
+  return `${templated} ${values.join(' ')}`.trim();
+}
+
+function extractTradeEquipmentValues(text, id) {
+  const s = stripTradeTags(text).replace(/,/g, ' ');
+  if (id === 'damage') {
+    const m = s.match(/(-?\d+(?:\.\d+)?)\s*[-~]\s*(-?\d+(?:\.\d+)?)/);
+    return m ? [roundTradeValue((Math.abs(Number(m[1])) + Math.abs(Number(m[2]))) / 2)] : [];
+  }
+  const patterns = {
+    aps: '(?:attacks per second|초당 공격|공격 속도)',
+    crit: '(?:critical hit chance|치명타 확률)',
+    dps: '(?:^|\\b)dps(?:$|\\b)|초당 피해',
+    pdps: '(?:physical dps|물리 dps)',
+    edps: '(?:elemental dps|원소 dps)',
+    reload_time: '(?:reload time|재장전 시간)',
+    ar: '(?:armou?r|방어도)',
+    ev: '(?:evasion(?: rating)?|회피(?:도| 등급)?)',
+    es: '(?:energy shield|에너지 (?:실드|보호막))',
+    block: '(?:block(?: chance)?|막기 확률)',
+    spirit: '(?:spirit|정신력)'
+  };
+  const basePattern = patterns[id];
+  if (!basePattern) return [];
+  const values = [];
+  const after = new RegExp(`${basePattern}[^\\d-]*(-?\\d+(?:\\.\\d+)?)`, 'ig');
+  const before = new RegExp(`(-?\\d+(?:\\.\\d+)?)[^\\d]*(?:${basePattern})`, 'ig');
+  let match;
+  while ((match = after.exec(s))) values.push(roundTradeValue(Number(match[1])));
+  while ((match = before.exec(s))) values.push(roundTradeValue(Number(match[1])));
+  return values.filter(v => isFinite(v) && v > 0);
+}
+
+function extractTradeStatValue(text) {
+  const s = stripTradeTags(text).replace(/,/g, '');
+  const range = s.match(/(-?\d+(?:\.\d+)?)\s*(?:to|-|~)\s*(-?\d+(?:\.\d+)?)/i);
+  if (range) return roundTradeValue((Math.abs(Number(range[1])) + Math.abs(Number(range[2]))) / 2);
+  const single = s.match(/-?\d+(?:\.\d+)?/);
+  return single ? roundTradeValue(Number(single[0])) : NaN;
+}
+
+function buildItemEquipmentValueMap(item) {
+  const map = new Map();
+  const properties = [];
+  ['properties', 'additionalProperties', 'notableProperties'].forEach(key => {
+    if (Array.isArray(item?.[key])) properties.push(...item[key]);
+  });
+
+  properties.forEach(prop => {
+    const name = stripTradeTags(prop?.name || '');
+    const lineText = renderTradePropertyText(prop);
+    const rawValue = Array.isArray(prop?.values)
+      ? prop.values.map(v => stripTradeTags(v?.[0])).filter(Boolean).join(' ')
+      : lineText;
+
+    for (const rule of EQUIPMENT_PROPERTY_RULES) {
+      if (!rule.patterns.some(pattern => pattern.test(name) || pattern.test(lineText))) continue;
+      const values = extractTradeEquipmentValues(lineText, rule.id);
+      if (values.length) {
+        values.forEach(value => map.set(rule.id, Math.max(map.get(rule.id) || 0, value)));
+      } else {
+        const numeric = parseTradePropertyValue(name || lineText, rawValue);
+        if (isFinite(numeric) && numeric > 0) map.set(rule.id, Math.max(map.get(rule.id) || 0, numeric));
+      }
+    }
+  });
+
+  const runeSocketCount = Array.isArray(item?.sockets) ? item.sockets.filter(socket => socket?.type === 'rune').length : 0;
+  if (runeSocketCount > 0) map.set('rune_sockets', runeSocketCount);
+  return map;
+}
+
+function statIdSuffix(id) {
+  return String(id || '').replace(/^[^.]+\./, '');
+}
+
+function buildItemStatValueMap(item) {
+  const map = new Map();
+  const ext = item?.extended || {};
+  const hashes = ext.hashes || {};
+  const categorySpecs = [
+    { key: 'explicit', prop: 'explicitMods' },
+    { key: 'implicit', prop: 'implicitMods' },
+    { key: 'crafted', prop: 'craftedMods' },
+    { key: 'enchant', prop: 'enchantMods' },
+    { key: 'rune', prop: 'runeMods' },
+    { key: 'fractured', prop: 'fracturedMods' },
+    { key: 'desecrated', prop: 'desecratedMods' },
+    { key: 'utility', prop: 'utilityMods' }
+  ];
+
+  categorySpecs.forEach(spec => {
+    const catHashes = hashes[spec.key] || [];
+    const renderedTexts = item?.[spec.prop] || [];
+    renderedTexts.forEach((renderedLine, idx) => {
+      const fallbackId = Array.isArray(catHashes[idx]) ? catHashes[idx][0] : '';
+      const parsedValue = extractTradeStatValue(renderedLine);
+      if (!fallbackId || !isFinite(parsedValue) || parsedValue <= 0) return;
+      const keys = [fallbackId, statIdSuffix(fallbackId)];
+      keys.forEach(key => {
+        if (!key) return;
+        map.set(key, Math.max(map.get(key) || 0, parsedValue));
+      });
+    });
+  });
+
+  return map;
+}
+
+function getListingPriceInDivine(listingPrice) {
+  if (!listingPrice) return null;
+  const amount = Number(listingPrice.amount);
+  if (!isFinite(amount) || amount <= 0) return null;
+  const currency = String(listingPrice.currency || '').toLowerCase();
+  if (currency === 'divine') return amount;
+  if (currency === 'exalted' && currentExRate && isFinite(currentExRate) && currentExRate > 0) return amount / currentExRate;
+  return null;
+}
+
+function getFilterStatActualValue(statMap, stat) {
+  const ids = [stat.id, stat.fallbackId, statIdSuffix(stat.id), statIdSuffix(stat.fallbackId)];
+  for (const id of ids) {
+    if (!id) continue;
+    const value = statMap.get(id);
+    if (isFinite(value) && value > 0) return value;
+  }
+  return 0;
+}
+
+function buildSearchEvaluationContext(filter, results) {
+  const activeEquipment = (filter.equipment || []).filter(entry => entry.active !== false && entry.id);
+  const activeStats = (filter.stats || []).filter(entry => {
+    if (entry.active === false) return false;
+    const effectiveId = (entry.id && !entry.id.includes('unknown'))
+      ? entry.id
+      : (entry.fallbackId && !entry.fallbackId.includes('unknown') ? entry.fallbackId : '');
+    return !!effectiveId;
+  });
+
+  const evaluations = {};
+  const valueIndices = [];
+
+  results.forEach(result => {
+    const item = result?.item;
+    const listing = result?.listing;
+    const itemId = item?.id || result?.id;
+    if (!item || !listing || !itemId) return;
+
+    const equipmentMap = buildItemEquipmentValueMap(item);
+    const statMap = buildItemStatValueMap(item);
+    const parts = [];
+
+    activeEquipment.forEach(entry => {
+      const actual = Number(equipmentMap.get(entry.id) || 0);
+      const target = Math.max(1, Math.abs(Number(entry.min != null ? entry.min : entry.value) || 0));
+      if (!target) return;
+      parts.push((actual / target) * 100);
+    });
+
+    activeStats.forEach(entry => {
+      const actual = Number(getFilterStatActualValue(statMap, entry) || 0);
+      const target = Math.max(1, Math.abs(Number(entry.min != null ? entry.min : entry.value) || 0));
+      if (!target) return;
+      parts.push((actual / target) * 100);
+    });
+
+    const statScore = parts.length
+      ? Number((parts.reduce((sum, value) => sum + value, 0) / parts.length).toFixed(1))
+      : 0;
+    const priceDiv = getListingPriceInDivine(listing.price);
+    const valueIndex = priceDiv ? Number((statScore / priceDiv).toFixed(2)) : null;
+    if (valueIndex) valueIndices.push(valueIndex);
+
+    evaluations[itemId] = {
+      itemId,
+      name: item.name || item.typeLine || '',
+      statScore,
+      priceDiv,
+      priceText: listing.price ? `${listing.price.amount} ${listing.price.currency}` : '',
+      valueIndex,
+      tier: priceDiv ? '평균' : '평가 보류',
+      ratioToMedian: null
+    };
+  });
+
+  const sorted = valueIndices.slice().sort((a, b) => a - b);
+  const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
+
+  Object.values(evaluations).forEach(entry => {
+    if (!median || !entry.valueIndex) {
+      entry.tier = '평가 보류';
+      return;
+    }
+    entry.ratioToMedian = Number((entry.valueIndex / median).toFixed(2));
+    if (entry.ratioToMedian >= 1.18) entry.tier = '저평가';
+    else if (entry.ratioToMedian <= 0.85) entry.tier = '고평가';
+    else entry.tier = '평균';
+  });
+
+  return {
+    createdAt: new Date().toISOString(),
+    league: settings.league,
+    filterId: filter.id,
+    filterName: filter.name,
+    medianValueIndex: median,
+    evaluations
+  };
+}
+
+async function persistSearchEvaluationContext(queryId, context) {
+  if (!queryId || !context) return;
+  const existing = await chrome.storage.local.get([SEARCH_EVAL_KEY]);
+  const contexts = existing[SEARCH_EVAL_KEY] || {};
+  contexts[queryId] = context;
+  const keys = Object.keys(contexts).sort((a, b) => {
+    const aTime = new Date(contexts[a]?.createdAt || 0).getTime();
+    const bTime = new Date(contexts[b]?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+  keys.slice(20).forEach(key => delete contexts[key]);
+  await chrome.storage.local.set({ [SEARCH_EVAL_KEY]: contexts });
 }
 
 function currencyLabel(currency) {
@@ -1202,6 +1426,9 @@ function makeCard(f) {
   const wrap = document.createElement('div');
   wrap.className = 'filter-card';
   wrap.id = `card-${f.id}`;
+  const selectedBuild = getSelectedBuild();
+  const activeBuildTab = getActiveBuildTab(selectedBuild);
+  const inActiveBuildTab = !!(activeBuildTab && (activeBuildTab.filterIds || []).includes(String(f.id)));
 
   const rarityClass = {rare:'badge-rare',unique:'badge-unique',magic:'badge-magic'}[f.rarity] || '';
   const rarityColor = {rare:'#f0c830',unique:'#af6025',magic:'#8888ff',normal:'#c8c8c8'}[f.rarity] || '#c8b98a';
@@ -1263,7 +1490,6 @@ function makeCard(f) {
         <div class="card-sub">${summary.join(' · ') || '저장된 아이템'}</div>
       </div>
       <div class="card-badges">
-        ${renderValueBadges(f)}
         ${catLabel ? `<span class="badge badge-cat">${catLabel}</span>` : ''}
         ${f.rarity ? `<span class="badge ${rarityClass}">${f.rarity}</span>` : ''}
         ${f.typeLine ? `<span class="badge type-line-badge ${f.typeLineActive !== false ? 'active' : 'inactive'}" title="클릭해서 기반 유형 필터 토글">${esc(f.typeLine)}</span>` : ''}
@@ -1276,6 +1502,7 @@ function makeCard(f) {
       <button class="btn-search-q"   data-id="${f.id}">🔍 새창</button>
       <button class="btn-search-cur" data-id="${f.id}">🔗 현재창</button>
       <button class="btn-open-q"     data-id="${f.id}">🌐 KR거래소</button>
+      ${activeBuildTab ? `<button class="build-mini-btn ${inActiveBuildTab ? 'danger' : ''}" data-build-toggle="${f.id}" title="${esc(selectedBuild.name)} > ${esc(activeBuildTab.name)}">${inActiveBuildTab ? '탭 제거' : '탭 추가'}</button>` : ''}
     </div>
 
     <div class="card-detail">
@@ -1343,6 +1570,14 @@ function makeCard(f) {
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
   wrap.querySelector('.btn-delete-small').addEventListener('click', e => { e.stopPropagation(); delFilter(f.id); });
+  const buildToggleBtn = wrap.querySelector('[data-build-toggle]');
+  if (buildToggleBtn && selectedBuild && activeBuildTab) {
+    buildToggleBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (inActiveBuildTab) removeFilterFromBuildTab(selectedBuild.id, f.id);
+      else addFilterToBuildTab(selectedBuild.id, f.id);
+    });
+  }
 
   // typeLine badge toggle
   const typeLineBadgeEl = wrap.querySelector('.type-line-badge');
@@ -1475,6 +1710,29 @@ async function doSearch(id, openInNew = true) {
     }
     const sData = await res.json();
     if (!sData.id) throw new Error('검색 ID를 받지 못했습니다');
+    const topIds = Array.isArray(sData.result) ? sData.result.slice(0, Math.max(1, Number(settings.resultCount) || 10)) : [];
+    if (topIds.length) {
+      try {
+        const fetchRes = await fetch(`${KR_API_BASE}/fetch/${topIds.map(encodeURIComponent).join(',')}?query=${encodeURIComponent(sData.id)}&realm=poe2`);
+        if (fetchRes.ok) {
+          const fetchData = await fetchRes.json();
+          const context = buildSearchEvaluationContext(f, fetchData.result || []);
+          await persistSearchEvaluationContext(sData.id, context);
+        }
+      } catch (evalErr) {
+        chrome.runtime.sendMessage({
+          type: 'APPEND_DEBUG_LOG',
+          entry: {
+            kind: 'search-eval-error',
+            league: settings.league,
+            filterId: f.id,
+            filterName: f.name,
+            queryId: sData.id,
+            message: evalErr.message
+          }
+        }).catch(() => {});
+      }
+    }
     const url = `${KR_TRADE_BASE}/${encodeURIComponent(settings.league)}/${sData.id}`;
     if (openInNew) {
       chrome.tabs.create({ url });
@@ -1908,7 +2166,6 @@ function switchTopTab(tabName) {
   document.querySelectorAll('.top-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`top-panel-${tabName}`).classList.add('active');
   document.getElementById(`top-tab-${tabName}`).classList.add('active');
-  if (tabName === 'builds') { renderBuilds(); }
   if (tabName === 'economy') { renderNinjaCategoryTabs(); loadNinjaRates(); }
   if (tabName === 'expedition') { renderExpedition(); }
 }

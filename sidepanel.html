@@ -678,6 +678,9 @@
       background: #1d1508;
       border-color: #6a4a12;
     }
+    .builds-inline {
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
@@ -702,7 +705,6 @@
   <!-- Top-level tab bar: TradeQuick / Economy -->
   <div class="top-tab-bar">
     <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
-    <button class="top-tab-btn" id="top-tab-builds">Builds</button>
     <button class="top-tab-btn" id="top-tab-economy">Economy</button>
     <button class="top-tab-btn" id="top-tab-expedition">Expedition</button>
   </div>
@@ -721,6 +723,7 @@
 
     <div class="scroll-area">
       <div class="tab-content active" id="tab-filters">
+        <div class="builds-inline" id="buildQuickManager"></div>
         <div class="filter-list" id="filterList"></div>
       </div>
 
@@ -762,19 +765,6 @@
           <a href="https://poe.game.daum.net/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Builds panel -->
-  <div class="top-panel" id="top-panel-builds">
-    <div class="builds-panel">
-      <div class="builds-toolbar">
-        <span class="builds-title">빌드 프리셋</span>
-        <button class="btn-build-main" id="btnBuildCreate">+ 새 빌드</button>
-        <span class="builds-subtitle">장비 / 서판 / 커스텀 탭 구성</span>
-      </div>
-      <div class="build-preset-list" id="buildPresetList"></div>
-      <div class="build-detail" id="buildDetail"></div>
     </div>
   </div>
 

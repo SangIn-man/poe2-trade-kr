@@ -2,17 +2,37 @@
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
+const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
+let cachedEvalQueryId = null;
+let cachedEvalContext = null;
+let cachedEvalContextPromise = null;
 
 const observer = new MutationObserver(() => scanItems());
 observer.observe(document.body, { childList: true, subtree: true });
 setTimeout(scanItems, 1000);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[SEARCH_EVAL_KEY]) return;
+  document.querySelectorAll('.row[data-id]').forEach(row => {
+    applySearchEvaluation(row).catch(() => {});
+  });
+});
 
 // ─── scan ─────────────────────────────────────────────
 function scanItems() {
+  const queryId = getQueryId();
+  if (queryId !== cachedEvalQueryId) {
+    cachedEvalQueryId = queryId;
+    cachedEvalContext = null;
+    cachedEvalContextPromise = null;
+    document.querySelectorAll('.poe2tq-eval-badge').forEach(el => el.remove());
+  }
   document.querySelectorAll('.row[data-id]').forEach(row => {
     if (injected.has(row)) return;
     injected.add(row);
     injectStarButton(row);
+  });
+  document.querySelectorAll('.row[data-id]').forEach(row => {
+    applySearchEvaluation(row).catch(() => {});
   });
 }
 
@@ -27,6 +47,65 @@ function getApiBase() {
   return location.hostname === 'poe.game.daum.net'
     ? 'https://poe.game.daum.net/api/trade2'
     : 'https://www.pathofexile.com/api/trade2';
+}
+
+function storageGet(keys) {
+  return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+}
+
+async function loadSearchEvaluationContext() {
+  const queryId = getQueryId();
+  if (!queryId) return null;
+  if (cachedEvalContext && cachedEvalQueryId === queryId) return cachedEvalContext;
+  if (cachedEvalContextPromise) return cachedEvalContextPromise;
+  cachedEvalContextPromise = storageGet([SEARCH_EVAL_KEY])
+    .then(result => {
+      cachedEvalQueryId = queryId;
+      cachedEvalContext = result?.[SEARCH_EVAL_KEY]?.[queryId] || null;
+      return cachedEvalContext;
+    })
+    .finally(() => {
+      cachedEvalContextPromise = null;
+    });
+  return cachedEvalContextPromise;
+}
+
+function upsertSearchEvaluationBadge(row, evaluation) {
+  if (!row || !evaluation) return;
+  let badge = row.querySelector('.poe2tq-eval-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'poe2tq-eval-badge';
+    const priceDiv = row.querySelector('.price') || row.querySelector('.listing-price');
+    if (priceDiv?.parentNode) {
+      priceDiv.parentNode.insertBefore(badge, priceDiv.nextSibling);
+    } else {
+      row.appendChild(badge);
+    }
+  }
+  const tierClass = evaluation.tier === '저평가'
+    ? 'tier-under'
+    : evaluation.tier === '고평가'
+      ? 'tier-over'
+      : evaluation.tier === '평균'
+        ? 'tier-average'
+        : 'tier-hold';
+  badge.className = `poe2tq-eval-badge ${tierClass}`;
+  badge.textContent = evaluation.tier === '평가 보류'
+    ? '평가 보류'
+    : `${evaluation.tier} · ${evaluation.statScore}점`;
+  const ratioText = evaluation.ratioToMedian ? `가치비 ${evaluation.ratioToMedian}x` : '가치비 계산 없음';
+  badge.title = [evaluation.priceText || '', ratioText].filter(Boolean).join(' / ');
+}
+
+async function applySearchEvaluation(row) {
+  const queryId = getQueryId();
+  if (!queryId || !row?.dataset?.id) return;
+  const context = await loadSearchEvaluationContext();
+  if (!context?.evaluations) return;
+  const evaluation = context.evaluations[row.dataset.id];
+  if (!evaluation) return;
+  upsertSearchEvaluationBadge(row, evaluation);
 }
 
 // ─── button injection ─────────────────────────────────

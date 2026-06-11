@@ -129,3 +129,42 @@
   opacity: 0.85;
   white-space: nowrap;
 }
+
+.poe2tq-eval-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 2px 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  white-space: nowrap;
+  position: relative;
+  z-index: 999;
+}
+
+.poe2tq-eval-badge.tier-under {
+  background: linear-gradient(135deg, #0d1d10, #16331a);
+  border: 1px solid #2f7a3a;
+  color: #9ff0ad;
+}
+
+.poe2tq-eval-badge.tier-average {
+  background: linear-gradient(135deg, #1a160a, #2b2410);
+  border: 1px solid #7a6220;
+  color: #f0d080;
+}
+
+.poe2tq-eval-badge.tier-over {
+  background: linear-gradient(135deg, #220d0d, #351515);
+  border: 1px solid #8a3434;
+  color: #f0a0a0;
+}
+
+.poe2tq-eval-badge.tier-hold {
+  background: linear-gradient(135deg, #141414, #222222);
+  border: 1px solid #555555;
+  color: #c0c0c0;
+}
