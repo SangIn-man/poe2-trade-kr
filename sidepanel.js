@@ -535,6 +535,7 @@ const KR_TRADE_BASE = 'https://poe.game.daum.net/trade2/search/poe2';
 const KR_API_BASE = 'https://poe.game.daum.net/api/trade2';
 const KR_API_SEARCH = (l) => `${KR_API_BASE}/search/poe2/${l}`;
 const DEFAULT_LEAGUE = 'Runes of Aldur';
+const DEFAULT_BUILD_NAME = '기본 빌드';
 const KNOWN_LEAGUES = ['Runes of Aldur', 'HC Runes of Aldur', 'Standard', 'Hardcore'];
 const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Aldur': 'HC Runes of Aldur' };
 
@@ -623,6 +624,57 @@ function normalizeBuild(build, idx) {
     activeTabId,
     savedAt: build.savedAt || new Date().toISOString()
   };
+}
+
+function ensureBuildDataForLeague(league) {
+  const filters = filtersByLeague[league] || [];
+  const ui = buildUiByLeague[league] || (buildUiByLeague[league] = {});
+  let builds = (buildsByLeague[league] || []).map((build, idx) => normalizeBuild(build, idx)).filter(Boolean);
+  let changed = false;
+
+  if (!builds.length) {
+    const baseBuild = makeBuild(DEFAULT_BUILD_NAME);
+    builds = [baseBuild];
+    changed = true;
+  }
+
+  const firstBuild = builds[0];
+  const firstTab = firstBuild.tabs[0];
+  const assigned = new Set();
+  builds.forEach(build => {
+    if (!build.tabs.some(tab => tab.id === build.activeTabId)) {
+      build.activeTabId = build.tabs[0]?.id || '';
+      changed = true;
+    }
+    build.tabs.forEach(tab => {
+      tab.filterIds = Array.from(new Set((tab.filterIds || []).map(String)));
+      tab.filterIds.forEach(id => assigned.add(String(id)));
+    });
+  });
+
+  filters.forEach(filter => {
+    const filterId = String(filter.id);
+    if (!assigned.has(filterId)) {
+      firstTab.filterIds.push(filterId);
+      assigned.add(filterId);
+      changed = true;
+    }
+  });
+
+  if (!ui.selectedBuildId || !builds.some(build => build.id === ui.selectedBuildId)) {
+    ui.selectedBuildId = builds[0].id;
+    changed = true;
+  }
+
+  const selectedBuild = builds.find(build => build.id === ui.selectedBuildId) || builds[0];
+  if (selectedBuild && !selectedBuild.tabs.some(tab => tab.id === selectedBuild.activeTabId)) {
+    selectedBuild.activeTabId = selectedBuild.tabs[0]?.id || '';
+    changed = true;
+  }
+
+  buildsByLeague[league] = builds;
+  buildUiByLeague[league] = ui;
+  return changed;
 }
 
 function buildQuerySignature(filter) {
@@ -779,7 +831,11 @@ async function loadData() {
   Object.keys(buildsByLeague).forEach(league => {
     buildsByLeague[league] = (buildsByLeague[league] || []).map(normalizeBuild).filter(Boolean);
   });
-  Object.keys(buildsByLeague).forEach(league => pruneDeletedFilterRefs(league));
+  const leagues = Array.from(new Set([...Object.keys(filtersByLeague), ...Object.keys(buildsByLeague), settings.league]));
+  leagues.forEach(league => {
+    ensureBuildDataForLeague(league);
+    pruneDeletedFilterRefs(league);
+  });
   await chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
   document.getElementById('sLeague').value = settings.league;
   document.getElementById('sCount').value = settings.resultCount;
@@ -801,7 +857,7 @@ function render() {
     const activeTab = getActiveBuildTab(selectedBuild);
     const emptyText = selectedBuild && activeTab
       ? `"${esc(selectedBuild.name)} > ${esc(activeTab.name)}" 탭에 담긴 필터가 없습니다.`
-      : `<strong>${esc(settings.league)}</strong> 리그에 저장된 필터가 없습니다.`;
+      : `"${esc(settings.league)}" 리그에 저장된 필터가 없습니다.`;
     list.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⭐</div>
@@ -821,12 +877,12 @@ function render() {
 }
 
 function getSelectedBuild() {
+  ensureBuildDataForLeague(settings.league);
   const ui = getCurrentBuildUi();
-  if (!ui.selectedBuildId) ui.selectedBuildId = '__all__';
-  if (ui.selectedBuildId === '__all__') return null;
   const builds = getCurrentBuilds();
-  let selected = builds.find(build => build.id === ui.selectedBuildId);
+  let selected = builds.find(build => build.id === ui.selectedBuildId) || builds[0] || null;
   if (!selected) return null;
+  if (ui.selectedBuildId !== selected.id) ui.selectedBuildId = selected.id;
   if (!selected.tabs.some(tab => tab.id === selected.activeTabId)) {
     selected.activeTabId = selected.tabs[0]?.id || '';
   }
@@ -846,7 +902,7 @@ function getVisibleFilters() {
   const selectedBuild = getSelectedBuild();
   const activeTab = getActiveBuildTab(selectedBuild);
   const current = getCurrentFilters();
-  if (!selectedBuild || !activeTab) return current;
+  if (!selectedBuild || !activeTab) return [];
   const allowedIds = new Set((activeTab.filterIds || []).map(String));
   return current.filter(filter => allowedIds.has(String(filter.id)));
 }
@@ -951,104 +1007,89 @@ function summarizeFilter(filter) {
 function renderBuilds() {
   const container = document.getElementById('buildQuickManager');
   if (!container) return;
+  ensureBuildDataForLeague(settings.league);
   const builds = getCurrentBuilds();
   const selected = getSelectedBuild();
-  const ui = getCurrentBuildUi();
-  const allPill = `<button class="build-pill ${!selected ? 'active' : ''}" data-build-id="__all__">전체</button>`;
-  const buildPills = builds.map(build => `<button class="build-pill ${selected && build.id === selected.id ? 'active' : ''}" data-build-id="${build.id}">${esc(build.name)}</button>`).join('');
+  const buildPills = builds.map(build => {
+    const active = selected && build.id === selected.id ? 'active' : '';
+    const canDelete = builds.length > 1;
+    return `<div class="build-pill ${active}" data-build-id="${build.id}">
+      <button class="build-pill-main" data-build-select="${build.id}">${esc(build.name)}</button>
+      <button class="build-pill-icon" data-build-rename="${build.id}" title="빌드 이름 변경">✎</button>
+      ${canDelete ? `<button class="build-pill-icon danger" data-build-delete="${build.id}" title="빌드 삭제">×</button>` : ''}
+    </div>`;
+  }).join('');
   const activeTab = getActiveBuildTab(selected);
-  const currentFilters = getCurrentFilters().slice().reverse();
-  const usedIds = new Set((activeTab?.filterIds || []).map(String));
-  const availableOptions = currentFilters
-    .filter(filter => !usedIds.has(String(filter.id)))
-    .map(filter => `<option value="${filter.id}">${esc(filter.name)}</option>`)
-    .join('');
   const tabButtons = selected
     ? selected.tabs.map(tab => {
         const isLocked = tab.key === 'equipment' || tab.key === 'slate';
-        return `<button class="build-tab-btn ${tab.id === activeTab?.id ? 'active' : ''} ${isLocked ? 'locked' : ''}" data-tab-id="${tab.id}">${esc(tab.name)}</button>`;
+        return `<div class="build-tab-btn ${tab.id === activeTab?.id ? 'active' : ''} ${isLocked ? 'locked' : ''}" data-tab-id="${tab.id}">
+          <button class="build-tab-main" data-tab-select="${tab.id}">${esc(tab.name)}</button>
+          <button class="build-tab-icon" data-tab-rename="${tab.id}" title="탭 이름 변경">✎</button>
+          ${isLocked ? '' : `<button class="build-tab-icon danger" data-tab-delete="${tab.id}" title="탭 삭제">×</button>`}
+        </div>`;
       }).join('')
     : '';
 
   container.innerHTML = `
     <div class="build-section">
       <div class="builds-toolbar" style="padding:0 0 8px;background:transparent;border-bottom:none;">
-        <span class="builds-title">빌드 보기</span>
-        <button class="btn-build-main" id="btnBuildCreateInline">+ 새 빌드</button>
-        <span class="builds-subtitle">${esc(settings.league)} 리그</span>
-      </div>
-      <div class="build-preset-list" style="padding:0 0 8px;background:transparent;border-bottom:none;">
-        ${allPill}${buildPills}
+        <div class="build-preset-list" style="padding:0;background:transparent;border-bottom:none;flex:1;overflow-x:auto;">
+          ${buildPills}
+        </div>
+        <button class="btn-build-main" id="btnBuildCreateInline">+</button>
       </div>
       ${selected ? `
-        <div class="build-header-row">
-          <input type="text" class="build-name-edit" id="buildNameEdit" value="${esc(selected.name)}" />
-          <button class="btn-build-sub" id="btnBuildDelete">삭제</button>
-        </div>
-        <div class="build-meta-line">${selected.tabs.length}개 탭 · 현재 ${esc(activeTab?.name || '')} · 담긴 필터 ${(activeTab?.filterIds || []).length}개</div>
-        <div class="build-tab-bar">${tabButtons}</div>
-        <div class="build-tab-actions">
-          <button class="btn-build-sub" id="btnBuildAddTab">+ 탭 추가</button>
-          <button class="btn-build-sub" id="btnBuildRenameTab">탭 이름 변경</button>
-          <button class="btn-build-sub" id="btnBuildDeleteTab">탭 삭제</button>
-        </div>
-        <div class="build-filter-picker">
-          <select id="buildFilterSelect">
-            <option value="">현재 탭에 필터 추가...</option>
-            ${availableOptions}
-          </select>
-          <button class="btn-build-main" id="btnBuildAddFilter">추가</button>
-        </div>
+        <div class="build-meta-line">${esc(settings.league)} · ${esc(selected.name)} · ${(activeTab?.filterIds || []).length}개</div>
+        <div class="build-tab-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;">${tabButtons}<button class="btn-build-sub" id="btnBuildAddTab" style="padding:2px 7px;font-size:11px;align-self:center;">+</button></div>
       ` : `
-        <div class="build-meta-line">전체 즐겨찾기를 보고 있습니다. 특정 빌드를 선택하면 해당 탭에 담긴 필터만 보입니다.</div>
+        <div class="build-meta-line">${esc(settings.league)} · 빌드를 생성하세요</div>
       `}
     </div>`;
 
-  container.querySelectorAll('.build-pill').forEach(btn => {
+  container.querySelectorAll('[data-build-select]').forEach(btn => {
     btn.addEventListener('click', () => {
-      ui.selectedBuildId = btn.dataset.buildId;
+      getCurrentBuildUi().selectedBuildId = btn.dataset.buildSelect;
       persist();
       render();
+    });
+  });
+  container.querySelectorAll('[data-build-rename]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      renameBuildPreset(btn.dataset.buildRename);
+    });
+  });
+  container.querySelectorAll('[data-build-delete]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteBuildPreset(btn.dataset.buildDelete);
     });
   });
   document.getElementById('btnBuildCreateInline').addEventListener('click', createBuildPreset);
 
   if (!selected) return;
 
-  const nameInput = document.getElementById('buildNameEdit');
-  nameInput.addEventListener('change', () => {
-    const nextName = nameInput.value.trim();
-    if (!nextName) {
-      nameInput.value = selected.name;
-      return;
-    }
-    selected.name = nextName;
-    persist();
-    render();
-  });
-
-  container.querySelectorAll('.build-tab-btn').forEach(btn => {
+  container.querySelectorAll('[data-tab-select]').forEach(btn => {
     btn.addEventListener('click', () => {
-      selected.activeTabId = btn.dataset.tabId;
+      selected.activeTabId = btn.dataset.tabSelect;
       persist();
       render();
     });
   });
-
-  document.getElementById('btnBuildDelete').addEventListener('click', () => deleteBuildPreset(selected.id));
-  document.getElementById('btnBuildAddTab').addEventListener('click', () => addBuildTab(selected.id));
-  document.getElementById('btnBuildRenameTab').addEventListener('click', () => renameBuildTab(selected.id));
-  document.getElementById('btnBuildDeleteTab').addEventListener('click', () => deleteBuildTab(selected.id));
-  document.getElementById('btnBuildAddFilter').addEventListener('click', () => {
-    const select = document.getElementById('buildFilterSelect');
-    if (!select.value) return;
-    addFilterToBuildTab(selected.id, select.value);
+  container.querySelectorAll('[data-tab-rename]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      renameBuildTab(selected.id, btn.dataset.tabRename);
+    });
   });
-
-  const activeLocked = activeTab && (activeTab.key === 'equipment' || activeTab.key === 'slate');
-  document.getElementById('btnBuildDeleteTab').disabled = !!activeLocked;
-  document.getElementById('btnBuildDeleteTab').style.opacity = activeLocked ? '.45' : '1';
-  document.getElementById('btnBuildDeleteTab').title = activeLocked ? '장비/서판 탭은 삭제할 수 없습니다' : '';
+  container.querySelectorAll('[data-tab-delete]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteBuildTab(selected.id, btn.dataset.tabDelete);
+    });
+  });
+  document.getElementById('btnBuildAddTab').addEventListener('click', () => addBuildTab(selected.id));
 }
 
 function createBuildPreset() {
@@ -1063,13 +1104,36 @@ function createBuildPreset() {
   render();
 }
 
+function renameBuildPreset(buildId) {
+  const build = getCurrentBuilds().find(entry => entry.id === buildId);
+  if (!build) return;
+  const name = prompt('빌드 이름을 입력하세요.', build.name);
+  if (name == null) return;
+  const nextName = name.trim();
+  if (!nextName) return;
+  build.name = nextName;
+  persist();
+  render();
+}
+
 function deleteBuildPreset(buildId) {
   const builds = getCurrentBuilds();
+  if (builds.length <= 1) {
+    alert('최소 1개의 빌드는 남아 있어야 합니다.');
+    return;
+  }
   const target = builds.find(build => build.id === buildId);
   if (!target) return;
   if (!confirm(`"${target.name}" 빌드를 삭제할까요?`)) return;
-  setCurrentBuilds(builds.filter(build => build.id !== buildId));
-  getCurrentBuildUi().selectedBuildId = '__all__';
+  const remaining = builds.filter(build => build.id !== buildId);
+  const fallbackTab = remaining[0]?.tabs?.[0];
+  if (fallbackTab) {
+    const movedIds = target.tabs.flatMap(tab => tab.filterIds || []).map(String);
+    fallbackTab.filterIds = Array.from(new Set([...(fallbackTab.filterIds || []).map(String), ...movedIds]));
+  }
+  setCurrentBuilds(remaining);
+  ensureBuildDataForLeague(settings.league);
+  getCurrentBuildUi().selectedBuildId = getCurrentBuilds()[0]?.id || '';
   persist();
   render();
 }
@@ -1078,34 +1142,40 @@ function addBuildTab(buildId) {
   const builds = getCurrentBuilds();
   const build = builds.find(entry => entry.id === buildId);
   if (!build) return;
-  const name = prompt('새 탭 이름을 입력하세요.', `탭 ${build.tabs.length - 1}`);
+  const name = prompt('새 탭 이름을 입력하세요.', `탭 ${build.tabs.length + 1}`);
   if (name == null) return;
-  const nextTab = makeBuildTab((name || '').trim() || `탭 ${build.tabs.length - 1}`, 'custom');
+  const nextTab = makeBuildTab((name || '').trim() || `탭 ${build.tabs.length + 1}`, 'custom');
   build.tabs.push(nextTab);
   build.activeTabId = nextTab.id;
   persist();
   render();
 }
 
-function renameBuildTab(buildId) {
+function renameBuildTab(buildId, tabId) {
   const build = getCurrentBuilds().find(entry => entry.id === buildId);
   const tab = getActiveBuildTab(build);
   if (!build || !tab) return;
-  const name = prompt('탭 이름을 입력하세요.', tab.name);
+  const targetTab = tabId ? build?.tabs.find(entry => entry.id === tabId) : tab;
+  if (!build || !targetTab) return;
+  const name = prompt('탭 이름을 입력하세요.', targetTab.name);
   if (name == null) return;
   const nextName = name.trim();
   if (!nextName) return;
-  tab.name = nextName;
+  targetTab.name = nextName;
   persist();
   render();
 }
 
-function deleteBuildTab(buildId) {
+function deleteBuildTab(buildId, tabId) {
   const build = getCurrentBuilds().find(entry => entry.id === buildId);
-  const tab = getActiveBuildTab(build);
+  const tab = tabId ? build?.tabs.find(entry => entry.id === tabId) : getActiveBuildTab(build);
   if (!build || !tab) return;
   if (tab.key === 'equipment' || tab.key === 'slate') return;
   if (!confirm(`"${tab.name}" 탭을 삭제할까요?`)) return;
+  const fallbackTab = build.tabs.find(entry => entry.id !== tab.id) || build.tabs[0];
+  if (fallbackTab) {
+    fallbackTab.filterIds = Array.from(new Set([...(fallbackTab.filterIds || []).map(String), ...(tab.filterIds || []).map(String)]));
+  }
   build.tabs = build.tabs.filter(entry => entry.id !== tab.id);
   build.activeTabId = build.tabs[0]?.id || '';
   persist();
@@ -1118,6 +1188,37 @@ function addFilterToBuildTab(buildId, filterId) {
   if (!build || !tab || !filterId) return;
   const refId = String(filterId);
   if (!tab.filterIds.includes(refId)) tab.filterIds.push(refId);
+  persist();
+  render();
+}
+
+function moveFilterToBuildTab(buildId, filterId, targetTabId) {
+  const build = getCurrentBuilds().find(entry => entry.id === buildId);
+  if (!build || !filterId || !targetTabId) return;
+  const fromTab = build.tabs.find(tab => (tab.filterIds || []).includes(String(filterId)));
+  const toTab   = build.tabs.find(tab => tab.id === targetTabId);
+  if (!toTab) return;
+  if (fromTab) fromTab.filterIds = (fromTab.filterIds || []).filter(id => String(id) !== String(filterId));
+  if (!toTab.filterIds.includes(String(filterId))) toTab.filterIds.push(String(filterId));
+  build.activeTabId = targetTabId;
+  persist();
+  render();
+}
+
+function moveFilterToBuild(filterId, targetBuildId, targetTabId) {
+  const allBuilds = getCurrentBuilds();
+  allBuilds.forEach(build => {
+    build.tabs.forEach(tab => {
+      tab.filterIds = (tab.filterIds || []).filter(id => String(id) !== String(filterId));
+    });
+  });
+  const targetBuild = allBuilds.find(b => b.id === targetBuildId);
+  if (!targetBuild) return;
+  const targetTab = targetBuild.tabs.find(t => t.id === targetTabId);
+  if (!targetTab) return;
+  if (!targetTab.filterIds.includes(String(filterId))) targetTab.filterIds.push(String(filterId));
+  getCurrentBuildUi().selectedBuildId = targetBuildId;
+  targetBuild.activeTabId = targetTabId;
   persist();
   render();
 }
@@ -1313,8 +1414,13 @@ function buildSearchEvaluationContext(filter, results) {
   results.forEach(result => {
     const item = result?.item;
     const listing = result?.listing;
-    const itemId = item?.id || result?.id;
-    if (!item || !listing || !itemId) return;
+    const aliasIds = Array.from(new Set([
+      result?.id,
+      item?.id,
+      listing?.id,
+      listing?.item?.id
+    ].filter(Boolean).map(String)));
+    if (!item || !listing || !aliasIds.length) return;
 
     const equipmentMap = buildItemEquipmentValueMap(item);
     const statMap = buildItemStatValueMap(item);
@@ -1341,8 +1447,8 @@ function buildSearchEvaluationContext(filter, results) {
     const valueIndex = priceDiv ? Number((statScore / priceDiv).toFixed(2)) : null;
     if (valueIndex) valueIndices.push(valueIndex);
 
-    evaluations[itemId] = {
-      itemId,
+    const payload = {
+      itemId: aliasIds[0],
       name: item.name || item.typeLine || '',
       statScore,
       priceDiv,
@@ -1351,6 +1457,9 @@ function buildSearchEvaluationContext(filter, results) {
       tier: priceDiv ? '평균' : '평가 보류',
       ratioToMedian: null
     };
+    aliasIds.forEach(id => {
+      evaluations[id] = payload;
+    });
   });
 
   const sorted = valueIndices.slice().sort((a, b) => a - b);
@@ -1428,7 +1537,19 @@ function makeCard(f) {
   wrap.id = `card-${f.id}`;
   const selectedBuild = getSelectedBuild();
   const activeBuildTab = getActiveBuildTab(selectedBuild);
-  const inActiveBuildTab = !!(activeBuildTab && (activeBuildTab.filterIds || []).includes(String(f.id)));
+  const allBuildsForMove = getCurrentBuilds();
+  const currentBuildId = allBuildsForMove.find(b => b.tabs.some(t => (t.filterIds || []).includes(String(f.id))))?.id || selectedBuild?.id || '';
+  const currentTabId = (() => {
+    const ownerBuild = allBuildsForMove.find(b => b.id === currentBuildId);
+    return ownerBuild?.tabs.find(t => (t.filterIds || []).includes(String(f.id)))?.id || activeBuildTab?.id || '';
+  })();
+  const moveOptions = allBuildsForMove.map(build => {
+    const opts = build.tabs.map(tab => {
+      const isCurrent = build.id === currentBuildId && tab.id === currentTabId;
+      return `<option value="${build.id}:${tab.id}" ${isCurrent ? 'selected' : ''}>${esc(tab.name)}</option>`;
+    }).join('');
+    return `<optgroup label="${esc(build.name)}">${opts}</optgroup>`;
+  }).join('');
 
   const rarityClass = {rare:'badge-rare',unique:'badge-unique',magic:'badge-magic'}[f.rarity] || '';
   const rarityColor = {rare:'#f0c830',unique:'#af6025',magic:'#8888ff',normal:'#c8c8c8'}[f.rarity] || '#c8b98a';
@@ -1502,7 +1623,7 @@ function makeCard(f) {
       <button class="btn-search-q"   data-id="${f.id}">🔍 새창</button>
       <button class="btn-search-cur" data-id="${f.id}">🔗 현재창</button>
       <button class="btn-open-q"     data-id="${f.id}">🌐 KR거래소</button>
-      ${activeBuildTab ? `<button class="build-mini-btn ${inActiveBuildTab ? 'danger' : ''}" data-build-toggle="${f.id}" title="${esc(selectedBuild.name)} > ${esc(activeBuildTab.name)}">${inActiveBuildTab ? '탭 제거' : '탭 추가'}</button>` : ''}
+      ${allBuildsForMove.length > 0 ? `<select class="build-move-select" data-move-filter="${f.id}" title="빌드/탭으로 이동">${moveOptions}</select>` : ''}
     </div>
 
     <div class="card-detail">
@@ -1570,12 +1691,19 @@ function makeCard(f) {
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
   wrap.querySelector('.btn-delete-small').addEventListener('click', e => { e.stopPropagation(); delFilter(f.id); });
-  const buildToggleBtn = wrap.querySelector('[data-build-toggle]');
-  if (buildToggleBtn && selectedBuild && activeBuildTab) {
-    buildToggleBtn.addEventListener('click', e => {
+  const moveSelect = wrap.querySelector('[data-move-filter]');
+  if (moveSelect) {
+    moveSelect.addEventListener('click', e => e.stopPropagation());
+    moveSelect.addEventListener('change', e => {
       e.stopPropagation();
-      if (inActiveBuildTab) removeFilterFromBuildTab(selectedBuild.id, f.id);
-      else addFilterToBuildTab(selectedBuild.id, f.id);
+      const [targetBuildId, targetTabId] = moveSelect.value.split(':');
+      if (!targetBuildId || !targetTabId) return;
+      const curBuild = getSelectedBuild();
+      if (targetBuildId === curBuild?.id) {
+        moveFilterToBuildTab(targetBuildId, f.id, targetTabId);
+      } else {
+        moveFilterToBuild(f.id, targetBuildId, targetTabId);
+      }
     });
   }
 
@@ -1710,7 +1838,7 @@ async function doSearch(id, openInNew = true) {
     }
     const sData = await res.json();
     if (!sData.id) throw new Error('검색 ID를 받지 못했습니다');
-    const topIds = Array.isArray(sData.result) ? sData.result.slice(0, Math.max(1, Number(settings.resultCount) || 10)) : [];
+    const topIds = Array.isArray(sData.result) ? sData.result.slice(0, 20) : [];
     if (topIds.length) {
       try {
         const fetchRes = await fetch(`${KR_API_BASE}/fetch/${topIds.map(encodeURIComponent).join(',')}?query=${encodeURIComponent(sData.id)}&realm=poe2`);
@@ -1828,6 +1956,7 @@ function bindHeader() {
     const idx = KNOWN_LEAGUES.indexOf(cur);
     const next = KNOWN_LEAGUES[(idx + 1) % KNOWN_LEAGUES.length];
     settings.league = next;
+    ensureBuildDataForLeague(next);
     document.getElementById('leagueBadge').textContent = next;
     document.getElementById('sLeague').value = next;
     persist();
@@ -1982,6 +2111,7 @@ function bindSettings() {
     const v = (val || '').trim();
     if (!v) return;
     settings.league = v;
+    ensureBuildDataForLeague(v);
     document.getElementById('leagueBadge').textContent = v;
     leagueInput.value = v;
     persist();
@@ -2031,7 +2161,11 @@ function bindImportExport() {
         Object.keys(buildsByLeague).forEach(league => {
           buildsByLeague[league] = (buildsByLeague[league] || []).map(normalizeBuild).filter(Boolean);
         });
-        Object.keys(buildsByLeague).forEach(league => pruneDeletedFilterRefs(league));
+        const leagues = Array.from(new Set([...Object.keys(filtersByLeague), ...Object.keys(buildsByLeague), settings.league]));
+        leagues.forEach(league => {
+          ensureBuildDataForLeague(league);
+          pruneDeletedFilterRefs(league);
+        });
         persist(); render();
         document.getElementById('sLeague').value = settings.league;
         document.getElementById('leagueBadge').textContent = settings.league;
