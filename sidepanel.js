@@ -1072,7 +1072,10 @@ function renderBuilds() {
 
   container.querySelectorAll('[data-tab-select]').forEach(btn => {
     btn.addEventListener('click', () => {
-      selected.activeTabId = btn.dataset.tabSelect;
+      const tabId = btn.dataset.tabSelect;
+      const currentBuild = getCurrentBuilds().find(b => b.id === selected.id);
+      if (!currentBuild) return;
+      currentBuild.activeTabId = tabId;
       persist();
       render();
     });
