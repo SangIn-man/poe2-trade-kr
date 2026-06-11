@@ -640,6 +640,19 @@ function ensureBuildDataForLeague(league) {
 
   const firstBuild = builds[0];
   const firstTab = firstBuild.tabs[0];
+  const seenIds = new Set();
+  [...builds].reverse().forEach(build => {
+    build.tabs.forEach(tab => {
+      const before = (tab.filterIds || []).length;
+      tab.filterIds = (tab.filterIds || []).filter(id => {
+        const key = String(id);
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        return true;
+      });
+      if (tab.filterIds.length !== before) changed = true;
+    });
+  });
   const assigned = new Set();
   builds.forEach(build => {
     if (!build.tabs.some(tab => tab.id === build.activeTabId)) {
