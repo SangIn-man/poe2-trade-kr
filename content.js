@@ -12,6 +12,8 @@ observer.observe(document.body, { childList: true, subtree: true });
 setTimeout(scanItems, 1000);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes[SEARCH_EVAL_KEY]) return;
+  cachedEvalContext = null;           // 캐시 무효화
+  cachedEvalContextPromise = null;    // 진행 중인 프로미스도 무효화
   document.querySelectorAll('.row[data-id]').forEach(row => {
     applySearchEvaluation(row).catch(() => {});
   });
@@ -103,7 +105,10 @@ async function applySearchEvaluation(row) {
   if (!queryId || !row?.dataset?.id) return;
   const context = await loadSearchEvaluationContext();
   if (!context?.evaluations) return;
-  const evaluation = context.evaluations[row.dataset.id];
+  const rowId = String(row.dataset.id);
+  const evaluation = context.evaluations[rowId]
+    || context.evaluations[rowId.replace(/^_+/, '')]
+    || Object.entries(context.evaluations).find(([id]) => String(id) === rowId || String(id).endsWith(rowId) || rowId.endsWith(String(id)))?.[1];
   if (!evaluation) return;
   upsertSearchEvaluationBadge(row, evaluation);
 }

@@ -1461,7 +1461,7 @@ function buildSearchEvaluationContext(filter, results) {
       : 0;
     const priceDiv = getListingPriceInDivine(listing.price);
     const valueIndex = priceDiv ? Number((statScore / priceDiv).toFixed(2)) : null;
-    if (valueIndex) valueIndices.push(valueIndex);
+    if (valueIndex != null) valueIndices.push(valueIndex);
 
     const payload = {
       itemId: aliasIds[0],
@@ -1482,7 +1482,7 @@ function buildSearchEvaluationContext(filter, results) {
   const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
 
   Object.values(evaluations).forEach(entry => {
-    if (!median || !entry.valueIndex) {
+    if (!median || entry.valueIndex == null) {
       entry.tier = '평가 보류';
       return;
     }
