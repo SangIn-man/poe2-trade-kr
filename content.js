@@ -21,6 +21,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ─── scan ─────────────────────────────────────────────
 function scanItems() {
+  console.log('[POE2TQ] scanItems url:', location.pathname, 'rows:', document.querySelectorAll('.row[data-id]').length);
   const queryId = getQueryId();
   if (queryId !== cachedEvalQueryId) {
     cachedEvalQueryId = queryId;
@@ -56,6 +57,7 @@ function storageGet(keys) {
 }
 
 async function loadSearchEvaluationContext() {
+  console.log('[POE2TQ] loadSECtx queryId:', getQueryId(), 'cached:', cachedEvalQueryId);
   const queryId = getQueryId();
   if (!queryId) return null;
   if (cachedEvalContext && cachedEvalQueryId === queryId) return cachedEvalContext;
