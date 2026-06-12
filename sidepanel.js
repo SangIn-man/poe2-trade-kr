@@ -544,6 +544,7 @@ let buildsByLeague = {};
 let buildUiByLeague = {};
 let settings = { league: DEFAULT_LEAGUE, resultCount: 10 };
 let editingId = null;
+let buildSectionCollapsed = true;
 
 const getCurrentFilters = () => filtersByLeague[settings.league] || [];
 const setCurrentFilters = (arr) => { filtersByLeague[settings.league] = arr; };
@@ -1046,20 +1047,38 @@ function renderBuilds() {
       }).join('')
     : '';
 
+  const collapsedClass = buildSectionCollapsed ? 'collapsed' : '';
+  const currentTabName = activeTab ? esc(activeTab.name) : '탭없음';
+  const currentBuildName = selected ? esc(selected.name) : '빌드없음';
+  const metaText = selected
+    ? `${esc(settings.league)} · ${esc(selected.name)} · ${(activeTab?.filterIds || []).length}개`
+    : `${esc(settings.league)} · 빌드를 생성하세요`;
+
   container.innerHTML = `
-    <div class="build-section">
-      <div class="builds-toolbar" style="padding:0 0 8px;background:transparent;border-bottom:none;">
-        <div class="build-preset-list" style="padding:0;background:transparent;border-bottom:none;flex:1;overflow-x:auto;">
-          ${buildPills}
-        </div>
-        <button class="btn-build-main" id="btnBuildCreateInline">+</button>
+    <div class="build-section ${collapsedClass}">
+      <div class="build-toggle-bar" id="buildToggleBar">
+        <span class="build-toggle-label">
+          <span class="build-current-name">${currentBuildName}</span>
+          <span class="build-sep">·</span>
+          <span class="build-current-tab">${currentTabName}</span>
+        </span>
+        <span class="build-toggle-chevron">${buildSectionCollapsed ? '▾' : '▴'}</span>
       </div>
-      ${selected ? `
-        <div class="build-meta-line">${esc(settings.league)} · ${esc(selected.name)} · ${(activeTab?.filterIds || []).length}개</div>
-        <div class="build-tab-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;">${tabButtons}<button class="btn-build-sub" id="btnBuildAddTab" style="padding:2px 7px;font-size:11px;align-self:center;">+</button></div>
-      ` : `
-        <div class="build-meta-line">${esc(settings.league)} · 빌드를 생성하세요</div>
-      `}
+      <div class="build-section-body">
+        <div class="builds-toolbar">
+          <div class="build-preset-list" id="buildPresetList">
+            ${buildPills}
+          </div>
+          <button class="btn-icon-sm" id="btnBuildCreateInline" title="빌드 추가">+</button>
+        </div>
+        <div class="build-meta-line">${metaText}</div>
+        ${selected ? `
+          <div class="build-tab-bar">
+            ${tabButtons}
+            <button class="btn-icon-sm" id="btnBuildAddTab" title="탭 추가">+</button>
+          </div>
+        ` : ''}
+      </div>
     </div>`;
 
   container.querySelectorAll('[data-build-select]').forEach(btn => {
@@ -1082,6 +1101,14 @@ function renderBuilds() {
     });
   });
   document.getElementById('btnBuildCreateInline').addEventListener('click', createBuildPreset);
+
+  const toggleBar = document.getElementById('buildToggleBar');
+  if (toggleBar) {
+    toggleBar.addEventListener('click', () => {
+      buildSectionCollapsed = !buildSectionCollapsed;
+      renderBuilds();
+    });
+  }
 
   if (!selected) return;
 

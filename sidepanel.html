@@ -445,23 +445,59 @@
     }
     .build-pill {
       flex: 0 0 auto;
-      max-width: 150px;
+      max-width: 190px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
       border: 1px solid #3a2e1a;
       background: #18120a;
       color: #a09070;
       border-radius: 999px;
-      padding: 5px 10px;
+      padding: 3px 5px 3px 8px;
+    }
+    .build-pill.active {
+      background: #3a2a10;
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-pill-main {
+      background: transparent;
+      border: none;
+      color: inherit;
       font-size: 11px;
       cursor: pointer;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       font-family: inherit;
+      min-width: 0;
+      flex: 1;
+      text-align: left;
+      padding: 2px 0;
     }
-    .build-pill.active {
-      background: #3a2a10;
+    .build-pill-icon {
+      width: 18px;
+      height: 18px;
+      border: 1px solid #4a3820;
+      background: #120d08;
+      color: #9a8460;
+      border-radius: 999px;
+      font-size: 10px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    .build-pill-icon:hover {
       color: #f0d080;
       border-color: #8a6030;
+    }
+    .build-pill-icon.danger {
+      color: #b86a6a;
+      border-color: #4a2020;
     }
     .build-detail {
       flex: 1;
@@ -491,6 +527,49 @@
       border: 1px solid #2e2410;
       border-radius: 6px;
       background: #131108;
+    }
+    .build-toggle-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+      user-select: none;
+      font-size: 12px;
+      color: #b8a882;
+      transition: background 0.15s;
+    }
+    .build-toggle-bar:hover {
+      background: rgba(255,255,255,0.08);
+    }
+    .build-toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .build-current-name {
+      color: #d4af6e;
+      font-weight: 600;
+    }
+    .build-sep {
+      opacity: 0.4;
+    }
+    .build-current-tab {
+      color: #8fa8c8;
+    }
+    .build-toggle-chevron {
+      font-size: 10px;
+      opacity: 0.6;
+    }
+    .build-section-body {
+      overflow: hidden;
+      transition: max-height 0.2s ease;
+      max-height: 200px;
+    }
+    .build-section.collapsed .build-section-body {
+      display: none;
     }
     .build-header-row {
       display: flex;
@@ -535,25 +614,53 @@
     }
     .build-tab-btn {
       flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
       border: 1px solid #3a2e1a;
       background: #17120b;
       color: #9a8460;
       border-radius: 4px;
-      padding: 5px 9px;
-      font-size: 11px;
-      cursor: pointer;
-      font-family: inherit;
-      white-space: nowrap;
+      padding: 3px 4px 3px 7px;
     }
     .build-tab-btn.active {
       background: #3a2a10;
       color: #f0d080;
       border-color: #8a6030;
     }
-    .build-tab-btn.locked::after {
-      content: "•";
-      margin-left: 4px;
-      color: #5da060;
+    .build-tab-main {
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      padding: 2px 0;
+    }
+    .build-tab-icon {
+      width: 16px;
+      height: 16px;
+      border: 1px solid #4a3820;
+      background: #120d08;
+      color: #9a8460;
+      border-radius: 999px;
+      font-size: 9px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    .build-tab-icon:hover {
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-tab-icon.danger {
+      color: #b86a6a;
+      border-color: #4a2020;
     }
     .build-tab-actions {
       display: flex;
@@ -635,6 +742,17 @@
       cursor: pointer;
       font-family: inherit;
       white-space: nowrap;
+    }
+    .build-move-select {
+      min-width: 90px;
+      max-width: 120px;
+      background: #0a0908;
+      border: 1px solid #3a2e1a;
+      color: #c8b88a;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 10px;
+      font-family: inherit;
     }
     .build-mini-btn:hover {
       color: #f0d080;
