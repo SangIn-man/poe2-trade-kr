@@ -940,8 +940,19 @@ function guessCategoryFromItem(item) {
   if (/Warstaves?/i.test(icon))    return 'weapon.warstaff';
   if (/Staves|Staffs?/i.test(icon))return 'weapon.staff';
   if (/Crossbows?/i.test(icon))    return 'weapon.crossbow';
-  if (/Flasks?/i.test(icon))       return 'flask';
-  if (/Jewels?/i.test(icon))       return 'jewel';
+  if (/Flasks?/i.test(icon))        return 'flask';
+  if (/Jewels?/i.test(icon))         return 'jewel';
+  // PoE2 uses hashed CDN icon URLs — fall back to typeLine keyword matching
+  const typeStr = (item?.typeLine || item?.baseType || '');
+  if (/부적/u.test(typeStr))         return 'accessory.amulet';
+  if (/반지/u.test(typeStr))         return 'accessory.ring';
+  if (/벨트/u.test(typeStr))         return 'armour.belt';
+  if (/투구/u.test(typeStr))         return 'armour.helmet';
+  if (/장갑/u.test(typeStr))         return 'armour.gloves';
+  if (/장화|신발/u.test(typeStr))    return 'armour.boots';
+  if (/방패/u.test(typeStr))         return 'armour.shield';
+  if (/집중도|포커스/u.test(typeStr)) return 'armour.focus';
+  if (/화살통|퀴버/u.test(typeStr))  return 'armour.quiver';
   return '';
 }
 
