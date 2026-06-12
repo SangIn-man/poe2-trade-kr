@@ -965,7 +965,6 @@ function guessCategoryFromItem(item) {
   if (/방패/u.test(typeStr))         return 'armour.shield';
   if (/집중도|포커스/u.test(typeStr)) return 'armour.focus';
   if (/화살통|퀴버/u.test(typeStr))  return 'armour.quiver';
-  if (/부$|호신부|호신/u.test(typeStr))  return 'charm';
   return '';
 }
 
