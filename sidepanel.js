@@ -1918,6 +1918,7 @@ function buildQuery(f) {
   const q = { query:{ status:{ option:'securable' }, filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
   const tf = {};
   if (f.rarity)   tf.rarity   = { option: f.rarity };
+  if (f.category) tf.category = { option: f.category };
   if (f.typeLine && f.typeLineActive !== false) tf.type = { option: f.typeLine };
   if (Object.keys(tf).length) q.query.filters.type_filters = { filters: tf };
 

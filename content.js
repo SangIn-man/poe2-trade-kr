@@ -908,9 +908,19 @@ const EXACT_EQUIPMENT_FILTERS = new Set(['rune_sockets']);
 
 // ─── icon path → category ─────────────────────────────
 function guessCategoryFromItem(item) {
+  console.log('[cat]', JSON.stringify(item?.category), item?.typeLine);
   const directCategory = item?.category;
   if (Array.isArray(directCategory) && directCategory.length) return directCategory.join('.');
   if (typeof directCategory === 'string' && directCategory) return directCategory;
+  if (directCategory && typeof directCategory === 'object' && !Array.isArray(directCategory)) {
+    const mainKey = Object.keys(directCategory)[0];
+    const subArr = directCategory[mainKey];
+    if (mainKey) {
+      const singular = mainKey === 'accessories' ? 'accessory' : mainKey.replace(/s$/, '');
+      if (Array.isArray(subArr) && subArr.length) return `${singular}.${subArr[0]}`;
+      return singular;
+    }
+  }
   const icon = item?.icon || '';
   // PoE icon paths contain category hints: /Helmets/, /BodyArmours/, etc.
   if (/Helmets?/i.test(icon))      return 'armour.helmet';
