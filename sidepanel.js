@@ -702,7 +702,7 @@ function buildQuerySignature(filter) {
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => `${x.id}:${Number(x.min) || 0}`)
+      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}`)
       .sort()
   });
 }
@@ -734,11 +734,13 @@ function normalizeSavedFilter(filter) {
   filter.stats.forEach(s => {
     if (!s) return;
     if (s.active == null) s.active = true;
-    if (s.value != null && isFinite(Number(s.value))) {
+    if (s.noValue == null) s.noValue = (s.value == null && !isFinite(Number(s.min)));
+    if (!s.noValue && s.value != null && isFinite(Number(s.value))) {
       // Preserve the sign for negative stats (감소 stats stored as negative values).
       const sign = Number(s.value) < 0 ? -1 : 1;
       s.min = sign * roundFilterNumber(s.value);
     }
+    if (s.noValue) s.min = null;
     // Migrate: if id is unknown but fallbackId is valid, promote fallbackId → id
     if (s.id && s.id.includes('unknown') && s.fallbackId && !s.fallbackId.includes('unknown')) {
       s.id = s.fallbackId;
@@ -1249,6 +1251,7 @@ function removeFilterFromBuildTab(buildId, filterId) {
 }
 
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
+const TRADE_RATE_KEY = 'tradeCurrencyRates';
 
 function stripTradeTags(text) {
   return String(text || '').replace(/<[^>]*>/g, '').trim();
@@ -1295,7 +1298,7 @@ function extractTradeEquipmentValues(text, id) {
     return m ? [roundTradeValue((Math.abs(Number(m[1])) + Math.abs(Number(m[2]))) / 2)] : [];
   }
   const patterns = {
-    aps: '(?:attacks per second|초당 공격|공격 속도)',
+    aps: '(?:attacks per second|초당 공격(?: 횟수)?)',
     crit: '(?:critical hit chance|치명타 확률)',
     dps: '(?:^|\\b)dps(?:$|\\b)|초당 피해',
     pdps: '(?:physical dps|물리 dps)',
@@ -1419,6 +1422,7 @@ function buildSearchEvaluationContext(filter, results, topIds = []) {
   const activeEquipment = (filter.equipment || []).filter(entry => entry.active !== false && entry.id);
   const activeStats = (filter.stats || []).filter(entry => {
     if (entry.active === false) return false;
+    if (entry.noValue) return false;
     const effectiveId = (entry.id && !entry.id.includes('unknown'))
       ? entry.id
       : (entry.fallbackId && !entry.fallbackId.includes('unknown') ? entry.fallbackId : '');
@@ -1914,7 +1918,7 @@ function buildQuery(f) {
   const q = { query:{ status:{ option:'securable' }, filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
   const tf = {};
   if (f.rarity)   tf.rarity   = { option: f.rarity };
-  if (f.category) tf.category = { option: f.category };
+  if (f.category && !(f.typeLine && f.typeLineActive !== false)) tf.category = { option: f.category };
   if (f.typeLine && f.typeLineActive !== false) tf.type = { option: f.typeLine };
   if (Object.keys(tf).length) q.query.filters.type_filters = { filters: tf };
 
@@ -1941,6 +1945,10 @@ function buildQuery(f) {
       ? s.id
       : (s.fallbackId && !s.fallbackId.includes('unknown') ? s.fallbackId : null);
     if (!effectiveId) return;
+    if (s.noValue) {
+      statFilters.push({ id: effectiveId, disabled: false });
+      return;
+    }
     // Negative stats (감소/reduction mods) are stored with negative min values.
     // The trade API requires these to be queried with `max` (not `min`) so that
     // items with a roll of -35 or better (more negative = more reduction) are found.
@@ -2065,7 +2073,7 @@ function openModal(id) {
       <button class="stat-toggle ${active?'':'off'}" data-idx="${i}" title="활성/비활성">${active?'✅':'⬜'}</button>
       <span class="stat-edit-label" title="${esc(s.label)}">${esc(s.label)}</span>
       ${badgeHtml}
-      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.min}" step="1" title="최솟값 (감소 스탯은 음수)"/>
+      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.noValue ? '' : (s.min ?? '')}" step="1" title="${s.noValue ? '수치 없는 옵션' : '최솟값 (감소 스탯은 음수)'}" ${s.noValue ? 'disabled placeholder="플래그"' : ''}/>
     `;
     row.querySelector('.stat-toggle').addEventListener('click', function() {
       const isOn = !this.classList.contains('off');
@@ -2119,7 +2127,11 @@ function saveModal() {
     if (!f.stats[i]) return;
     const toggle = row.querySelector('.stat-toggle');
     f.stats[i].active = !toggle.classList.contains('off');
-    f.stats[i].min    = parseFloat(row.querySelector('.stat-edit-min').value)||0;
+    if (f.stats[i].noValue) {
+      f.stats[i].min = null;
+    } else {
+      f.stats[i].min = parseFloat(row.querySelector('.stat-edit-min').value)||0;
+    }
 
     // Apply category badge prefix to the stat id
     const badge = row.querySelector('.cat-badge');
@@ -2447,6 +2459,13 @@ function updateRateBadge(data) {
   const exRate = data.core?.rates?.exalted;
   if (exRate) {
     currentExRate = exRate;
+    chrome.storage.local.set({
+      [TRADE_RATE_KEY]: {
+        rates: data.core?.rates || {},
+        updatedAt: new Date().toISOString(),
+        league: settings.league || 'Standard'
+      }
+    });
     badge.textContent = `1div = ${exRate}ex`;
     badge.style.display = '';
     render();
