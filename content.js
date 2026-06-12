@@ -944,7 +944,8 @@ function guessCategoryFromItem(item) {
   if (/Jewels?/i.test(icon))         return 'jewel';
   // PoE2 uses hashed CDN icon URLs — fall back to typeLine keyword matching
   const typeStr = (item?.typeLine || item?.baseType || '');
-  if (/부적/u.test(typeStr))         return 'accessory.amulet';
+  if (/목걸이/u.test(typeStr))        return 'accessory.amulet';
+  if (/부적/u.test(typeStr))          return 'weapon.talisman';
   if (/반지/u.test(typeStr))         return 'accessory.ring';
   if (/벨트/u.test(typeStr))         return 'armour.belt';
   if (/투구/u.test(typeStr))         return 'armour.helmet';
