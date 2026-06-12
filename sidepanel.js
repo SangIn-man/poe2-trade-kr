@@ -6,7 +6,7 @@ const EXPEDITION_DATA = [
   { category: '추천', rumor: '따뜻하지만 위험하다', region: '우거진 섬', effect: '경험치 증가 유적, 추가 몬스터 소환 가능, 부활 무한' },
   { category: '보통', rumor: '아황산염!', region: '그을린 염초', effect: '희귀도 증가' },
   { category: '보통', rumor: '끝없는 계곡', region: '바위투성이 반도', effect: '희귀 아이템 증가 보스방, 달주 유배자 2명' },
-  { category: '보통', rumor: '자유롭게 활보하는 이성', region: '풍이 든긴 프레리', effect: '아즈메리로 강화' },
+  { category: '보통', rumor: '자유롭게 활보하는 야생', region: '풍이 든긴 프레리', effect: '아즈메리로 강화' },
   { category: '보통', rumor: '흡수할 것이 없다', region: '고인 분지', effect: '넓은 폭발' },
   { category: '비추', rumor: '무언가 수상하다', region: '표백된 모래톱', effect: '진주 목걸이 획득 가능' },
   { category: '비추', rumor: '적어도 축축하지는 않다', region: '전장이 된 고랑', effect: '몬스터 효율 증가 가능, 몬스터가 자주 끼임' },
@@ -18,7 +18,7 @@ const EXPEDITION_DATA = [
   { category: '고유', rumor: '??(소문 모음)', region: '애조마이 거서', effect: '여러 고유 몸 처치, 준 보상' },
   { category: '보스(추천)', rumor: '별 흡수자', region: '외딴 사원', effect: '우트레드\n- 우트레드의 별자리\n- 우트레드의 의례\n- 고갈된 마나 룬' },
   { category: '보스(추천)', rumor: '몰락의 기원', region: '후미진 섬', effect: '올로스\n- 우트레드의 징조\n- 영웅적인 비극\n- 올로스의 결의\n- 올로스의 태양 문양' },
-  { category: '보스(추천)', rumor: '순원의 끝', region: '뻗어 가는 마을', effect: '매드배드\n- 보라나의 공성' },
+  { category: '보스(추천)', rumor: '순환의 끝', region: '뻗어 가는 마을', effect: '매드배드\n- 보라나의 공성' },
   { category: '보스(비추)', rumor: '최후의 보루', region: '음울한 낭떠러지', effect: '보라나' },
 ];
 
