@@ -1886,11 +1886,17 @@ async function doSearch(id, openInNew = true) {
     }
     const url = `${KR_TRADE_BASE}/${encodeURIComponent(settings.league)}/${sData.id}`;
     if (openInNew) {
+      console.log('[POE2TQ] tabs.create url:', url);
       chrome.tabs.create({ url });
     } else {
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-        if (tabs && tabs[0]) chrome.tabs.update(tabs[0].id, { url });
-        else chrome.tabs.create({ url });
+        if (tabs && tabs[0]) {
+          console.log('[POE2TQ] tabs.update tab:', tabs?.[0]?.id, tabs?.[0]?.url, '→', url);
+          chrome.tabs.update(tabs[0].id, { url });
+        } else {
+          console.log('[POE2TQ] tabs.create url:', url);
+          chrome.tabs.create({ url });
+        }
       });
     }
     const total = (sData.total || 0).toLocaleString();
