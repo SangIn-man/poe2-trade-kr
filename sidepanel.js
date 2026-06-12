@@ -1428,6 +1428,7 @@ function buildSearchEvaluationContext(filter, results, topIds = []) {
   const evaluations = {};
   const valueIndices = [];
 
+  let skipped = 0;
   results.forEach((result, n) => {
     const item = result?.item;
     const listing = result?.listing;
@@ -1438,7 +1439,7 @@ function buildSearchEvaluationContext(filter, results, topIds = []) {
       listing?.id,
       listing?.item?.id
     ].filter(Boolean).map(String)));
-    if (!item || !listing || !aliasIds.length) return;
+    if (!item || !listing || !aliasIds.length) { skipped++; return; }
 
     const equipmentMap = buildItemEquipmentValueMap(item);
     const statMap = buildItemStatValueMap(item);
@@ -1479,6 +1480,7 @@ function buildSearchEvaluationContext(filter, results, topIds = []) {
       evaluations[id] = payload;
     });
   });
+  if (skipped > 0) console.log('[POE2TQ] skipped', skipped, 'results (missing item/listing)');
 
   const sorted = valueIndices.slice().sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
@@ -1862,6 +1864,7 @@ async function doSearch(id, openInNew = true) {
         const fetchRes = await fetch(`${KR_API_BASE}/fetch/${topIds.map(encodeURIComponent).join(',')}?query=${encodeURIComponent(sData.id)}&realm=poe2`);
         if (fetchRes.ok) {
           const fetchData = await fetchRes.json();
+          console.log('[POE2TQ] fetch result count:', (fetchData.result || []).length, 'sample[0]:', JSON.stringify(fetchData.result?.[0]).slice(0, 200));
           const context = buildSearchEvaluationContext(f, fetchData.result || [], topIds);
           await persistSearchEvaluationContext(sData.id, context);
           console.log('[POE2TQ] saved eval context:', sData.id, Object.keys(context.evaluations || {}).length, 'evals');
