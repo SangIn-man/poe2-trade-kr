@@ -1415,7 +1415,7 @@ function getFilterStatActualValue(statMap, stat) {
   return 0;
 }
 
-function buildSearchEvaluationContext(filter, results) {
+function buildSearchEvaluationContext(filter, results, topIds = []) {
   const activeEquipment = (filter.equipment || []).filter(entry => entry.active !== false && entry.id);
   const activeStats = (filter.stats || []).filter(entry => {
     if (entry.active === false) return false;
@@ -1428,10 +1428,11 @@ function buildSearchEvaluationContext(filter, results) {
   const evaluations = {};
   const valueIndices = [];
 
-  results.forEach(result => {
+  results.forEach((result, n) => {
     const item = result?.item;
     const listing = result?.listing;
     const aliasIds = Array.from(new Set([
+      topIds[n],
       result?.id,
       item?.id,
       listing?.id,
@@ -1861,10 +1862,12 @@ async function doSearch(id, openInNew = true) {
         const fetchRes = await fetch(`${KR_API_BASE}/fetch/${topIds.map(encodeURIComponent).join(',')}?query=${encodeURIComponent(sData.id)}&realm=poe2`);
         if (fetchRes.ok) {
           const fetchData = await fetchRes.json();
-          const context = buildSearchEvaluationContext(f, fetchData.result || []);
+          const context = buildSearchEvaluationContext(f, fetchData.result || [], topIds);
           await persistSearchEvaluationContext(sData.id, context);
+          console.log('[POE2TQ] saved eval context:', sData.id, Object.keys(context.evaluations || {}).length, 'evals');
         }
       } catch (evalErr) {
+        console.error('[POE2TQ] eval error:', evalErr);
         chrome.runtime.sendMessage({
           type: 'APPEND_DEBUG_LOG',
           entry: {

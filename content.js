@@ -64,6 +64,7 @@ async function loadSearchEvaluationContext() {
     .then(result => {
       cachedEvalQueryId = queryId;
       cachedEvalContext = result?.[SEARCH_EVAL_KEY]?.[queryId] || null;
+      console.log('[POE2TQ] eval context for', queryId, ':', cachedEvalContext ? Object.keys(cachedEvalContext.evaluations || {}).length + ' evals' : 'null');
       return cachedEvalContext;
     })
     .finally(() => {
@@ -109,7 +110,14 @@ async function applySearchEvaluation(row) {
   const evaluation = context.evaluations[rowId]
     || context.evaluations[rowId.replace(/^_+/, '')]
     || Object.entries(context.evaluations).find(([id]) => String(id) === rowId || String(id).endsWith(rowId) || rowId.endsWith(String(id)))?.[1];
-  if (!evaluation) return;
+  if (!evaluation) {
+    // only log first row to avoid spam
+    if (!applySearchEvaluation._logged) {
+      applySearchEvaluation._logged = true;
+      console.log('[POE2TQ] no eval for rowId:', rowId, 'context keys sample:', Object.keys(context.evaluations).slice(0, 2));
+    }
+    return;
+  }
   upsertSearchEvaluationBadge(row, evaluation);
 }
 
