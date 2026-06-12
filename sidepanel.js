@@ -1340,7 +1340,8 @@ function buildItemEquipmentValueMap(item) {
       ? prop.values.map(v => stripTradeTags(v?.[0])).filter(Boolean).join(' ')
       : lineText;
 
-    for (const rule of EQUIPMENT_PROPERTY_RULES) {
+    const _equipRules = (typeof EQUIPMENT_PROPERTY_RULES !== 'undefined') ? EQUIPMENT_PROPERTY_RULES : [];
+    for (const rule of _equipRules) {
       if (!rule.patterns.some(pattern => pattern.test(name) || pattern.test(lineText))) continue;
       const values = extractTradeEquipmentValues(lineText, rule.id);
       if (values.length) {
