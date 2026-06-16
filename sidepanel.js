@@ -889,6 +889,28 @@ function render() {
     Array.from(list.querySelectorAll('.filter-card.open')).map(el => el.id.replace('card-', ''))
   );
   renderBuilds();
+
+  // Jewel sub-tabs visibility — wire BEFORE any early return so buttons
+  // keep their event listeners even when the filtered list is empty.
+  const jewelSubTabsEl = document.getElementById('jewelSubTabs');
+  if (jewelSubTabsEl) {
+    const _selectedBuild = getSelectedBuild();
+    const _activeTab = _selectedBuild ? getActiveBuildTab(_selectedBuild) : null;
+    const isSlate = _activeTab && _activeTab.key === 'slate';
+    jewelSubTabsEl.style.display = isSlate ? 'flex' : 'none';
+    if (isSlate) {
+      jewelSubTabsEl.innerHTML = JEWEL_SUB_TYPES.map(t =>
+        `<button class="jewel-sub-btn${jewelSubFilter === t.key ? ' active' : ''}" data-jewel-sub="${t.key}">${t.label}</button>`
+      ).join('');
+      jewelSubTabsEl.querySelectorAll('.jewel-sub-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          jewelSubFilter = btn.dataset.jewelSub;
+          render();
+        });
+      });
+    }
+  }
+
   const current = getVisibleFilters();
   if (!current.length) {
     const selectedBuild = getSelectedBuild();
@@ -912,26 +934,6 @@ function render() {
     if (openIds.has(String(f.id))) card.classList.add('open');
     list.appendChild(card);
   });
-
-  // Jewel sub-tabs visibility
-  const jewelSubTabsEl = document.getElementById('jewelSubTabs');
-  if (jewelSubTabsEl) {
-    const _selectedBuild = getSelectedBuild();
-    const _activeTab = _selectedBuild ? getActiveBuildTab(_selectedBuild) : null;
-    const isSlate = _activeTab && _activeTab.key === 'slate';
-    jewelSubTabsEl.style.display = isSlate ? 'flex' : 'none';
-    if (isSlate) {
-      jewelSubTabsEl.innerHTML = JEWEL_SUB_TYPES.map(t =>
-        `<button class="jewel-sub-btn${jewelSubFilter === t.key ? ' active' : ''}" data-jewel-sub="${t.key}">${t.label}</button>`
-      ).join('');
-      jewelSubTabsEl.querySelectorAll('.jewel-sub-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          jewelSubFilter = btn.dataset.jewelSub;
-          render();
-        });
-      });
-    }
-  }
 }
 
 function getSelectedBuild() {
