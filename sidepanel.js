@@ -555,6 +555,8 @@ const JEWEL_SUB_TYPES = [
   { key: 'warden', label: '감독관' },
   { key: 'expedition', label: '탐험' },
   { key: 'sanctum', label: '사원' },
+  { key: 'fractured', label: '균열' },
+  { key: 'phantom', label: '환영' },
 ];
 
 function getJewelSubType(f) {
@@ -565,6 +567,8 @@ function getJewelSubType(f) {
   if (s.includes('warden') || s.includes('감독관')) return 'warden';
   if (s.includes('expedition') || s.includes('탐험')) return 'expedition';
   if (s.includes('sanctum') || s.includes('사원')) return 'sanctum';
+  if (s.includes('fractured')||s.includes('균열')) return 'fractured';
+  if (s.includes('phantom')||s.includes('환영')) return 'phantom';
   return 'base';
 }
 
