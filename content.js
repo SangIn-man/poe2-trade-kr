@@ -769,6 +769,60 @@ function injectStarButton(row) {
   }
 }
 
+// ─── stat selection modal ─────────────────────────────
+function showStatSelectionModal(filter) {
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById('poe2tq-stat-modal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'poe2tq-stat-modal';
+
+    const statsHtml = filter.stats.length
+      ? filter.stats.map((stat, i) => `
+        <label class="poe2tq-sm-item">
+          <input type="checkbox" data-idx="${i}" checked>
+          <span class="poe2tq-sm-label">${stat.label}${stat.value != null ? ` <em>${stat.value}</em>` : ''}</span>
+        </label>`).join('')
+      : '<div class="poe2tq-sm-empty">속성 없음</div>';
+
+    overlay.innerHTML = `
+      <div class="poe2tq-sm-box">
+        <div class="poe2tq-sm-title">${filter.name || filter.itemName || '속성 선택'}</div>
+        <div class="poe2tq-sm-hint">저장할 속성을 선택하세요</div>
+        <div class="poe2tq-sm-list">${statsHtml}</div>
+        <div class="poe2tq-sm-actions">
+          <button class="poe2tq-sm-btn-all">전체선택</button>
+          <button class="poe2tq-sm-btn-none">전체해제</button>
+          <span style="flex:1"></span>
+          <button class="poe2tq-sm-btn-cancel">취소</button>
+          <button class="poe2tq-sm-btn-save">저장</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const getChecked = () => [...overlay.querySelectorAll('input[type="checkbox"]')];
+
+    overlay.querySelector('.poe2tq-sm-btn-all').addEventListener('click', () => getChecked().forEach(cb => cb.checked = true));
+    overlay.querySelector('.poe2tq-sm-btn-none').addEventListener('click', () => getChecked().forEach(cb => cb.checked = false));
+
+    overlay.querySelector('.poe2tq-sm-btn-cancel').addEventListener('click', () => {
+      overlay.remove();
+      reject(new Error('취소됨'));
+    });
+
+    overlay.querySelector('.poe2tq-sm-btn-save').addEventListener('click', () => {
+      const selected = new Set(getChecked().filter(cb => cb.checked).map(cb => +cb.dataset.idx));
+      filter.stats = filter.stats.filter((_, i) => selected.has(i));
+      overlay.remove();
+      resolve(filter);
+    });
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); reject(new Error('취소됨')); } });
+  });
+}
+
 // ─── main click handler ───────────────────────────────
 async function handleStar(btn, row) {
   btn.disabled = true;
@@ -790,6 +844,8 @@ async function handleStar(btn, row) {
     const built = await buildFilterFromApi(result.item, result.listing);
     const filter = built?.filter;
     if (!filter) throw new Error('필터 생성 실패');
+
+    const selectedFilter = await showStatSelectionModal(filter);
 
     chrome.runtime.sendMessage({
       type: 'APPEND_DEBUG_LOG',
@@ -827,7 +883,7 @@ async function handleStar(btn, row) {
 
     const dup = await chrome.runtime.sendMessage({
       type: 'CHECK_DUPLICATE',
-      hash: filter.sourceHash
+      hash: selectedFilter.sourceHash
     });
 
     if (dup?.duplicate) {
@@ -836,16 +892,21 @@ async function handleStar(btn, row) {
       return;
     }
 
-    const saveRes = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter });
+    const saveRes = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter: selectedFilter });
     if (saveRes?.ok) {
       btn.textContent = '✅ 저장완료!';
       btn.classList.add('saved');
       const league = saveRes.league ? ` [${saveRes.league}]` : '';
-      showToast(`"${filter.name}" 저장 완료!${league} (총 ${saveRes.total}개)`, 'ok');
+      showToast(`"${selectedFilter.name}" 저장 완료!${league} (총 ${saveRes.total}개)`, 'ok');
     } else {
       throw new Error('저장 실패');
     }
   } catch (err) {
+    if (err.message === '취소됨') {
+      btn.textContent = '⭐ 즐겨찾기';
+      btn.disabled = false;
+      return;
+    }
     btn.textContent = '❌ 실패';
     btn.disabled = false;
     showToast('오류: ' + err.message, 'err');
