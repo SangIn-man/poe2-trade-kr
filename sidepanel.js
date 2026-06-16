@@ -558,7 +558,7 @@ const JEWEL_SUB_TYPES = [
 ];
 
 function getJewelSubType(f) {
-  const s = ((f.category || '') + ' ' + (f.name || '') + ' ' + (f.itemName || '')).toLowerCase();
+  const s = ((f.category || '') + ' ' + (f.typeLine || '') + ' ' + (f.name || '') + ' ' + (f.itemName || '')).toLowerCase();
   if (s.includes('timeless') || s.includes('의식')) return 'timeless';
   if (s.includes('abyss') || s.includes('심연')) return 'abyss';
   if (s.includes('tainted') || s.includes('방사능')) return 'tainted';
