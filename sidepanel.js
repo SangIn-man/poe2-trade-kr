@@ -545,6 +545,28 @@ let buildUiByLeague = {};
 let settings = { league: DEFAULT_LEAGUE, resultCount: 10 };
 let editingId = null;
 let buildSectionCollapsed = true;
+let jewelSubFilter = 'all';
+
+const JEWEL_SUB_TYPES = [
+  { key: 'all', label: '전체' },
+  { key: 'timeless', label: '의식' },
+  { key: 'abyss', label: '심연' },
+  { key: 'tainted', label: '방사능' },
+  { key: 'warden', label: '감독관' },
+  { key: 'expedition', label: '탐험' },
+  { key: 'sanctum', label: '사원' },
+];
+
+function getJewelSubType(f) {
+  const s = ((f.category || '') + ' ' + (f.name || '') + ' ' + (f.itemName || '')).toLowerCase();
+  if (s.includes('timeless') || s.includes('의식')) return 'timeless';
+  if (s.includes('abyss') || s.includes('심연')) return 'abyss';
+  if (s.includes('tainted') || s.includes('방사능')) return 'tainted';
+  if (s.includes('warden') || s.includes('감독관')) return 'warden';
+  if (s.includes('expedition') || s.includes('탐험')) return 'expedition';
+  if (s.includes('sanctum') || s.includes('사원')) return 'sanctum';
+  return 'base';
+}
 
 const getCurrentFilters = () => filtersByLeague[settings.league] || [];
 const setCurrentFilters = (arr) => { filtersByLeague[settings.league] = arr; };
@@ -890,6 +912,26 @@ function render() {
     if (openIds.has(String(f.id))) card.classList.add('open');
     list.appendChild(card);
   });
+
+  // Jewel sub-tabs visibility
+  const jewelSubTabsEl = document.getElementById('jewelSubTabs');
+  if (jewelSubTabsEl) {
+    const _selectedBuild = getSelectedBuild();
+    const _activeTab = _selectedBuild ? getActiveBuildTab(_selectedBuild) : null;
+    const isSlate = _activeTab && _activeTab.key === 'slate';
+    jewelSubTabsEl.style.display = isSlate ? 'flex' : 'none';
+    if (isSlate) {
+      jewelSubTabsEl.innerHTML = JEWEL_SUB_TYPES.map(t =>
+        `<button class="jewel-sub-btn${jewelSubFilter === t.key ? ' active' : ''}" data-jewel-sub="${t.key}">${t.label}</button>`
+      ).join('');
+      jewelSubTabsEl.querySelectorAll('.jewel-sub-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          jewelSubFilter = btn.dataset.jewelSub;
+          render();
+        });
+      });
+    }
+  }
 }
 
 function getSelectedBuild() {
@@ -920,7 +962,11 @@ function getVisibleFilters() {
   const current = getCurrentFilters();
   if (!selectedBuild || !activeTab) return [];
   const allowedIds = new Set((activeTab.filterIds || []).map(String));
-  return current.filter(filter => allowedIds.has(String(filter.id)));
+  let visible = current.filter(filter => allowedIds.has(String(filter.id)));
+  if (activeTab.key === 'slate' && jewelSubFilter !== 'all') {
+    visible = visible.filter(f => getJewelSubType(f) === jewelSubFilter);
+  }
+  return visible;
 }
 
 function pruneDeletedFilterRefs(league = settings.league) {
@@ -1118,6 +1164,7 @@ function renderBuilds() {
       const currentBuild = getCurrentBuilds().find(b => b.id === selected.id);
       if (!currentBuild) return;
       currentBuild.activeTabId = tabId;
+      jewelSubFilter = 'all';
       persist();
       render();
     });

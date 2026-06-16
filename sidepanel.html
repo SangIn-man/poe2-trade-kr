@@ -628,6 +628,10 @@
       color: #f0d080;
       border-color: #8a6030;
     }
+    .jewel-sub-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 2px;background:rgba(0,0,0,0.2);}
+    .jewel-sub-btn{border:1px solid #3a2e1a;background:#17120b;color:#9a8460;border-radius:10px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s;}
+    .jewel-sub-btn:hover{background:#2a1e10;color:#c8a060;}
+    .jewel-sub-btn.active{background:#3a2a10;color:#f0d080;border-color:#8a6030;}
     .build-tab-main {
       background: transparent;
       border: none;
@@ -844,6 +848,7 @@
     <div class="scroll-area">
       <div class="tab-content active" id="tab-filters">
         <div class="builds-inline" id="buildQuickManager"></div>
+        <div id="jewelSubTabs" class="jewel-sub-tabs" style="display:none"></div>
         <div class="filter-list" id="filterList"></div>
       </div>
 
