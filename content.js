@@ -1,6 +1,11 @@
 console.warn('🔥 POE2 content.js LOADED 🔥');
 'use strict';
 
+// 거래소 페이지 로드 완료 시 background에 알림 (자동 사이드패널 열기용)
+// content script 컨텍스트에서 보내는 메시지는 사용자가 페이지를 연 것으로 인정되어
+// background에서 chrome.sidePanel.open() 호출이 허용됨
+chrome.runtime.sendMessage({ type: 'TRADE_PAGE_LOADED' }).catch(() => {});
+
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';

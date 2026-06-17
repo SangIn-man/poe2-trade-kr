@@ -23,8 +23,9 @@ async function handleAutoPanel(tabId, url) {
     if (!result.settings || !result.settings.autoOpenPanel) return;
 
     if (isTradeUrl(url)) {
+      // enabled true로 설정만 함 — 실제 open()은 content.js의 TRADE_PAGE_LOADED 메시지로 처리
+      // (background에서 직접 sidePanel.open() 호출은 사용자 이벤트 컨텍스트가 없어 실패할 수 있음)
       await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-      await chrome.sidePanel.open({ tabId });
     } else {
       await chrome.sidePanel.setOptions({ tabId, enabled: false });
     }
@@ -244,6 +245,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const dup = arr.find(f => f.sourceHash === msg.hash);
       sendResponse({ duplicate: !!dup, name: dup?.name, league });
     });
+    return true;
+  }
+
+  if (msg.type === 'TRADE_PAGE_LOADED') {
+    // content.js가 거래소 페이지 로드 완료 시 전송하는 메시지
+    // content script의 메시지 컨텍스트는 "사용자가 페이지를 연" 것으로 인정되어
+    // chrome.sidePanel.open() 호출이 허용됨
+    (async () => {
+      try {
+        const result = await chrome.storage.local.get('settings');
+        if (!result.settings?.autoOpenPanel) { sendResponse({}); return; }
+        const tabId = sender.tab?.id;
+        if (!tabId) { sendResponse({}); return; }
+        await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+        await chrome.sidePanel.open({ tabId });
+      } catch (e) {}
+      sendResponse({});
+    })();
     return true;
   }
 
