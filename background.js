@@ -13,6 +13,12 @@ function isTradeUrl(url) {
 // 자동 열기 처리 함수
 async function handleAutoPanel(tabId, url) {
   try {
+    // URL이 아직 확정되지 않은 경우(빈 문자열, undefined, chrome:// 등)는 건너뜀
+    // — onActivated 시점에 탭이 아직 로드 중이면 url이 비어있을 수 있으며,
+    //   이때 isTradeUrl(url)이 false → setOptions(enabled:false) 를 잘못 호출해
+    //   이후 거래소로 이동해도 패널이 영구적으로 비활성화되는 버그 방지
+    if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return;
+
     const result = await chrome.storage.local.get('settings');
     if (!result.settings || !result.settings.autoOpenPanel) return;
 
@@ -29,7 +35,9 @@ async function handleAutoPanel(tabId, url) {
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
-    await handleAutoPanel(tabId, tab.url);
+    // pendingUrl이 있으면 우선 사용 (로딩 중인 탭의 목적지 URL)
+    const url = tab.pendingUrl || tab.url || '';
+    await handleAutoPanel(tabId, url);
   } catch (e) {}
 });
 
