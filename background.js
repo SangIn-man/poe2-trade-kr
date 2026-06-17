@@ -10,51 +10,32 @@ function isTradeUrl(url) {
   );
 }
 
-// 자동 열기 처리 함수
-// windowId가 제공되면 거래소 페이지 전환 시 sidePanel.open()을 직접 시도함
-async function handleAutoPanel(tabId, url, windowId) {
+// 탭 전환 시 — 거래소 외 페이지이면 사이드패널 비활성화(자동 숨김)
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
-    // URL이 아직 확정되지 않은 경우(빈 문자열, undefined, chrome:// 등)는 건너뜀
-    // — onActivated 시점에 탭이 아직 로드 중이면 url이 비어있을 수 있으며,
-    //   이때 isTradeUrl(url)이 false → setOptions(enabled:false) 를 잘못 호출해
-    //   이후 거래소로 이동해도 패널이 영구적으로 비활성화되는 버그 방지
-    if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return;
-
     const result = await chrome.storage.local.get('settings');
-    if (!result.settings || !result.settings.autoOpenPanel) return;
-
-    if (isTradeUrl(url)) {
-      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-      // windowId가 있으면 탭 전환/업데이트 시점에 바로 열기 시도
-      // (탭 활성화 이벤트는 Chrome이 user gesture로 인정하는 경우도 있음)
-      if (windowId) {
-        try {
-          await chrome.sidePanel.open({ windowId });
-        } catch (_) {
-          // 실패해도 무시 — TRADE_PAGE_LOADED 메시지가 fallback으로 처리
-        }
-      }
-    } else {
-      await chrome.sidePanel.setOptions({ tabId, enabled: false });
-    }
-  } catch (e) {}
-}
-
-// 탭 전환 시
-chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
-  try {
+    if (!result.settings?.autoOpenPanel) return;
     const tab = await chrome.tabs.get(tabId);
-    // pendingUrl이 있으면 우선 사용 (로딩 중인 탭의 목적지 URL)
     const url = tab.pendingUrl || tab.url || '';
-    await handleAutoPanel(tabId, url, windowId);
+    if (!isTradeUrl(url)) {
+      await chrome.sidePanel.setOptions({ tabId, enabled: false });
+    } else {
+      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+    }
   } catch (e) {}
 });
 
-// URL 변경 시
+// 탭 내 URL 변경 시 — 로드 완료 후 거래소 여부에 따라 사이드패널 활성화 상태 조정
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   try {
-    await handleAutoPanel(tabId, tab.url, tab.windowId);
+    const result = await chrome.storage.local.get('settings');
+    if (!result.settings?.autoOpenPanel) return;
+    if (!isTradeUrl(tab.url)) {
+      await chrome.sidePanel.setOptions({ tabId, enabled: false });
+    } else {
+      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+    }
   } catch (e) {}
 });
 
@@ -256,26 +237,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === 'TRADE_PAGE_LOADED') {
-    // content.js가 거래소 페이지 로드 완료 시 전송하는 메시지
-    // content script의 메시지 컨텍스트는 "사용자가 페이지를 연" 것으로 인정되어
-    // chrome.sidePanel.open() 호출이 허용됨
-    (async () => {
-      try {
-        const result = await chrome.storage.local.get('settings');
-        if (!result.settings?.autoOpenPanel) { sendResponse({}); return; }
-        const tabId = sender.tab?.id;
-        const windowId = sender.tab?.windowId;
-        if (!tabId || !windowId) { sendResponse({}); return; }
-        await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-        // tabId 대신 windowId 사용 — Chrome에서 더 안정적으로 동작함
-        await chrome.sidePanel.open({ windowId });
-      } catch (e) {}
-      sendResponse({});
-    })();
-    return true;
-  }
-
   if (msg.type === 'APPEND_DEBUG_LOG') {
     appendDebugLog(msg.entry || {}, sendResponse);
     return true;
@@ -338,15 +299,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (tabs && tabs[0]) {
           try {
             await chrome.sidePanel.setOptions({ tabId: tabs[0].id, enabled: true, path: 'sidepanel.html' });
-          } catch (e) {}
-        }
-      });
-    } else {
-      // 설정이 켜질 때 현재 탭 상태 재체크
-      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-        if (tabs && tabs[0]) {
-          try {
-            await handleAutoPanel(tabs[0].id, tabs[0].url);
           } catch (e) {}
         }
       });
