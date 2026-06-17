@@ -469,8 +469,8 @@ function getQueryId() {
 }
 
 function getApiBase() {
-  return location.hostname === 'poe.game.daum.net'
-    ? 'https://poe.game.daum.net/api/trade2'
+  return location.hostname === 'poe.kakaogames.com'
+    ? 'https://poe.kakaogames.com/api/trade2'
     : 'https://www.pathofexile.com/api/trade2';
 }
 

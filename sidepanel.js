@@ -531,8 +531,8 @@ const CATEGORY_LABELS = {
   enchant: '인챈트', fractured: '분열됨', crafted: '제작', rune: '룬'
 };
 
-const KR_TRADE_BASE = 'https://poe.game.daum.net/trade2/search/poe2';
-const KR_API_BASE = 'https://poe.game.daum.net/api/trade2';
+const KR_TRADE_BASE = 'https://poe.kakaogames.com/trade2/search/poe2';
+const KR_API_BASE = 'https://poe.kakaogames.com/api/trade2';
 const KR_API_SEARCH = (l) => `${KR_API_BASE}/search/poe2/${l}`;
 const DEFAULT_LEAGUE = 'Runes of Aldur';
 const DEFAULT_BUILD_NAME = '기본 빌드';

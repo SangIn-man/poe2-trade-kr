@@ -5,7 +5,7 @@
   "description": "Path of Exile 2 한국 거래소 즐겨찾기 & 원클릭 검색",
   "permissions": ["storage", "tabs", "sidePanel", "clipboardWrite"],
   "host_permissions": [
-    "https://poe.game.daum.net/*",
+    "https://poe.kakaogames.com/*",
     "https://www.pathofexile.com/*",
     "https://poe.ninja/*",
     "https://web.poecdn.com/*"
@@ -27,7 +27,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://poe.game.daum.net/trade2/*",
+        "https://poe.kakaogames.com/trade2/*",
         "https://www.pathofexile.com/trade2/*"
       ],
       "js": ["content.js"],
