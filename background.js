@@ -10,33 +10,45 @@ function isTradeUrl(url) {
   );
 }
 
-// 탭 전환 시 — 거래소 외 페이지이면 사이드패널 비활성화(자동 숨김)
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  try {
-    const result = await chrome.storage.local.get('settings');
-    if (!result.settings?.autoOpenPanel) return;
-    const tab = await chrome.tabs.get(tabId);
-    const url = tab.pendingUrl || tab.url || '';
-    if (!isTradeUrl(url)) {
-      await chrome.sidePanel.setOptions({ tabId, enabled: false });
+// settings 메모리 캐시 (gesture context 유지용)
+// chrome.sidePanel.open()은 user gesture 컨텍스트에서만 동작하므로,
+// await chrome.storage.local.get() 이후에는 gesture context가 소멸함.
+// 캐시를 사용하면 await 없이 즉시 확인해 gesture context를 유지할 수 있음.
+let _cachedSettings = {};
+chrome.storage.local.get('settings', (r) => { _cachedSettings = r.settings || {}; });
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.settings) _cachedSettings = changes.settings.newValue || {};
+});
+
+// 탭 전환 시 — 캐시에서 즉시 확인해 gesture context를 유지한 채 사이드패널 열기/닫기
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  if (!_cachedSettings?.autoOpenPanel) return;
+
+  chrome.tabs.get(tabId, (tab) => {
+    const url = tab?.pendingUrl || tab?.url || '';
+    if (isTradeUrl(url)) {
+      chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' }, () => {
+        chrome.sidePanel.open({ windowId });
+      });
     } else {
-      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+      chrome.sidePanel.setOptions({ tabId, enabled: false });
     }
-  } catch (e) {}
+  });
 });
 
 // 탭 내 URL 변경 시 — 로드 완료 후 거래소 여부에 따라 사이드패널 활성화 상태 조정
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
-  try {
-    const result = await chrome.storage.local.get('settings');
-    if (!result.settings?.autoOpenPanel) return;
-    if (!isTradeUrl(tab.url)) {
-      await chrome.sidePanel.setOptions({ tabId, enabled: false });
-    } else {
-      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-    }
-  } catch (e) {}
+  if (!_cachedSettings?.autoOpenPanel) return;
+
+  const url = tab?.url || '';
+  if (isTradeUrl(url)) {
+    chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' }, () => {
+      chrome.sidePanel.open({ windowId: tab.windowId });
+    });
+  } else {
+    chrome.sidePanel.setOptions({ tabId, enabled: false });
+  }
 });
 
 const DEFAULT_LEAGUE = 'Runes of Aldur';
