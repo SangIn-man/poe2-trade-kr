@@ -2244,11 +2244,14 @@ function bindSettings() {
 }
 
 function bindImportExport() {
+  let pendingImportData = null;
+
   document.getElementById('btnExport').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({filtersByLeague,buildsByLeague,buildUiByLeague,settings},null,2)],{type:'application/json'});
     const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`poe2-filters-${Date.now()}.json`});
     a.click(); URL.revokeObjectURL(a.href);
   });
+
   document.getElementById('btnImportTrigger').addEventListener('click',()=>document.getElementById('fileImport').click());
   document.getElementById('btnExportDebug').addEventListener('click', exportDebugLogs);
   document.getElementById('btnClearDebug').addEventListener('click', async () => {
@@ -2256,47 +2259,83 @@ function bindImportExport() {
     await chrome.runtime.sendMessage({ type: 'CLEAR_DEBUG_LOGS' }).catch(() => null);
     alert('✅ 디버그 로그를 비웠습니다.');
   });
+
   document.getElementById('fileImport').addEventListener('change', e => {
-    const file=e.target.files[0]; if(!file) return;
-    const r=new FileReader();
-    r.onload=ev=>{
+    const file = e.target.files[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = ev => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (d.filtersByLeague) {
-          filtersByLeague = d.filtersByLeague;
-        } else if (Array.isArray(d.filters)) {
-          filtersByLeague = { ...filtersByLeague, [settings.league]: d.filters };
-        } else {
+        if (!d.filtersByLeague && !Array.isArray(d.filters)) {
           alert('❌ 파일 형식 오류'); return;
         }
-        if (d.buildsByLeague) {
-          buildsByLeague = d.buildsByLeague;
-        }
-        if (d.buildUiByLeague) {
-          buildUiByLeague = d.buildUiByLeague;
-        }
-        if (d.settings) settings = { ...settings, ...d.settings };
-        Object.keys(filtersByLeague).forEach(league => {
-          filtersByLeague[league] = (filtersByLeague[league] || []).map(normalizeSavedFilter);
-        });
-        Object.keys(buildsByLeague).forEach(league => {
-          buildsByLeague[league] = (buildsByLeague[league] || []).map(normalizeBuild).filter(Boolean);
-        });
-        const leagues = Array.from(new Set([...Object.keys(filtersByLeague), ...Object.keys(buildsByLeague), settings.league]));
-        leagues.forEach(league => {
-          ensureBuildDataForLeague(league);
-          pruneDeletedFilterRefs(league);
-        });
-        persist(); render();
-        document.getElementById('sLeague').value = settings.league;
-        document.getElementById('leagueBadge').textContent = settings.league;
-        alert('✅ 가져오기 완료!');
+        pendingImportData = d;
+        const filterCount = Object.values(d.filtersByLeague || {}).reduce((s, a) => s + a.length, 0) || (d.filters?.length || 0);
+        const buildCount = Object.values(d.buildsByLeague || {}).reduce((s, a) => s + a.length, 0);
+        document.getElementById('importFileInfo').textContent = `필터 ${filterCount}개, 빌드 ${buildCount}개`;
+        document.getElementById('importModal').classList.add('active');
       } catch { alert('❌ 파일 형식 오류'); }
     };
-    r.readAsText(file); e.target.value='';
+    r.readAsText(file); e.target.value = '';
   });
-  document.getElementById('btnClear').addEventListener('click',()=>{
-    if(confirm(`"${settings.league}" 리그의 모든 필터를 삭제할까요?`)){
+
+  function applyImport(mode) {
+    if (!pendingImportData) return;
+    const d = pendingImportData;
+    pendingImportData = null;
+    document.getElementById('importModal').classList.remove('active');
+
+    if (mode === 'replace') {
+      if (d.filtersByLeague) {
+        filtersByLeague = d.filtersByLeague;
+      } else if (Array.isArray(d.filters)) {
+        filtersByLeague = { [settings.league]: d.filters };
+      }
+      if (d.buildsByLeague) buildsByLeague = d.buildsByLeague;
+      if (d.buildUiByLeague) buildUiByLeague = d.buildUiByLeague;
+      if (d.settings) settings = { ...settings, ...d.settings };
+    } else {
+      const srcFilters = d.filtersByLeague || (Array.isArray(d.filters) ? { [settings.league]: d.filters } : {});
+      for (const league of Object.keys(srcFilters)) {
+        const existing = filtersByLeague[league] || [];
+        const existingIds = new Set(existing.map(f => f.id));
+        const newOnes = (srcFilters[league] || []).filter(f => !existingIds.has(f.id));
+        filtersByLeague[league] = [...existing, ...newOnes];
+      }
+      for (const league of Object.keys(d.buildsByLeague || {})) {
+        const existing = buildsByLeague[league] || [];
+        const existingIds = new Set(existing.map(b => b.id));
+        const newOnes = (d.buildsByLeague[league] || []).filter(b => !existingIds.has(b.id));
+        buildsByLeague[league] = [...existing, ...newOnes];
+      }
+    }
+
+    Object.keys(filtersByLeague).forEach(league => {
+      filtersByLeague[league] = (filtersByLeague[league] || []).map(normalizeSavedFilter);
+    });
+    Object.keys(buildsByLeague).forEach(league => {
+      buildsByLeague[league] = (buildsByLeague[league] || []).map(normalizeBuild).filter(Boolean);
+    });
+    const leagues = Array.from(new Set([...Object.keys(filtersByLeague), ...Object.keys(buildsByLeague), settings.league]));
+    leagues.forEach(league => {
+      ensureBuildDataForLeague(league);
+      pruneDeletedFilterRefs(league);
+    });
+    persist(); render();
+    document.getElementById('sLeague').value = settings.league;
+    document.getElementById('leagueBadge').textContent = settings.league;
+    alert('✅ 가져오기 완료!');
+  }
+
+  document.getElementById('btnImportMerge').addEventListener('click', () => applyImport('merge'));
+  document.getElementById('btnImportReplace').addEventListener('click', () => applyImport('replace'));
+  document.getElementById('btnImportCancel').addEventListener('click', () => {
+    pendingImportData = null;
+    document.getElementById('importModal').classList.remove('active');
+  });
+
+  document.getElementById('btnClear').addEventListener('click', () => {
+    if (confirm(`"${settings.league}" 리그의 모든 필터를 삭제할까요?`)) {
       setCurrentFilters([]);
       pruneDeletedFilterRefs(settings.league);
       persist(); render();

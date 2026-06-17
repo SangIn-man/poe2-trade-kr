@@ -805,6 +805,30 @@
     .builds-inline {
       margin-bottom: 10px;
     }
+    /* Import mode modal */
+    .import-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    .import-modal-overlay.active { display: flex; }
+    .import-modal-box {
+      background: #1a1a2e;
+      border: 1px solid #8b7355;
+      border-radius: 8px;
+      padding: 20px;
+      width: 290px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .import-modal-box h3 { margin: 0; color: #d4b483; font-size: 14px; }
+    .import-file-info { color: #9a9a9a; font-size: 12px; margin: 0; }
+    .import-modal-btns { display: flex; flex-direction: column; gap: 8px; }
   </style>
 </head>
 <body>
@@ -884,10 +908,10 @@
           <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
         </div>
         <div class="notice">
-          🇰🇷 <strong>poe.game.daum.net</strong> 한국 거래소를 사용합니다.<br/>
+          🇰🇷 <strong>poe.kakaogames.com</strong> 한국 거래소를 사용합니다.<br/>
           거래소에서 아이템을 검색 후 <strong>⭐ 즐겨찾기</strong> 버튼을 클릭하면<br/>
           자동으로 필터가 저장됩니다.<br/>
-          <a href="https://poe.game.daum.net/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
+          <a href="https://poe.kakaogames.com/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
         </div>
       </div>
     </div>
@@ -951,6 +975,18 @@
     <div class="modal-btns">
       <button class="btn-cancel-m" id="btnCancel">취소</button>
       <button class="btn-save-m" id="btnSave">💾 저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="importModal" class="import-modal-overlay">
+  <div class="import-modal-box">
+    <h3>📥 가져오기 방식 선택</h3>
+    <p id="importFileInfo" class="import-file-info"></p>
+    <div class="import-modal-btns">
+      <button id="btnImportMerge" class="btn-full btn-gold">➕ 기존에 추가 (중복 건너뜀)</button>
+      <button id="btnImportReplace" class="btn-full btn-danger">🔄 완전 교체 (기존 데이터 삭제)</button>
+      <button id="btnImportCancel" class="btn-full btn-muted">취소</button>
     </div>
   </div>
 </div>
