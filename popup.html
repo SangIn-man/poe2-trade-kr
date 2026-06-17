@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PoE2 Trade Quick Search</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 420px;
+      min-height: 300px;
+      background: #0d0d0f;
+      color: #c8b98a;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 13px;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #1a1208 0%, #2a1e0a 100%);
+      border-bottom: 2px solid #7a5c1e;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-title .gem { font-size: 20px; }
+    .header-title h1 { font-size: 14px; color: #f0d080; letter-spacing: 0.5px; }
+    .header-title p  { font-size: 10px; color: #8a7a5a; }
+
+    .btn-add-new {
+      background: linear-gradient(135deg, #7a4a0a, #b87020);
+      border: 1px solid #d4882a;
+      color: #ffd070;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn-add-new:hover { background: linear-gradient(135deg, #9a5a0a, #d08030); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      background: #111115;
+      border-bottom: 1px solid #2a2010;
+    }
+    .tab {
+      flex: 1;
+      padding: 8px;
+      text-align: center;
+      cursor: pointer;
+      color: #6a5a3a;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab.active {
+      color: #f0d080;
+      border-bottom: 2px solid #c8922a;
+      background: #161208;
+    }
+    .tab:hover:not(.active) { color: #a08040; }
+
+    /* ── Content ── */
+    .content { padding: 12px; }
+
+    /* ── Filter List ── */
+    .filter-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .filter-card {
+      background: linear-gradient(135deg, #141210 0%, #1c1810 100%);
+      border: 1px solid #2e2410;
+      border-radius: 6px;
+      padding: 10px 12px;
+      transition: border-color 0.2s;
+    }
+    .filter-card:hover { border-color: #7a5a1a; }
+
+    .filter-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .filter-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f0d080;
+    }
+    .filter-category {
+      font-size: 10px;
+      background: #2a1e08;
+      border: 1px solid #5a3a10;
+      color: #c87820;
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+
+    .filter-meta {
+      font-size: 10px;
+      color: #6a5a3a;
+      margin-bottom: 8px;
+    }
+    .filter-meta span { margin-right: 8px; }
+    .filter-meta .tag {
+      display: inline-block;
+      background: #1c1810;
+      border: 1px solid #3a2a10;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-right: 3px;
+      color: #8a7050;
+    }
+
+    .filter-actions { display: flex; gap: 6px; }
+
+    .btn-search {
+      flex: 1;
+      background: linear-gradient(135deg, #1a3a10, #2a5a18);
+      border: 1px solid #3a8020;
+      color: #80c840;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn-search:hover { background: linear-gradient(135deg, #2a4a18, #3a7020); }
+
+    .btn-open-trade {
+      background: linear-gradient(135deg, #1a2a3a, #102040);
+      border: 1px solid #2a5080;
+      color: #6090c0;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+    .btn-open-trade:hover { background: linear-gradient(135deg, #203040, #183050); }
+
+    .btn-edit {
+      background: #1a1810;
+      border: 1px solid #3a2a10;
+      color: #8a6030;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+    .btn-edit:hover { color: #c08040; border-color: #7a4a18; }
+
+    .btn-del {
+      background: #1a1010;
+      border: 1px solid #3a1010;
+      color: #804040;
+      padding: 5px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+    .btn-del:hover { color: #d06060; border-color: #802020; }
+
+    /* ── Result Panel ── */
+    .result-panel {
+      margin-top: 8px;
+      background: #0d0d10;
+      border: 1px solid #2a2010;
+      border-radius: 5px;
+      padding: 8px;
+      display: none;
+    }
+    .result-panel.show { display: block; }
+    .result-panel .result-header {
+      font-size: 10px;
+      color: #6a5a3a;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .result-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 6px;
+      border-radius: 3px;
+      margin-bottom: 3px;
+      background: #131310;
+      border: 1px solid #1e1c10;
+      font-size: 11px;
+    }
+    .result-item .price { color: #80d040; font-weight: 700; }
+    .result-item .seller { color: #6a9ad0; }
+    .result-item .age { color: #4a4030; font-size: 10px; }
+    .result-link { color: #6080a0; font-size: 10px; text-decoration: none; }
+    .result-link:hover { color: #80a0d0; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: #141210;
+      border: 1px solid #5a3a10;
+      border-radius: 8px;
+      padding: 16px;
+      width: 380px;
+      max-height: 560px;
+      overflow-y: auto;
+    }
+    .modal h2 { color: #f0d080; font-size: 14px; margin-bottom: 12px; }
+
+    .form-group { margin-bottom: 10px; }
+    .form-group label {
+      display: block;
+      font-size: 11px;
+      color: #8a7050;
+      margin-bottom: 4px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      background: #0d0d10;
+      border: 1px solid #3a2a10;
+      color: #c8b98a;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #7a5a1a;
+    }
+    .form-group textarea { resize: vertical; min-height: 60px; font-size: 11px; }
+
+    .form-row { display: flex; gap: 8px; }
+    .form-row .form-group { flex: 1; }
+
+    .stat-list { display: flex; flex-direction: column; gap: 5px; }
+    .stat-row {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+    .stat-row input { flex: 2; }
+    .stat-row input.num { flex: 1; }
+    .stat-row .btn-remove-stat {
+      background: #1a1010;
+      border: 1px solid #3a1010;
+      color: #804040;
+      padding: 4px 7px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .btn-add-stat {
+      background: #0d1510;
+      border: 1px dashed #2a4a20;
+      color: #4a8040;
+      padding: 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .btn-save {
+      flex: 1;
+      background: linear-gradient(135deg, #7a4a0a, #b87020);
+      border: 1px solid #d4882a;
+      color: #ffd070;
+      padding: 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .btn-cancel {
+      background: #1a1810;
+      border: 1px solid #3a2a10;
+      color: #8a7050;
+      padding: 7px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 30px 20px;
+      color: #4a4030;
+    }
+    .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
+    .empty-state p { font-size: 12px; }
+
+    /* loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 2px solid #3a3020;
+      border-top-color: #c8922a;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Settings Tab ── */
+    .settings-section { margin-bottom: 14px; }
+    .settings-section h3 {
+      font-size: 11px;
+      color: #8a7050;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #2a1e10;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .setting-row label { font-size: 12px; color: #a09070; }
+    .setting-row select,
+    .setting-row input[type="number"] {
+      background: #0d0d10;
+      border: 1px solid #3a2a10;
+      color: #c8b98a;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .notice {
+      background: #1a1208;
+      border: 1px solid #5a3a10;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 10px;
+      color: #7a6040;
+      line-height: 1.6;
+    }
+    .notice a { color: #a08060; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-title">
+    <span class="gem">💎</span>
+    <div>
+      <h1>PoE2 Trade Quick</h1>
+      <p>Path of Exile 2 거래소 즐겨찾기</p>
+    </div>
+  </div>
+  <button class="btn-add-new" id="btnAddNew">+ 필터 추가</button>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" data-tab="filters">⚔️ 검색 필터</div>
+  <div class="tab" data-tab="settings">⚙️ 설정</div>
+</div>
+
+<!-- Tab: Filters -->
+<div class="content" id="tab-filters">
+  <div class="filter-list" id="filterList">
+    <div class="empty-state">
+      <div class="icon">🔍</div>
+      <p>저장된 필터가 없습니다.<br/>위의 <strong>+ 필터 추가</strong>를 눌러 만들어보세요.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Settings -->
+<div class="content" id="tab-settings" style="display:none">
+  <div class="settings-section">
+    <h3>거래소 설정</h3>
+    <div class="setting-row">
+      <label>리그</label>
+      <select id="settingLeague">
+        <option value="Standard">Standard</option>
+        <option value="Hardcore">Hardcore</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>검색 결과 수</label>
+      <select id="settingResultCount">
+        <option value="5">5개</option>
+        <option value="10" selected>10개</option>
+        <option value="20">20개</option>
+      </select>
+    </div>
+  </div>
+  <div class="settings-section">
+    <h3>데이터 관리</h3>
+    <button class="btn-save" style="width:100%;margin-bottom:6px" id="btnExport">📤 필터 내보내기 (JSON)</button>
+    <button class="btn-cancel" style="width:100%;margin-bottom:6px" id="btnImportTrigger">📥 필터 가져오기</button>
+    <input type="file" id="btnImport" accept=".json" style="display:none"/>
+    <button class="btn-del" style="width:100%;padding:7px" id="btnClearAll">🗑️ 전체 삭제</button>
+  </div>
+  <div class="notice">
+    ⚠️ 이 확장프로그램은 <strong>pathofexile.com 공식 거래소</strong>를 이용합니다.<br/>
+    검색은 브라우저 탭을 열거나 API를 통해 이루어집니다.<br/>
+    <a href="https://www.pathofexile.com/trade2" target="_blank">trade2 거래소 바로가기 →</a>
+  </div>
+</div>
+
+<!-- Modal: Add / Edit Filter -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">새 필터 추가</h2>
+
+    <div class="form-group">
+      <label>필터 이름 *</label>
+      <input type="text" id="fName" placeholder="예: 좋은 부츠 찾기" />
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>아이템 카테고리</label>
+        <select id="fCategory">
+          <option value="">전체</option>
+          <optgroup label="방어구">
+            <option value="armour.helmet">투구</option>
+            <option value="armour.chest">흉갑</option>
+            <option value="armour.gloves">장갑</option>
+            <option value="armour.boots">장화</option>
+            <option value="armour.belt">벨트</option>
+          </optgroup>
+          <optgroup label="무기">
+            <option value="weapon.onesword">한손 검</option>
+            <option value="weapon.twosword">양손 검</option>
+            <option value="weapon.bow">활</option>
+            <option value="weapon.staff">지팡이</option>
+            <option value="weapon.wand">완드</option>
+          </optgroup>
+          <optgroup label="장신구">
+            <option value="accessory.ring">반지</option>
+            <option value="accessory.amulet">목걸이</option>
+          </optgroup>
+          <optgroup label="기타">
+            <option value="flask">플라스크</option>
+            <option value="gem">젬</option>
+            <option value="currency">통화</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>아이템 등급</label>
+        <select id="fRarity">
+          <option value="">전체</option>
+          <option value="normal">일반</option>
+          <option value="magic">마법</option>
+          <option value="rare">레어</option>
+          <option value="unique">유니크</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>아이템 이름 (유니크 등)</label>
+      <input type="text" id="fItemName" placeholder="예: Kaom's Heart" />
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>최소 아이템 레벨</label>
+        <input type="number" id="fIlvlMin" placeholder="0" min="0" max="100" />
+      </div>
+      <div class="form-group">
+        <label>최대 가격 (Divine)</label>
+        <input type="number" id="fPriceMax" placeholder="제한 없음" min="0" />
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>스탯 요구 조건 (선택)</label>
+      <div class="stat-list" id="statList"></div>
+      <button class="btn-add-stat" id="btnAddStat">+ 스탯 조건 추가</button>
+    </div>
+
+    <div class="form-group">
+      <label>메모</label>
+      <textarea id="fNote" placeholder="용도나 메모를 입력하세요..."></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" id="btnModalCancel">취소</button>
+      <button class="btn-save" id="btnModalSave">💾 저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

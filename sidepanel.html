@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>PoE2 Trade Quick</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0c0b09; --bg2:#131108; --bg3:#1a1810;
+      --border:#2e2410; --border2:#4a3418;
+      --gold:#c8922a; --gold-lt:#f0d080; --gold-dim:#8a6030;
+      --text:#c8b98a; --text-dim:#6a5a3a; --text-faint:#3a3020;
+      --green:#60b030; --green-bg:#0d1a08;
+      --blue:#5090c0; --blue-bg:#081420;
+      --red:#c04040;
+    }
+    html,body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:'Segoe UI','Malgun Gothic',sans-serif; font-size:13px; overflow:hidden; }
+    .layout { display:flex; flex-direction:column; height:100vh; }
+
+    /* Header */
+    .header { flex-shrink:0; background:linear-gradient(180deg,#1e1608,#130f06); border-bottom:2px solid var(--gold); padding:10px 12px 8px; }
+    .header-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .logo { display:flex; align-items:center; gap:7px; }
+    .logo-gem { font-size:22px; }
+    .logo-text h1 { font-size:13px; color:var(--gold-lt); font-weight:700; }
+    .logo-text p  { font-size:10px; color:var(--text-dim); }
+    .league-badge { background:var(--bg2); border:1px solid var(--border2); color:var(--gold); font-size:10px; font-weight:700; padding:3px 8px; border-radius:10px; cursor:pointer; transition:all .15s; }
+    .league-badge:hover { border-color:var(--gold); color:var(--gold-lt); }
+
+    /* 거래소 가기 버튼 */
+    .btn-go-trade { width:100%; background:linear-gradient(135deg,#0a1e30,#102840); border:1px solid #2a5080; color:#6090c0; padding:7px; border-radius:5px; cursor:pointer; font-size:12px; font-weight:700; transition:all .15s; }
+    .btn-go-trade:hover { background:linear-gradient(135deg,#122840,#183860); border-color:#4070a0; color:#80b0e0; }
+
+    /* hint bar */
+    .hint-bar { flex-shrink:0; background:#0f0e08; border-bottom:1px solid var(--border); padding:6px 12px; font-size:10px; color:var(--text-dim); display:flex; align-items:center; gap:5px; }
+    .hint-bar .star-icon { color:var(--gold); font-size:12px; }
+
+    /* Tabs */
+    .tabs { flex-shrink:0; display:flex; background:#0f0e08; border-bottom:1px solid var(--border); }
+    .tab { flex:1; padding:7px 4px; text-align:center; cursor:pointer; color:var(--text-dim); font-size:11px; font-weight:600; border-bottom:2px solid transparent; transition:all .15s; }
+    .tab.active { color:var(--gold-lt); border-bottom-color:var(--gold); background:#131108; }
+
+    /* Scroll */
+    .scroll-area { flex:1; overflow-y:auto; overflow-x:hidden; }
+    .scroll-area::-webkit-scrollbar { width:4px; }
+    .scroll-area::-webkit-scrollbar-thumb { background:#3a2a10; border-radius:2px; }
+    .tab-content { padding:10px; display:none; }
+    .tab-content.active { display:block; }
+
+    /* Filter cards */
+    .filter-list { display:flex; flex-direction:column; gap:7px; }
+    .filter-card { background:var(--bg2); border:1px solid var(--border); border-radius:6px; overflow:hidden; transition:border-color .15s; }
+    .filter-card:hover { border-color:#5a4018; }
+
+    .filter-card-head { display:flex; align-items:center; padding:8px 10px; gap:7px; cursor:pointer; user-select:none; }
+    .filter-card-head:hover { background:#161410; }
+    .card-arrow { font-size:9px; color:var(--text-dim); transition:transform .2s; flex-shrink:0; }
+    .filter-card.open .card-arrow { transform:rotate(90deg); }
+    .card-title { flex:1; min-width:0; }
+    .card-name { font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-sub { font-size:10px; color:var(--text-dim); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-badges { display:flex; gap:3px; flex-shrink:0; align-items:center; }
+    .badge { font-size:9px; padding:1px 5px; border-radius:8px; font-weight:600; border:1px solid transparent; }
+    .badge-cat  { background:#1e1808; border-color:#3a2808; color:#a07030; }
+    .badge-rare   { color:#f0c830; border-color:#5a4010; background:#1e1808; }
+    .badge-unique { color:#af6025; border-color:#5a3010; background:#1e1008; }
+    .badge-magic  { color:#8888ff; border-color:#303070; background:#0e0e20; }
+
+    .card-quick { display:flex; gap:4px; padding:0 10px 8px; }
+    .btn-search-q { flex:1; background:var(--green-bg); border:1px solid #2a5010; color:var(--green); padding:5px 6px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:700; transition:all .15s; display:flex; align-items:center; justify-content:center; gap:4px; }
+    .btn-search-q:hover { background:#122008; border-color:#3a7018; }
+    .btn-search-q.loading { opacity:.7; cursor:default; }
+    .btn-search-cur { background:#0d1a10; border:1px solid #2a5020; color:#60c060; padding:5px 7px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:700; transition:all .15s; display:flex; align-items:center; justify-content:center; gap:3px; white-space:nowrap; }
+    .btn-search-cur:hover { background:#122018; border-color:#3a7030; }
+    .btn-search-cur.loading { opacity:.7; cursor:default; }
+    .btn-open-q { background:var(--blue-bg); border:1px solid #1a3a60; color:var(--blue); padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
+    .btn-open-q:hover { background:#0c1e30; }
+
+    .card-detail { display:none; border-top:1px solid var(--border); }
+    .filter-card.open .card-detail { display:block; }
+
+    /* 스탯 상세 목록 */
+    .stat-table { padding:8px 10px; }
+    .stat-table-title { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:5px; }
+    .stat-row-item { display:flex; align-items:center; justify-content:space-between; padding:3px 6px; border-radius:3px; margin-bottom:2px; background:#0f0e09; border:1px solid #1a1808; font-size:11px; gap:6px; }
+    .stat-label-t { flex:1; color:#a09060; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .stat-vals { flex-shrink:0; display:flex; gap:4px; align-items:center; }
+    .stat-orig { color:#5a4a2a; font-size:10px; text-decoration:line-through; }
+    .stat-min-val { color:#80d040; font-weight:700; }
+    .stat-max-val { color:var(--text-faint); font-size:10px; }
+
+    /* 기본 정보 */
+    .base-info { padding:6px 10px 0; display:flex; flex-wrap:wrap; gap:4px; }
+    .info-chip { background:var(--bg3); border:1px solid var(--border); padding:2px 7px; border-radius:10px; font-size:10px; color:#8a7050; }
+    .info-chip.ilvl  { border-color:#3a2a10; color:#c8922a; }
+    .info-chip.area  { border-color:#1a3a1a; color:#60a040; }
+    .info-chip.req   { border-color:#1a2a3a; color:#4080c0; }
+    .info-chip.price { border-color:#1a3a1a; color:#60b030; }
+
+    .btn-delete-small { margin-left:auto; background:none; border:none; color:#ff6060; cursor:pointer; font-size:14px; padding:0 4px; opacity:0.5; transition:opacity 0.15s; line-height:1; flex-shrink:0; }
+    .btn-delete-small:hover { opacity:1; }
+
+    /* Result */
+    .result-area { padding:8px 10px; background:#0a0908; border-top:1px solid var(--border); }
+    .result-header-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+    .result-count { font-size:10px; color:var(--text-dim); }
+    .result-trade-link { font-size:10px; color:#5080a0; text-decoration:none; }
+    .result-trade-link:hover { color:#70a0d0; }
+    .result-item { display:flex; justify-content:space-between; align-items:center; padding:5px 7px; border-radius:4px; margin-bottom:3px; background:#0f0e09; border:1px solid #1e1c10; font-size:11px; gap:6px; }
+    .result-item-left { min-width:0; flex:1; }
+    .result-item-name { font-size:10px; color:#a09060; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .result-price { color:var(--green); font-weight:700; font-size:12px; white-space:nowrap; }
+    .result-seller { color:#5090c0; font-size:10px; }
+    .result-age { color:var(--text-faint); font-size:10px; }
+    .result-empty { text-align:center; padding:12px; color:var(--text-dim); font-size:11px; }
+    .result-error { color:#c05050; font-size:11px; padding:6px; }
+
+    /* spin */
+    .spin { display:inline-block; width:9px; height:9px; border:2px solid #1a2a10; border-top-color:var(--green); border-radius:50%; animation:spin .5s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* empty */
+    .empty { text-align:center; padding:40px 20px; }
+    .empty-icon { font-size:40px; margin-bottom:10px; }
+    .empty p { font-size:12px; line-height:1.8; color:var(--text-dim); }
+    .empty .guide-step { display:inline-flex; align-items:center; gap:5px; background:var(--bg2); border:1px solid var(--border2); border-radius:5px; padding:4px 10px; margin-top:8px; font-size:11px; color:var(--gold-dim); }
+
+    /* Settings */
+    .settings-block { margin-bottom:14px; }
+    .settings-block h3 { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid var(--border); }
+    .setting-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; }
+    .setting-row label { font-size:12px; color:#9a8060; }
+    .setting-row select, .setting-row input[type="text"] { background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:4px 6px; border-radius:4px; font-size:11px; min-width:160px; font-family:inherit; }
+    .setting-row input[type="text"]:focus { outline:none; border-color:var(--gold); }
+    .btn-full { width:100%; padding:7px; border-radius:5px; cursor:pointer; font-size:12px; margin-bottom:5px; font-family:inherit; }
+    .btn-gold { background:linear-gradient(135deg,#6a3a08,#a86018); border:1px solid #c87828; color:var(--gold-lt); font-weight:700; }
+    .btn-muted { background:var(--bg3); border:1px solid var(--border2); color:var(--gold-dim); }
+    .btn-danger { background:#150c0c; border:1px solid #3a1010; color:#804040; }
+    .notice { background:var(--bg2); border:1px solid var(--border2); border-radius:5px; padding:8px 10px; font-size:10px; color:var(--text-dim); line-height:1.7; }
+    .notice a { color:var(--gold-dim); }
+
+    /* Edit modal */
+    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.88); z-index:200; align-items:flex-start; justify-content:center; padding-top:20px; }
+    .overlay.show { display:flex; }
+    .modal { background:#131108; border:1px solid var(--gold); border-radius:8px; padding:16px; width:calc(100% - 24px); max-width:340px; max-height:calc(100vh - 40px); overflow-y:auto; }
+    .modal::-webkit-scrollbar { width:3px; }
+    .modal::-webkit-scrollbar-thumb { background:#3a2a10; }
+    .modal h2 { color:var(--gold-lt); font-size:14px; margin-bottom:12px; }
+    .fg { margin-bottom:9px; }
+    .fg label { display:block; font-size:10px; color:var(--gold-dim); margin-bottom:3px; text-transform:uppercase; letter-spacing:.5px; }
+    .fg input,.fg select,.fg textarea { width:100%; background:#0a0908; border:1px solid var(--border2); color:var(--text); padding:6px 8px; border-radius:4px; font-size:12px; font-family:inherit; }
+    .fg input:focus,.fg select:focus,.fg textarea:focus { outline:none; border-color:var(--gold); }
+    .fg textarea { resize:vertical; min-height:52px; }
+    .fg-row { display:flex; gap:7px; }
+    .fg-row .fg { flex:1; }
+
+    /* 스탯 편집 테이블 */
+    .stat-edit-list { display:flex; flex-direction:column; gap:4px; margin-top:4px; }
+    .stat-edit-row { display:flex; align-items:center; gap:4px; background:#0a0908; border:1px solid var(--border); border-radius:4px; padding:4px 6px; }
+    .stat-edit-label { flex:1; font-size:10px; color:#a09060; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stat-edit-min { width:52px; background:#0f0e09; border:1px solid var(--border2); color:var(--green); padding:3px 5px; border-radius:3px; font-size:11px; font-family:inherit; text-align:center; }
+    .stat-edit-min:focus { outline:none; border-color:var(--green); }
+    .stat-toggle { background:none; border:none; cursor:pointer; font-size:12px; padding:0 2px; opacity:.6; transition:opacity .15s; }
+    .stat-toggle:hover { opacity:1; }
+    .stat-toggle.off { opacity:.3; }
+
+    .modal-btns { display:flex; gap:7px; margin-top:14px; }
+    .modal-btns .btn-cancel-m { background:var(--bg3); border:1px solid var(--border2); color:var(--text-dim); padding:7px 14px; border-radius:5px; cursor:pointer; font-size:12px; }
+    .modal-btns .btn-save-m { flex:1; background:linear-gradient(135deg,#6a3a08,#a86018); border:1px solid #c87828; color:var(--gold-lt); padding:7px; border-radius:5px; cursor:pointer; font-size:12px; font-weight:700; }
+
+    /* 모달 안 cat-badge 크기 조정 */
+    .stat-edit-row .cat-badge { font-size:10px; padding:1px 5px; min-width:auto; margin-right:0; margin-left:2px; }
+
+    /* 스탯 행 삭제 버튼 */
+    .stat-row-item { position:relative; }
+    .stat-delete-btn { opacity:0; position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; color:#ff6060; cursor:pointer; font-size:13px; padding:0 2px; line-height:1; transition:opacity 0.15s; }
+    .stat-row-item:hover .stat-delete-btn { opacity:1; }
+
+    /* 카드 인라인 min 값 마우스 휠 편집 */
+    .stat-min-value { cursor:ns-resize; color:#80d040; font-weight:700; user-select:none; border-bottom:1px dotted rgba(127,255,127,0.4); transition:background 0.1s; }
+    .stat-min-value:hover { background:rgba(127,255,127,0.1); border-radius:2px; }
+
+    /* 카드 인라인 장비 조건 min 값 마우스 휠 편집 */
+    .equip-min-value { cursor:ns-resize; color:#80d040; font-weight:700; user-select:none; border-bottom:1px dotted rgba(255,200,100,0.4); transition:background 0.1s; }
+    .equip-min-value:hover { background:rgba(255,200,100,0.1); border-radius:2px; }
+
+    /* 필터 이름 인라인 편집 */
+    .filter-name-edit {
+      cursor: pointer;
+      border-radius: 3px;
+      padding: 1px 3px;
+      transition: background 0.15s;
+      display: inline-block;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .filter-name-edit:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .filter-name-edit[contenteditable="true"] {
+      background: rgba(255,255,255,0.12);
+      outline: 1px solid rgba(255,255,255,0.3);
+      cursor: text;
+      min-width: 40px;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
+    }
+
+    /* 카드 인라인 카테고리 뱃지 (공통 베이스 + 개별 색상) */
+    .cat-badge {
+      display:inline-block; padding:2px 6px; border-radius:3px; font-size:11px;
+      cursor:pointer; margin-right:4px; user-select:none; min-width:36px;
+      text-align:center; border:none; flex-shrink:0; transition:opacity 0.15s;
+    }
+    .cat-badge:hover { opacity:0.8; }
+    .cat-badge-explicit   { background:#1e3350; color:#80aaff; }
+    .cat-badge-implicit   { background:#2a2a2a; color:#aaaaaa; }
+    .cat-badge-desecrated { background:#5a1e1e; color:#ff8080; }
+    .cat-badge-enchant    { background:#3a1e5a; color:#cc80ff; }
+    .cat-badge-fractured  { background:#4a3a00; color:#ffd060; }
+    .cat-badge-crafted    { background:#003a3a; color:#60ffdd; }
+    .cat-badge-rune       { background:#4a2800; color:#ffaa60; }
+
+    /* 기반 유형(typeLine) 뱃지 */
+    .type-line-badge { cursor:pointer; transition:opacity .15s, text-decoration .15s; font-size:9px; padding:1px 5px; border-radius:8px; font-weight:600; border:1px solid transparent; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; }
+    .type-line-badge.active   { background:#1e2a10; border-color:#3a5018; color:#ffd060; }
+    .type-line-badge.inactive { background:#1a1a1a; border-color:#333; color:#666; text-decoration:line-through; }
+    .type-line-badge:hover { opacity:0.75; }
+
+    /* 저장 시 가격 참고 뱃지 */
+    .saved-price-badge { display:inline-block; font-size:10px; font-style:italic; color:#7a6a4a; background:rgba(60,40,10,0.4); border:1px solid #3a2e1a; border-radius:3px; padding:1px 5px; opacity:0.8; white-space:nowrap; }
+
+    /* Top-level panel tabs (TradeQuick / Economy) */
+    .top-tab-bar {
+      display: flex;
+      gap: 2px;
+      padding: 4px 8px 0;
+      background: #1a1208;
+      border-bottom: 1px solid #3a2e1a;
+      flex-shrink: 0;
+    }
+    .top-tab-btn {
+      flex: 1;
+      padding: 5px 8px;
+      background: transparent;
+      border: 1px solid #3a2e1a;
+      border-bottom: none;
+      color: #8a7a5a;
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 3px 3px 0 0;
+      font-family: inherit;
+    }
+    .top-tab-btn.active {
+      background: #2a1e0a;
+      color: #c8a84a;
+      border-color: #5a4a2a;
+    }
+    /* Top-level panels */
+    .top-panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .top-panel.active { display: flex; }
+
+    /* Builds panel */
+    .builds-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+    .builds-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #2a2010;
+      background: #120e08;
+      flex-shrink: 0;
+    }
+    .builds-title {
+      font-size: 12px;
+      color: #c8a84a;
+      font-weight: 700;
+    }
+    .builds-subtitle {
+      margin-left: auto;
+      font-size: 10px;
+      color: #6a5a3a;
+      white-space: nowrap;
+    }
+    .btn-build-main,
+    .btn-build-sub {
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      padding: 5px 8px;
+    }
+    .btn-build-main {
+      background: linear-gradient(135deg,#6a3a08,#a86018);
+      border: 1px solid #c87828;
+      color: #f0d080;
+      font-weight: 700;
+    }
+    .btn-build-sub {
+      background: #18120a;
+      border: 1px solid #3a2e1a;
+      color: #a09070;
+    }
+    .btn-build-sub:hover,
+    .btn-build-main:hover {
+      filter: brightness(1.08);
+    }
+    .build-preset-list {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      border-bottom: 1px solid #2a2010;
+      background: #0f0c08;
+      flex-shrink: 0;
+    }
+    .build-preset-list::-webkit-scrollbar {
+      height: 4px;
+    }
+    .build-preset-list::-webkit-scrollbar-thumb {
+      background: #3a2a10;
+      border-radius: 2px;
+    }
+    .build-pill {
+      flex: 0 0 auto;
+      max-width: 190px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      border: 1px solid #3a2e1a;
+      background: #18120a;
+      color: #a09070;
+      border-radius: 999px;
+      padding: 3px 5px 3px 8px;
+    }
+    .build-pill.active {
+      background: #3a2a10;
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-pill-main {
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: inherit;
+      min-width: 0;
+      flex: 1;
+      text-align: left;
+      padding: 2px 0;
+    }
+    .build-pill-icon {
+      width: 18px;
+      height: 18px;
+      border: 1px solid #4a3820;
+      background: #120d08;
+      color: #9a8460;
+      border-radius: 999px;
+      font-size: 10px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    .build-pill-icon:hover {
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-pill-icon.danger {
+      color: #b86a6a;
+      border-color: #4a2020;
+    }
+    .build-detail {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .build-detail::-webkit-scrollbar {
+      width: 4px;
+    }
+    .build-detail::-webkit-scrollbar-thumb {
+      background: #3a2a10;
+      border-radius: 2px;
+    }
+    .build-empty {
+      padding: 22px 14px;
+      text-align: center;
+      color: #7a6a4a;
+      font-size: 12px;
+      line-height: 1.7;
+      border: 1px dashed #3a2e1a;
+      border-radius: 6px;
+      background: #110d08;
+    }
+    .build-section {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 1px solid #2e2410;
+      border-radius: 6px;
+      background: #131108;
+    }
+    .build-toggle-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+      user-select: none;
+      font-size: 12px;
+      color: #b8a882;
+      transition: background 0.15s;
+    }
+    .build-toggle-bar:hover {
+      background: rgba(255,255,255,0.08);
+    }
+    .build-toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .build-current-name {
+      color: #d4af6e;
+      font-weight: 600;
+    }
+    .build-sep {
+      opacity: 0.4;
+    }
+    .build-current-tab {
+      color: #8fa8c8;
+    }
+    .build-toggle-chevron {
+      font-size: 10px;
+      opacity: 0.6;
+    }
+    .build-section-body {
+      overflow: hidden;
+      transition: max-height 0.2s ease;
+      max-height: 200px;
+    }
+    .build-section.collapsed .build-section-body {
+      display: none;
+    }
+    .build-header-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .build-name-edit {
+      flex: 1;
+      min-width: 0;
+      background: #0a0908;
+      border: 1px solid #3a2e1a;
+      border-radius: 4px;
+      color: #f0d080;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 6px 8px;
+      font-family: inherit;
+    }
+    .build-name-edit:focus {
+      outline: none;
+      border-color: #c8922a;
+    }
+    .build-meta-line {
+      font-size: 10px;
+      color: #6a5a3a;
+      margin-bottom: 10px;
+    }
+    .build-tab-bar {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      margin-bottom: 8px;
+    }
+    .build-tab-bar::-webkit-scrollbar {
+      height: 4px;
+    }
+    .build-tab-bar::-webkit-scrollbar-thumb {
+      background: #3a2a10;
+      border-radius: 2px;
+    }
+    .build-tab-btn {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      border: 1px solid #3a2e1a;
+      background: #17120b;
+      color: #9a8460;
+      border-radius: 4px;
+      padding: 3px 4px 3px 7px;
+    }
+    .build-tab-btn.active {
+      background: #3a2a10;
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .jewel-sub-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 2px;background:rgba(0,0,0,0.2);}
+    .jewel-sub-btn{border:1px solid #3a2e1a;background:#17120b;color:#9a8460;border-radius:10px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s;}
+    .jewel-sub-btn:hover{background:#2a1e10;color:#c8a060;}
+    .jewel-sub-btn.active{background:#3a2a10;color:#f0d080;border-color:#8a6030;}
+    .build-tab-main {
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      padding: 2px 0;
+    }
+    .build-tab-icon {
+      width: 16px;
+      height: 16px;
+      border: 1px solid #4a3820;
+      background: #120d08;
+      color: #9a8460;
+      border-radius: 999px;
+      font-size: 9px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    .build-tab-icon:hover {
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-tab-icon.danger {
+      color: #b86a6a;
+      border-color: #4a2020;
+    }
+    .btn-icon-sm{width:18px;height:18px;border:1px solid #4a3820;background:#120d08;color:#9a8460;border-radius:999px;font-size:11px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit;flex-shrink:0;padding:0;transition:background .15s,color .15s;}
+    .btn-icon-sm:hover{background:#2a1e10;color:#d4af6e;}
+    .build-tab-actions {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .build-filter-picker {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .build-filter-picker select {
+      flex: 1;
+      min-width: 0;
+      background: #0a0908;
+      border: 1px solid #3a2e1a;
+      border-radius: 4px;
+      color: #c8b88a;
+      padding: 6px 8px;
+      font-size: 11px;
+      font-family: inherit;
+    }
+    .build-filter-picker select:focus {
+      outline: none;
+      border-color: #c8922a;
+    }
+    .build-tab-state {
+      font-size: 10px;
+      color: #7a6a4a;
+      margin-bottom: 8px;
+    }
+    .build-filter-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .build-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: #0f0d09;
+      border: 1px solid #241d10;
+      border-radius: 5px;
+    }
+    .build-filter-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .build-filter-name {
+      font-size: 11px;
+      color: #d8c89a;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+    .build-filter-sub {
+      font-size: 10px;
+      color: #6a5a3a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .build-filter-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .build-mini-btn {
+      background: #18120a;
+      border: 1px solid #3a2e1a;
+      color: #a09070;
+      border-radius: 4px;
+      font-size: 10px;
+      padding: 4px 6px;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .build-move-select {
+      min-width: 90px;
+      max-width: 120px;
+      background: #0a0908;
+      border: 1px solid #3a2e1a;
+      color: #c8b88a;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 10px;
+      font-family: inherit;
+    }
+    .build-mini-btn:hover {
+      color: #f0d080;
+      border-color: #8a6030;
+    }
+    .build-mini-btn.danger {
+      color: #b86a6a;
+      border-color: #4a2020;
+      background: #130a0a;
+    }
+    .build-mini-btn.danger:hover {
+      color: #ff9090;
+      border-color: #703030;
+    }
+    .value-badge {
+      display: inline-block;
+      font-size: 9px;
+      border-radius: 999px;
+      padding: 2px 6px;
+      margin-left: 4px;
+      border: 1px solid transparent;
+      vertical-align: middle;
+    }
+    .value-badge.score {
+      color: #90b8ff;
+      background: #0b1320;
+      border-color: #203a60;
+    }
+    .value-badge.value-s {
+      color: #9fffb0;
+      background: #0d1d0f;
+      border-color: #2d6a34;
+    }
+    .value-badge.value-a {
+      color: #d8f090;
+      background: #17180a;
+      border-color: #5d6520;
+    }
+    .value-badge.value-b {
+      color: #f0d080;
+      background: #1d1508;
+      border-color: #6a4a12;
+    }
+    .builds-inline {
+      margin-bottom: 10px;
+    }
+    /* Import mode modal */
+    .import-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    .import-modal-overlay.active { display: flex; }
+    .import-modal-box {
+      background: #1a1a2e;
+      border: 1px solid #8b7355;
+      border-radius: 8px;
+      padding: 20px;
+      width: 290px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .import-modal-box h3 { margin: 0; color: #d4b483; font-size: 14px; }
+    .import-file-info { color: #9a9a9a; font-size: 12px; margin: 0; }
+    .import-modal-btns { display: flex; flex-direction: column; gap: 8px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <div class="header">
+    <div class="header-top">
+      <div class="logo">
+        <span class="logo-gem">💎</span>
+        <div class="logo-text">
+          <h1>PoE2 Trade Quick</h1>
+          <p>한국 거래소 즐겨찾기</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span id="ninja-rate-badge" class="ninja-rate-badge" title="클릭하면 Economy 탭으로 이동">1 div = ... ex</span>
+        <span class="league-badge" id="leagueBadge" title="클릭하여 리그 전환">Runes of Aldur</span>
+      </div>
+    </div>
+    <button class="btn-go-trade" id="btnGoTrade">🌐 한국 거래소 열기</button>
+  </div>
+
+  <!-- Top-level tab bar: TradeQuick / Economy -->
+  <div class="top-tab-bar">
+    <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
+    <button class="top-tab-btn" id="top-tab-economy">Economy</button>
+    <button class="top-tab-btn" id="top-tab-expedition">Expedition</button>
+  </div>
+
+  <!-- TradeQuick panel (existing content) -->
+  <div class="top-panel active" id="top-panel-trade">
+    <div class="hint-bar">
+      <span class="star-icon">⭐</span>
+      <span>거래소에서 아이템의 <strong>즐겨찾기</strong> 버튼을 눌러 필터를 저장하세요</span>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="filters">⚔ 저장된 필터</div>
+      <div class="tab" data-tab="settings">⚙ 설정</div>
+    </div>
+
+    <div class="scroll-area">
+      <div class="tab-content active" id="tab-filters">
+        <div class="builds-inline" id="buildQuickManager"></div>
+        <div id="jewelSubTabs" class="jewel-sub-tabs" style="display:none"></div>
+        <div class="filter-list" id="filterList"></div>
+      </div>
+
+      <div class="tab-content" id="tab-settings">
+        <div class="settings-block">
+          <h3>거래소 설정</h3>
+          <div class="setting-row">
+            <label>리그</label>
+            <input type="text" id="sLeague" list="leagueOptions" value="Runes of Aldur" placeholder="리그 이름 입력" autocomplete="off"/>
+            <datalist id="leagueOptions">
+              <option value="Runes of Aldur"></option>
+              <option value="HC Runes of Aldur"></option>
+              <option value="Standard"></option>
+              <option value="Hardcore"></option>
+            </datalist>
+          </div>
+          <div class="setting-row">
+            <label>결과 표시 수</label>
+            <select id="sCount">
+              <option value="5">5개</option>
+              <option value="10" selected>10개</option>
+              <option value="20">20개</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-block">
+          <h3>데이터 관리</h3>
+          <button class="btn-full btn-gold" id="btnExport">📤 필터 내보내기</button>
+          <button class="btn-full btn-muted" id="btnImportTrigger">📥 필터 가져오기</button>
+          <input type="file" id="fileImport" accept=".json" style="display:none"/>
+          <button class="btn-full btn-muted" id="btnExportDebug">🧾 디버그 로그 TXT 저장</button>
+          <button class="btn-full btn-muted" id="btnClearDebug">🧹 디버그 로그 비우기</button>
+          <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
+        </div>
+        <div class="notice">
+          🇰🇷 <strong>poe.kakaogames.com</strong> 한국 거래소를 사용합니다.<br/>
+          거래소에서 아이템을 검색 후 <strong>⭐ 즐겨찾기</strong> 버튼을 클릭하면<br/>
+          자동으로 필터가 저장됩니다.<br/>
+          <a href="https://poe.kakaogames.com/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Economy panel -->
+  <div class="top-panel" id="top-panel-economy">
+    <div class="economy-header">
+      <span>Currency Exchange Rates</span>
+      <button id="ninja-refresh-btn" title="새로고침">↻</button>
+      <span id="ninja-last-updated" class="ninja-updated"></span>
+    </div>
+    <div id="ninja-category-tabs" class="ninja-cat-tabs"></div>
+    <div class="ninja-search-wrap">
+      <input type="text" id="ninja-search" class="ninja-search" placeholder="아이템 검색...">
+    </div>
+    <div id="ninja-currency-list" class="ninja-currency-list">
+      <div class="ninja-loading">Economy 탭을 열면 자동으로 로딩됩니다</div>
+    </div>
+  </div>
+
+  <!-- Expedition panel -->
+  <div class="top-panel" id="top-panel-expedition" style="padding:10px;overflow-y:auto;">
+    <div style="margin-bottom:8px;">
+      <input type="text" id="expedition-search" placeholder="소문 또는 지역명 검색..." style="width:100%;box-sizing:border-box;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;">
+    </div>
+    <table id="expedition-table" style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead>
+        <tr style="background:#2a2a2a;color:#aaa;">
+          <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:70px;">분류</th>
+          <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:130px;">섬의 소문</th>
+          <th style="padding:5px 6px;border:1px solid #333;text-align:left;">지역 및 특징</th>
+        </tr>
+      </thead>
+      <tbody id="expedition-tbody">
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2>필터 편집</h2>
+    <div class="fg">
+      <label>필터 이름</label>
+      <input type="text" id="eName"/>
+    </div>
+    <div class="fg">
+      <label>메모</label>
+      <input type="text" id="eNote" placeholder="메모..."/>
+    </div>
+    <div class="fg">
+      <label>장비 조건 편집 <span style="color:#5a4a2a;font-size:9px">(최솟값 수정 · 토글로 활성/비활성)</span></label>
+      <div class="stat-edit-list" id="equipEditList"></div>
+    </div>
+    <div class="fg">
+      <label>스탯 조건 편집 <span style="color:#5a4a2a;font-size:9px">(최솟값 수정 · 토글로 활성/비활성)</span></label>
+      <div class="stat-edit-list" id="statEditList"></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel-m" id="btnCancel">취소</button>
+      <button class="btn-save-m" id="btnSave">💾 저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="importModal" class="import-modal-overlay">
+  <div class="import-modal-box">
+    <h3>📥 가져오기 방식 선택</h3>
+    <p id="importFileInfo" class="import-file-info"></p>
+    <div class="import-modal-btns">
+      <button id="btnImportMerge" class="btn-full btn-gold">➕ 기존에 추가 (중복 건너뜀)</button>
+      <button id="btnImportReplace" class="btn-full btn-danger">🔄 완전 교체 (기존 데이터 삭제)</button>
+      <button id="btnImportCancel" class="btn-full btn-muted">취소</button>
+    </div>
+  </div>
+</div>
+
+<script src="sidepanel.js"></script>
+</body>
+</html>

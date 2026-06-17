@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "PoE2 Trade Quick Search",
+  "version": "3.0.0",
+  "description": "Path of Exile 2 한국 거래소 즐겨찾기 & 원클릭 검색",
+  "permissions": ["storage", "tabs", "sidePanel", "clipboardWrite"],
+  "host_permissions": [
+    "https://poe.kakaogames.com/*",
+    "https://www.pathofexile.com/*",
+    "https://poe.ninja/*",
+    "https://web.poecdn.com/*"
+  ],
+  "action": {
+    "default_title": "PoE2 Trade Quick",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://poe.kakaogames.com/trade2/*",
+        "https://www.pathofexile.com/trade2/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

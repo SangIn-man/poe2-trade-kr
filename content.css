@@ -1,0 +1,189 @@
+/* PoE2 Trade Quick - Injected Styles */
+
+.poe2tq-star-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 2px 0;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #1a1208, #2e1e08);
+  border: 1px solid #7a5a1a;
+  border-radius: 4px;
+  color: #f0d080;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Segoe UI', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  z-index: 999;
+  position: relative;
+}
+
+.poe2tq-star-btn:hover {
+  background: linear-gradient(135deg, #2e2010, #4a3010);
+  border-color: #c8922a;
+  color: #ffd070;
+  box-shadow: 0 0 8px rgba(200, 146, 42, 0.3);
+}
+
+.poe2tq-star-btn:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+
+.poe2tq-star-btn.saved {
+  background: linear-gradient(135deg, #0a1e08, #142e10);
+  border-color: #3a8020;
+  color: #80c840;
+}
+
+/* PoB Copy Button */
+.pob-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0 2px 4px;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #0d1520, #162030);
+  border: 1px solid #2a5080;
+  border-radius: 4px;
+  color: #80b8e8;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  z-index: 999;
+  position: relative;
+}
+
+.pob-copy-btn:hover {
+  background: linear-gradient(135deg, #162030, #224050);
+  border-color: #4090c0;
+  color: #a8d4f8;
+  box-shadow: 0 0 8px rgba(64, 144, 192, 0.3);
+}
+
+.pob-copy-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Toast */
+.poe2tq-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: #131108;
+  border: 1px solid #5a3a10;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-size: 12px;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font-weight: 600;
+  color: #f0d080;
+  z-index: 99999;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  max-width: 320px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+
+.poe2tq-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.poe2tq-toast.poe2tq-toast-ok {
+  border-color: #3a8020;
+  color: #80d040;
+  background: #0a1408;
+}
+
+.poe2tq-toast.poe2tq-toast-warn {
+  border-color: #7a5a1a;
+  color: #f0d080;
+  background: #1a1208;
+}
+
+.poe2tq-toast.poe2tq-toast-err {
+  border-color: #7a2020;
+  color: #f08080;
+  background: #1a0808;
+}
+
+/* Saved price reference badge (injected into trade site rows - unused here,
+   but kept co-located with other injected styles for reference) */
+.saved-price-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-style: italic;
+  color: #9a8a6a;
+  background: rgba(80, 60, 20, 0.25);
+  border: 1px solid #5a4a2a;
+  border-radius: 3px;
+  padding: 1px 5px;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.poe2tq-eval-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 2px 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  white-space: nowrap;
+  position: relative;
+  z-index: 999;
+}
+
+.poe2tq-eval-badge.tier-under {
+  background: linear-gradient(135deg, #0d1d10, #16331a);
+  border: 1px solid #2f7a3a;
+  color: #9ff0ad;
+}
+
+.poe2tq-eval-badge.tier-average {
+  background: linear-gradient(135deg, #1a160a, #2b2410);
+  border: 1px solid #7a6220;
+  color: #f0d080;
+}
+
+.poe2tq-eval-badge.tier-over {
+  background: linear-gradient(135deg, #220d0d, #351515);
+  border: 1px solid #8a3434;
+  color: #f0a0a0;
+}
+
+.poe2tq-eval-badge.tier-hold {
+  background: linear-gradient(135deg, #141414, #222222);
+  border: 1px solid #555555;
+  color: #c0c0c0;
+}
+
+#poe2tq-stat-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999999;display:flex;align-items:center;justify-content:center;}
+.poe2tq-sm-box{background:#1a1208;border:1px solid #6a4a20;border-radius:8px;padding:16px;min-width:320px;max-width:480px;max-height:80vh;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,.8);}
+.poe2tq-sm-title{color:#d4af6e;font-size:14px;font-weight:bold;border-bottom:1px solid #3a2a10;padding-bottom:8px;}
+.poe2tq-sm-hint{color:#7a6a4a;font-size:11px;margin-top:-4px;}
+.poe2tq-sm-list{overflow-y:auto;max-height:50vh;display:flex;flex-direction:column;gap:4px;}
+.poe2tq-sm-item{display:flex;align-items:flex-start;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;}
+.poe2tq-sm-item:hover{background:rgba(255,255,255,.05);}
+.poe2tq-sm-item input{margin-top:2px;accent-color:#c8a060;flex-shrink:0;}
+.poe2tq-sm-label{color:#c0a870;font-size:12px;line-height:1.4;}
+.poe2tq-sm-label em{color:#8fa8c8;font-style:normal;margin-left:4px;}
+.poe2tq-sm-empty{color:#5a4a30;font-size:12px;padding:8px;}
+.poe2tq-sm-actions{display:flex;gap:6px;align-items:center;border-top:1px solid #3a2a10;padding-top:10px;}
+.poe2tq-sm-btn-all,.poe2tq-sm-btn-none{border:1px solid #3a2e1a;background:#17120b;color:#8a7a5a;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;}
+.poe2tq-sm-btn-all:hover,.poe2tq-sm-btn-none:hover{color:#c8a060;}
+.poe2tq-sm-btn-cancel{border:1px solid #3a2e1a;background:#17120b;color:#9a8460;border-radius:4px;padding:5px 12px;font-size:12px;cursor:pointer;}
+.poe2tq-sm-btn-cancel:hover{background:#2a1e10;}
+.poe2tq-sm-btn-save{border:1px solid #8a6030;background:#3a2a10;color:#f0d080;border-radius:4px;padding:5px 14px;font-size:12px;font-weight:bold;cursor:pointer;}
+.poe2tq-sm-btn-save:hover{background:#4a3a18;border-color:#c8a060;}
