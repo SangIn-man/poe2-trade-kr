@@ -10,43 +10,87 @@ function isTradeUrl(url) {
   );
 }
 
+// 마지막으로 활성화된 거래소 탭 ID 추적 (패널 상태 완전 제거용)
+let _lastTradeTabId = null;
+
+// non-trade 탭 전환 시 CLOSE_SIDE_PANEL 딜레이 타이머 (거래소 탭으로 빠르게 복귀할 때 취소용)
+let _closePanelTimeout = null;
+
+// 탭 URL 메모리 캐시 (onActivated에서 비동기 콜백 없이 즉시 URL 확인용)
+// chrome.tabs.get() 콜백은 비동기라 user gesture context가 소멸 → sidePanel.open() 실패
+// 미리 URL을 캐싱해두면 onActivated에서 동기적으로 즉시 확인 가능
+const _tabUrls = {};
+chrome.tabs.query({}, (tabs) => {
+  tabs.forEach(tab => { if (tab.url) _tabUrls[tab.id] = tab.url; });
+});
+chrome.tabs.onRemoved.addListener((tabId) => { delete _tabUrls[tabId]; });
+
 // settings 메모리 캐시 (gesture context 유지용)
 // chrome.sidePanel.open()은 user gesture 컨텍스트에서만 동작하므로,
 // await chrome.storage.local.get() 이후에는 gesture context가 소멸함.
 // 캐시를 사용하면 await 없이 즉시 확인해 gesture context를 유지할 수 있음.
 let _cachedSettings = {};
-chrome.storage.local.get('settings', (r) => { _cachedSettings = r.settings || {}; });
+chrome.storage.local.get('settings', (r) => {
+  _cachedSettings = r.settings || {};
+  console.log('[AutoPanel] 캐시 초기화:', _cachedSettings);
+});
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.settings) _cachedSettings = changes.settings.newValue || {};
+  if (changes.settings) {
+    _cachedSettings = changes.settings.newValue || {};
+    console.log('[AutoPanel] 캐시 업데이트:', _cachedSettings);
+  }
 });
 
-// 탭 전환 시 — 캐시에서 즉시 확인해 gesture context를 유지한 채 사이드패널 열기/닫기
+// 탭 전환 시 — _tabUrls 캐시에서 즉시 URL 확인해 gesture context를 유지한 채 사이드패널 열기/닫기
+// (비동기 chrome.tabs.get 콜백 제거 → gesture context 유지 → sidePanel.open() 정상 동작)
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  console.log('[AutoPanel] onActivated 진입, tabId:', tabId, 'windowId:', windowId);
+  console.log('[AutoPanel] onActivated - autoOpenPanel:', _cachedSettings?.autoOpenPanel);
   if (!_cachedSettings?.autoOpenPanel) return;
 
-  chrome.tabs.get(tabId, (tab) => {
-    const url = tab?.pendingUrl || tab?.url || '';
-    if (isTradeUrl(url)) {
-      chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' }, () => {
-        chrome.sidePanel.open({ windowId });
-      });
-    } else {
-      chrome.sidePanel.setOptions({ tabId, enabled: false });
+  const url = _tabUrls[tabId] || '';
+  console.log('[AutoPanel] _tabUrls 캐시 url:', url, 'isTradeUrl:', isTradeUrl(url));
+
+  if (isTradeUrl(url)) {
+    console.log('[AutoPanel] onActivated - 거래소 탭, sidePanel.open 호출, tabId:', tabId);
+    _lastTradeTabId = tabId;
+    if (_closePanelTimeout) {
+      clearTimeout(_closePanelTimeout);
+      _closePanelTimeout = null;
     }
-  });
+    chrome.sidePanel.open({ windowId });
+  } else {
+    console.log('[AutoPanel] non-trade 탭 전환 - setOptions enabled:false 호출, tabId:', tabId);
+    chrome.sidePanel.setOptions({ tabId, enabled: false });
+
+    // 패널이 완전히 로드된 후 닫히도록 딜레이 추가 (거래소 탭으로 빠르게 복귀하면 취소됨)
+    _closePanelTimeout = setTimeout(() => {
+      _closePanelTimeout = null;
+      chrome.runtime.sendMessage({ type: 'CLOSE_SIDE_PANEL' }).catch(() => {});
+    }, 300);
+  }
 });
 
 // 탭 내 URL 변경 시 — 로드 완료 후 거래소 여부에 따라 사이드패널 활성화 상태 조정
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
+  console.log('[AutoPanel] onUpdated - autoOpenPanel:', _cachedSettings?.autoOpenPanel);
   if (!_cachedSettings?.autoOpenPanel) return;
 
   const url = tab?.url || '';
+  if (url) _tabUrls[tabId] = url;
+  console.log('[AutoPanel] onUpdated - url:', url, '/ isTradeUrl:', isTradeUrl(url));
   if (isTradeUrl(url)) {
-    chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' }, () => {
+    console.log('[AutoPanel] onUpdated - setOptions enabled:true, tabId:', tabId);
+    // setOptions는 fire-and-forget, open()은 동기적으로 같은 프레임에서 호출
+    // (콜백 안에서 호출하면 user gesture context가 소멸하여 open()이 실패함)
+    chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+    if (tab.active) {
+      console.log('[AutoPanel] onUpdated - 활성 탭 거래소 URL 전환, sidePanel.open 호출, windowId:', tab.windowId);
       chrome.sidePanel.open({ windowId: tab.windowId });
-    });
+    }
   } else {
+    console.log('[AutoPanel] onUpdated - setOptions enabled:false, tabId:', tabId);
     chrome.sidePanel.setOptions({ tabId, enabled: false });
   }
 });
@@ -200,6 +244,23 @@ function appendDebugLog(entry, sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'TRADE_PAGE_LOADED') {
+    // await 없이 캐시에서 즉시 확인 후 바로 open 호출
+    if (_cachedSettings?.autoOpenPanel) {
+      chrome.sidePanel.open({ windowId: sender.tab.windowId });
+    }
+    sendResponse({});
+    return true;
+  }
+
+  if (msg.type === 'TRADE_TAB_VISIBLE') {
+    if (_cachedSettings?.autoOpenPanel) {
+      chrome.sidePanel.open({ windowId: sender.tab.windowId });
+    }
+    sendResponse({});
+    return true;
+  }
+
   if (msg.type === 'SAVE_FILTER') {
     chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings'], (result) => {
       const league = getCurrentLeague(result);

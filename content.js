@@ -1,6 +1,15 @@
 console.warn('🔥 POE2 content.js LOADED 🔥');
 'use strict';
 
+// 거래소 페이지 로드 시 사이드패널 자동 열기 요청
+chrome.runtime.sendMessage({ type: 'TRADE_PAGE_LOADED' }).catch(() => {});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    chrome.runtime.sendMessage({ type: 'TRADE_TAB_VISIBLE' }).catch(() => {});
+  }
+});
+
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
