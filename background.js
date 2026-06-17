@@ -11,7 +11,8 @@ function isTradeUrl(url) {
 }
 
 // 자동 열기 처리 함수
-async function handleAutoPanel(tabId, url) {
+// windowId가 제공되면 거래소 페이지 전환 시 sidePanel.open()을 직접 시도함
+async function handleAutoPanel(tabId, url, windowId) {
   try {
     // URL이 아직 확정되지 않은 경우(빈 문자열, undefined, chrome:// 등)는 건너뜀
     // — onActivated 시점에 탭이 아직 로드 중이면 url이 비어있을 수 있으며,
@@ -23,9 +24,16 @@ async function handleAutoPanel(tabId, url) {
     if (!result.settings || !result.settings.autoOpenPanel) return;
 
     if (isTradeUrl(url)) {
-      // enabled true로 설정만 함 — 실제 open()은 content.js의 TRADE_PAGE_LOADED 메시지로 처리
-      // (background에서 직접 sidePanel.open() 호출은 사용자 이벤트 컨텍스트가 없어 실패할 수 있음)
       await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+      // windowId가 있으면 탭 전환/업데이트 시점에 바로 열기 시도
+      // (탭 활성화 이벤트는 Chrome이 user gesture로 인정하는 경우도 있음)
+      if (windowId) {
+        try {
+          await chrome.sidePanel.open({ windowId });
+        } catch (_) {
+          // 실패해도 무시 — TRADE_PAGE_LOADED 메시지가 fallback으로 처리
+        }
+      }
     } else {
       await chrome.sidePanel.setOptions({ tabId, enabled: false });
     }
@@ -33,12 +41,12 @@ async function handleAutoPanel(tabId, url) {
 }
 
 // 탭 전환 시
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
     // pendingUrl이 있으면 우선 사용 (로딩 중인 탭의 목적지 URL)
     const url = tab.pendingUrl || tab.url || '';
-    await handleAutoPanel(tabId, url);
+    await handleAutoPanel(tabId, url, windowId);
   } catch (e) {}
 });
 
@@ -46,7 +54,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   try {
-    await handleAutoPanel(tabId, tab.url);
+    await handleAutoPanel(tabId, tab.url, tab.windowId);
   } catch (e) {}
 });
 
@@ -257,9 +265,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const result = await chrome.storage.local.get('settings');
         if (!result.settings?.autoOpenPanel) { sendResponse({}); return; }
         const tabId = sender.tab?.id;
-        if (!tabId) { sendResponse({}); return; }
+        const windowId = sender.tab?.windowId;
+        if (!tabId || !windowId) { sendResponse({}); return; }
         await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-        await chrome.sidePanel.open({ tabId });
+        // tabId 대신 windowId 사용 — Chrome에서 더 안정적으로 동작함
+        await chrome.sidePanel.open({ windowId });
       } catch (e) {}
       sendResponse({});
     })();
