@@ -542,7 +542,7 @@ const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Al
 let filtersByLeague = {};
 let buildsByLeague = {};
 let buildUiByLeague = {};
-let settings = { league: DEFAULT_LEAGUE, resultCount: 10 };
+let settings = { league: DEFAULT_LEAGUE, resultCount: 10, autoOpenPanel: false };
 let editingId = null;
 let buildSectionCollapsed = true;
 let jewelSubFilter = 'all';
@@ -803,6 +803,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       settings = { ...settings, ...(changes.settings.newValue || {}) };
       document.getElementById('leagueBadge').textContent = settings.league;
       document.getElementById('sLeague').value = settings.league;
+      document.getElementById('toggleAutoOpenPanel').checked = !!settings.autoOpenPanel;
       needsRender = true;
     }
     if (needsRender) render();
@@ -882,6 +883,7 @@ async function loadData() {
   document.getElementById('sLeague').value = settings.league;
   document.getElementById('sCount').value = settings.resultCount;
   document.getElementById('leagueBadge').textContent = settings.league;
+  document.getElementById('toggleAutoOpenPanel').checked = !!settings.autoOpenPanel;
 }
 
 const persist = () => chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
@@ -2241,6 +2243,12 @@ function bindSettings() {
   leagueInput.addEventListener('change', e => onLeagueChange(e.target.value));
   leagueInput.addEventListener('blur',   e => onLeagueChange(e.target.value));
   document.getElementById('sCount').addEventListener('change', e => { settings.resultCount=parseInt(e.target.value); persist(); });
+  document.getElementById('toggleAutoOpenPanel').addEventListener('change', e => {
+    const enabled = e.target.checked;
+    settings.autoOpenPanel = enabled;
+    persist();
+    chrome.runtime.sendMessage({ type: 'AUTO_PANEL_CHANGED', enabled }).catch(() => null);
+  });
 }
 
 function bindImportExport() {

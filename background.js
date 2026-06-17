@@ -2,6 +2,45 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ tabId: tab.id });
 });
 
+// 거래소 URL 체크 함수
+function isTradeUrl(url) {
+  return url && (
+    url.includes('poe.kakaogames.com/trade2') ||
+    url.includes('pathofexile.com/trade2')
+  );
+}
+
+// 자동 열기 처리 함수
+async function handleAutoPanel(tabId, url) {
+  try {
+    const result = await chrome.storage.local.get('settings');
+    if (!result.settings || !result.settings.autoOpenPanel) return;
+
+    if (isTradeUrl(url)) {
+      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+      await chrome.sidePanel.open({ tabId });
+    } else {
+      await chrome.sidePanel.setOptions({ tabId, enabled: false });
+    }
+  } catch (e) {}
+}
+
+// 탭 전환 시
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await handleAutoPanel(tabId, tab.url);
+  } catch (e) {}
+});
+
+// URL 변경 시
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete') return;
+  try {
+    await handleAutoPanel(tabId, tab.url);
+  } catch (e) {}
+});
+
 const DEFAULT_LEAGUE = 'Runes of Aldur';
 const DEBUG_LOG_KEY = 'debugLogs';
 const DEFAULT_BUILD_NAME = '기본 빌드';
@@ -102,6 +141,40 @@ function ensureBuildState(league, filtersByLeague, buildsByLeague, buildUiByLeag
   return { buildsByLeague, buildUiByLeague, selectedBuild, activeTab, changed };
 }
 
+function inferTargetTabKey(filter) {
+  const category = String(filter?.category || '').toLowerCase();
+  const name = String(filter?.name || '').toLowerCase();
+  const itemName = String(filter?.itemName || '').toLowerCase();
+  const typeLine = String(filter?.typeLine || '').toLowerCase();
+  const haystack = `${category} ${name} ${itemName} ${typeLine}`;
+
+  if (/(tablet|slate|waystone|map|서판|지도)/i.test(haystack)) {
+    return 'slate';
+  }
+
+  if (
+    /^(weapon|armour|accessory)\./.test(category)
+    || /^(jewel|flask)$/.test(category)
+    || /(helmet|gloves|boots|belt|ring|amulet|quiver|shield|focus|buckler|wand|sceptre|spear|flail|claw|dagger|sword|axe|mace|staff|crossbow|활|반지|목걸이|장갑|투구|장화|갑옷|방패|주얼|플라스크)/i.test(haystack)
+  ) {
+    return 'equipment';
+  }
+
+  return '';
+}
+
+function resolveTargetTab(selectedBuild, activeTab, filter) {
+  if (!selectedBuild || !Array.isArray(selectedBuild.tabs) || !selectedBuild.tabs.length) {
+    return activeTab || null;
+  }
+  const preferredKey = inferTargetTabKey(filter);
+  if (preferredKey) {
+    const matched = selectedBuild.tabs.find(tab => tab.key === preferredKey || tab.type === preferredKey);
+    if (matched) return matched;
+  }
+  return activeTab || selectedBuild.tabs.find(tab => tab.id === selectedBuild.activeTabId) || selectedBuild.tabs[0] || null;
+}
+
 function appendDebugLog(entry, sendResponse) {
   chrome.storage.local.get([DEBUG_LOG_KEY], (result) => {
     const logs = Array.isArray(result[DEBUG_LOG_KEY]) ? result[DEBUG_LOG_KEY].slice() : [];
@@ -128,10 +201,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const savedFilter = { ...msg.filter, league };
       arr.push(savedFilter);
       filtersByLeague[league] = arr;
-      const targetTab = buildState.activeTab;
+      const targetTab = resolveTargetTab(buildState.selectedBuild, buildState.activeTab, savedFilter);
       const filterId = String(savedFilter.id);
       if (targetTab && !targetTab.filterIds.includes(filterId)) {
         targetTab.filterIds.push(filterId);
+      }
+      if (targetTab && buildState.selectedBuild) {
+        buildState.selectedBuild.activeTabId = targetTab.id;
       }
       const writes = {
         filtersByLeague,
@@ -215,6 +291,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(r => r.json())
       .then(data => sendResponse({ ok: true, data }))
       .catch(e => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (msg.type === 'AUTO_PANEL_CHANGED') {
+    // 설정이 꺼질 때 현재 탭의 sidePanel을 다시 활성화 (열린 패널은 유지)
+    if (!msg.enabled) {
+      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        if (tabs && tabs[0]) {
+          try {
+            await chrome.sidePanel.setOptions({ tabId: tabs[0].id, enabled: true, path: 'sidepanel.html' });
+          } catch (e) {}
+        }
+      });
+    } else {
+      // 설정이 켜질 때 현재 탭 상태 재체크
+      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        if (tabs && tabs[0]) {
+          try {
+            await handleAutoPanel(tabs[0].id, tabs[0].url);
+          } catch (e) {}
+        }
+      });
+    }
+    sendResponse({ ok: true });
     return true;
   }
 });
