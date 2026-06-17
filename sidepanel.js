@@ -2562,16 +2562,15 @@ function renderNinjaRates(data) {
     const row = document.createElement('div');
     row.className = 'ninja-row';
     row.innerHTML = `
-      <img class="ninja-icon" src="" alt="">
+      <img class="ninja-icon" alt="" style="display:none">
       <span class="ninja-name">${name}</span>
       <span class="ninja-div">${priceText}</span>
     `;
     const img = row.querySelector('img');
     if (imageUrl) {
+      img.style.display = '';
       img.src = imageUrl;
       img.onerror = () => { img.style.display = 'none'; };
-    } else {
-      img.style.display = 'none';
     }
     container.appendChild(row);
   });
@@ -2600,3 +2599,11 @@ function updateRateBadge(data) {
     badge.style.display = 'none';
   }
 }
+
+// background.js에서 보내는 CLOSE_SIDE_PANEL 메시지 수신 시 패널 닫기
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'CLOSE_SIDE_PANEL') {
+    window.close();
+    return;
+  }
+});
