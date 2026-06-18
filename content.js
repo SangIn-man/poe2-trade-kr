@@ -5,6 +5,9 @@ console.warn('🔥 POE2 content.js LOADED 🔥');
 // content.js 는 <all_urls> 에 주입되므로, 거래소 전용 로직(⭐ 버튼,
 // MutationObserver, 매물 평가 등)은 거래소 호스트에서만 실행한다.
 const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location.hostname);
+const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v1';
+const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
+const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
@@ -16,9 +19,15 @@ let cachedEvalContextPromise = null;
 let cachedTradeRates = null;
 
 if (IS_TRADE_SITE) {
-  const observer = new MutationObserver(() => scanItems());
+  const observer = new MutationObserver(() => {
+    scanItems();
+    scheduleManualStatSearchEnhance();
+  });
   observer.observe(document.body, { childList: true, subtree: true });
-  setTimeout(scanItems, 1000);
+  setTimeout(() => {
+    scanItems();
+    scheduleManualStatSearchEnhance();
+  }, 1000);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[TRADE_RATE_KEY]) {
@@ -1135,6 +1144,10 @@ function isFlagOnlyStatText(text) {
 
 let cachedTradeStatMap = null;
 let cachedTradeStatMapPromise = null;
+let cachedTradeStatsPayload = null;
+let cachedTradeStatsPayloadPromise = null;
+let cachedManualStatEntries = null;
+let cachedManualStatEntriesPromise = null;
 
 function normalizeStatText(text) {
   return stripTags(text)
@@ -1173,28 +1186,72 @@ function buildTradeStatMapFromParsed(parsed) {
   return map;
 }
 
+function readCachedTradeStatsPayload() {
+  try {
+    const raw = localStorage.getItem(STAT_SEARCH_CACHE_KEY);
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (cached?.payload && Date.now() - Number(cached.savedAt || 0) < STAT_SEARCH_CACHE_TTL) {
+        return cached.payload;
+      }
+    }
+  } catch {}
+
+  try {
+    const raw = localStorage.getItem('lscache-trade2stats');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+
+  return null;
+}
+
+function writeCachedTradeStatsPayload(payload) {
+  try {
+    localStorage.setItem(STAT_SEARCH_CACHE_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      payload
+    }));
+  } catch {}
+}
+
+async function ensureTradeStatsPayload() {
+  if (cachedTradeStatsPayload) return cachedTradeStatsPayload;
+  if (cachedTradeStatsPayloadPromise) return cachedTradeStatsPayloadPromise;
+
+  cachedTradeStatsPayloadPromise = (async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/data/stats`, { credentials: 'include' });
+      if (res.ok) {
+        const parsed = await res.json();
+        if (Array.isArray(parsed?.result)) {
+          cachedTradeStatsPayload = parsed;
+          writeCachedTradeStatsPayload(parsed);
+          return parsed;
+        }
+      }
+    } catch {}
+
+    const cached = readCachedTradeStatsPayload();
+    cachedTradeStatsPayload = cached || { result: [] };
+    return cachedTradeStatsPayload;
+  })();
+
+  try {
+    return await cachedTradeStatsPayloadPromise;
+  } finally {
+    cachedTradeStatsPayloadPromise = null;
+  }
+}
+
 async function ensureTradeStatMap() {
   if (cachedTradeStatMap) return cachedTradeStatMap;
   if (cachedTradeStatMapPromise) return cachedTradeStatMapPromise;
 
   cachedTradeStatMapPromise = (async () => {
     try {
-      const res = await fetch(`${getApiBase()}/data/stats`, { credentials: 'include' });
-      if (res.ok) {
-        const parsed = await res.json();
-        const map = buildTradeStatMapFromParsed(parsed);
-        if (map.size) {
-          cachedTradeStatMap = map;
-          return map;
-        }
-      }
-    } catch {}
-
-    try {
-      const raw = localStorage.getItem('lscache-trade2stats');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const map = buildTradeStatMapFromParsed(parsed);
+      const parsed = await ensureTradeStatsPayload();
+      const map = buildTradeStatMapFromParsed(parsed);
+      if (map.size) {
         cachedTradeStatMap = map;
         return map;
       }
@@ -1228,6 +1285,333 @@ function resolveTradeStatId(label, category, fallbackId) {
 
   return matches[0].id || '';
 }
+
+function normalizeManualStatSearchText(text) {
+  return stripTags(text)
+    .replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2')
+    .replace(/\[([^\]|]+)\]/g, '$1')
+    .replace(/[+#%~(),./\\[\]{}:;'"!?<>|=*_`-]+/g, ' ')
+    .replace(/\d+(?:\.\d+)?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function tokenizeManualStatSearch(text) {
+  return normalizeManualStatSearchText(text)
+    .split(' ')
+    .map(token => token.trim())
+    .filter(token => token && (token.length > 1 || !MANUAL_STAT_SEARCH_STOP_WORDS.has(token)));
+}
+
+function flattenManualStatEntries(parsed) {
+  const entries = [];
+  (parsed?.result || []).forEach(group => {
+    (group.entries || []).forEach(entry => {
+      if (!entry?.id || !entry?.text) return;
+      const normalized = normalizeManualStatSearchText(entry.text);
+      const tokens = tokenizeManualStatSearch(entry.text);
+      if (!normalized || !tokens.length) return;
+      entries.push({
+        id: entry.id,
+        text: entry.text,
+        type: entry.type || group.id || '',
+        groupId: group.id || '',
+        groupLabel: group.label || group.id || '',
+        normalized,
+        compact: normalized.replace(/\s+/g, ''),
+        tokens
+      });
+    });
+  });
+  return entries;
+}
+
+async function ensureManualStatEntries() {
+  if (cachedManualStatEntries) return cachedManualStatEntries;
+  if (cachedManualStatEntriesPromise) return cachedManualStatEntriesPromise;
+
+  cachedManualStatEntriesPromise = (async () => {
+    try {
+      const parsed = await ensureTradeStatsPayload();
+      cachedManualStatEntries = flattenManualStatEntries(parsed);
+      return cachedManualStatEntries;
+    } catch {
+      cachedManualStatEntries = [];
+      return cachedManualStatEntries;
+    }
+  })();
+
+  try {
+    return await cachedManualStatEntriesPromise;
+  } finally {
+    cachedManualStatEntriesPromise = null;
+  }
+}
+
+function scoreManualStatEntry(entry, tokens, compactQuery) {
+  let score = 0;
+  for (const token of tokens) {
+    const compactToken = token.replace(/\s+/g, '');
+    const pos = entry.normalized.indexOf(token);
+    const compactPos = entry.compact.indexOf(compactToken);
+    if (pos === -1 && compactPos === -1) return -1;
+    score += pos === 0 || compactPos === 0 ? 24 : 12;
+    score += Math.max(0, 10 - Math.min(pos === -1 ? compactPos : pos, 10));
+  }
+  if (entry.normalized.includes(tokens.join(' '))) score += 18;
+  if (compactQuery && entry.compact.includes(compactQuery)) score += 10;
+  if (entry.groupId === 'explicit') score += 4;
+  if (entry.groupId === 'pseudo') score += 2;
+  score -= Math.min(entry.text.length, 120) / 12;
+  return score;
+}
+
+function findManualStatMatches(query, entries) {
+  const tokens = tokenizeManualStatSearch(query);
+  if (!tokens.length) return [];
+  const compactQuery = tokens.join('');
+  const matches = [];
+  (entries || []).forEach(entry => {
+    const score = scoreManualStatEntry(entry, tokens, compactQuery);
+    if (score >= 0) matches.push({ entry, score });
+  });
+  return matches
+    .sort((a, b) => b.score - a.score || a.entry.text.length - b.entry.text.length)
+    .slice(0, 12)
+    .map(match => match.entry);
+}
+
+const manualStatInputState = new WeakMap();
+let manualStatEnhanceTimer = null;
+let activeManualStatDropdown = null;
+
+function scheduleManualStatSearchEnhance() {
+  clearTimeout(manualStatEnhanceTimer);
+  manualStatEnhanceTimer = setTimeout(enhanceManualStatSearchInputs, 150);
+}
+
+function isTextLikeInput(el) {
+  if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return false;
+  if (el.disabled || el.readOnly) return false;
+  const type = (el.getAttribute('type') || 'text').toLowerCase();
+  return el instanceof HTMLTextAreaElement || ['text', 'search', ''].includes(type);
+}
+
+function getManualStatInputContext(input) {
+  const attrs = [
+    input.id, input.name, input.className, input.placeholder,
+    input.getAttribute('aria-label'), input.getAttribute('autocomplete')
+  ].join(' ').toLowerCase();
+  const region = input.closest('[class*="stat"], [class*="filter"], [class*="mod"], [class*="multi"], [class*="select"], section, form, fieldset, div');
+  const regionClass = (region?.className || '').toLowerCase();
+  const regionText = normalizeSpace((region?.textContent || '').slice(0, 400)).toLowerCase();
+  return {
+    attrs,
+    region: `${regionClass} ${regionText}`,
+    all: `${attrs} ${regionClass} ${regionText}`
+  };
+}
+
+function isLikelyManualStatInput(input) {
+  if (!isTextLikeInput(input) || input.closest('#poe2-qs-sidebar-host, .poe2tq-stat-suggest')) return false;
+  if (!isVisibleElement(input)) return false;
+
+  const context = getManualStatInputContext(input);
+  if (/(league|리그|account|계정|price|가격|item name|name|이름|base type|분류)/i.test(context.attrs)) {
+    return false;
+  }
+
+  if (/(stat|stats|mod|mods|affix|속성|스탯|능력치|필터|filter)/i.test(context.all)) {
+    if (!/(type filters?|아이템 필터|장비 필터)/i.test(context.region)) {
+      return true;
+    }
+  }
+
+  return /(multiselect__input|select2-search__field|search-field|filter-input)/i.test(input.className || '');
+}
+
+function enhanceManualStatSearchInputs() {
+  try {
+    document.querySelectorAll('input, textarea').forEach(input => {
+      if (manualStatInputState.has(input) || !isLikelyManualStatInput(input)) return;
+      bindManualStatSearchInput(input);
+    });
+  } catch {}
+}
+
+function bindManualStatSearchInput(input) {
+  const state = { input, matches: [], selectedIndex: 0, renderTimer: null };
+  manualStatInputState.set(input, state);
+
+  input.addEventListener('input', () => scheduleManualStatSuggest(state));
+  input.addEventListener('focus', () => scheduleManualStatSuggest(state));
+  input.addEventListener('blur', () => {
+    setTimeout(() => hideManualStatDropdown(state), 120);
+  });
+  input.addEventListener('keydown', event => handleManualStatKeydown(event, state));
+}
+
+function scheduleManualStatSuggest(state) {
+  clearTimeout(state.renderTimer);
+  state.renderTimer = setTimeout(() => renderManualStatSuggestions(state), 80);
+}
+
+async function renderManualStatSuggestions(state) {
+  const query = state.input.value || '';
+  if (normalizeManualStatSearchText(query).length < 2) {
+    hideManualStatDropdown(state);
+    return;
+  }
+
+  const entries = await ensureManualStatEntries();
+  if (document.activeElement !== state.input) return;
+
+  state.matches = findManualStatMatches(query, entries);
+  state.selectedIndex = 0;
+  if (!state.matches.length) {
+    hideManualStatDropdown(state);
+    return;
+  }
+
+  const dropdown = getManualStatDropdown(state);
+  dropdown.innerHTML = '';
+  state.matches.forEach((entry, index) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'poe2tq-stat-suggest-item';
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', index === state.selectedIndex ? 'true' : 'false');
+    item.dataset.index = String(index);
+
+    const text = document.createElement('span');
+    text.className = 'poe2tq-stat-suggest-text';
+    text.textContent = entry.text;
+
+    const meta = document.createElement('span');
+    meta.className = 'poe2tq-stat-suggest-meta';
+    meta.textContent = entry.groupLabel || entry.type || '';
+
+    item.appendChild(text);
+    item.appendChild(meta);
+    item.addEventListener('mouseenter', () => setManualStatSelectedIndex(state, index));
+    item.addEventListener('mousedown', event => {
+      event.preventDefault();
+      selectManualStatEntry(state, entry);
+    });
+    dropdown.appendChild(item);
+  });
+
+  positionManualStatDropdown(state, dropdown);
+  dropdown.hidden = false;
+  activeManualStatDropdown = dropdown;
+}
+
+function getManualStatDropdown(state) {
+  if (state.dropdown && document.body.contains(state.dropdown)) return state.dropdown;
+  const dropdown = document.createElement('div');
+  dropdown.className = 'poe2tq-stat-suggest';
+  dropdown.setAttribute('role', 'listbox');
+  dropdown.hidden = true;
+  document.body.appendChild(dropdown);
+  state.dropdown = dropdown;
+  return dropdown;
+}
+
+function positionManualStatDropdown(state, dropdown) {
+  const rect = state.input.getBoundingClientRect();
+  dropdown.style.left = `${Math.max(8, rect.left)}px`;
+  dropdown.style.top = `${Math.max(8, rect.bottom + 4)}px`;
+  dropdown.style.width = `${Math.max(280, Math.min(560, rect.width || 320))}px`;
+}
+
+function hideManualStatDropdown(state) {
+  if (!state?.dropdown) return;
+  state.dropdown.hidden = true;
+  if (activeManualStatDropdown === state.dropdown) activeManualStatDropdown = null;
+}
+
+function setManualStatSelectedIndex(state, index) {
+  state.selectedIndex = Math.max(0, Math.min(index, state.matches.length - 1));
+  if (!state.dropdown) return;
+  state.dropdown.querySelectorAll('.poe2tq-stat-suggest-item').forEach((item, idx) => {
+    item.setAttribute('aria-selected', idx === state.selectedIndex ? 'true' : 'false');
+  });
+}
+
+function handleManualStatKeydown(event, state) {
+  if (!state.dropdown || state.dropdown.hidden || !state.matches.length) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setManualStatSelectedIndex(state, state.selectedIndex + 1);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setManualStatSelectedIndex(state, state.selectedIndex - 1);
+  } else if (event.key === 'Enter' || event.key === 'Tab') {
+    const entry = state.matches[state.selectedIndex];
+    if (!entry) return;
+    event.preventDefault();
+    selectManualStatEntry(state, entry);
+  } else if (event.key === 'Escape') {
+    hideManualStatDropdown(state);
+  }
+}
+
+function setNativeInputValue(input, value) {
+  const proto = Object.getPrototypeOf(input);
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (descriptor?.set) descriptor.set.call(input, value);
+  else input.value = value;
+}
+
+function dispatchManualStatInputEvents(input, value) {
+  try {
+    input.focus();
+    setNativeInputValue(input, value);
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      cancelable: true,
+      inputType: 'insertReplacementText',
+      data: value
+    }));
+  } catch {
+    setNativeInputValue(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function findNativeStatOption(input, text) {
+  const root = input.closest('[class*="multiselect"], [class*="select"], [class*="filter"], form, section') || document;
+  const exact = normalizeManualStatSearchText(text);
+  const candidates = Array.from(root.querySelectorAll('[role="option"], [class*="option"], [class*="result"], li, button, div, span'))
+    .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-stat-suggest'));
+  return candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
+    || candidates.find(el => normalizeManualStatSearchText(el.textContent || '').includes(exact));
+}
+
+function selectManualStatEntry(state, entry) {
+  hideManualStatDropdown(state);
+  dispatchManualStatInputEvents(state.input, entry.text);
+
+  setTimeout(() => {
+    try {
+      const option = findNativeStatOption(state.input, entry.text);
+      if (option) {
+        option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+        option.click();
+        return;
+      }
+      state.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      state.input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true }));
+    } catch {}
+  }, 80);
+}
+
+window.addEventListener('scroll', () => {
+  if (activeManualStatDropdown) activeManualStatDropdown.hidden = true;
+}, true);
 
 function shouldSkipStatLine(label, category, item) {
   const text = stripTags(label);

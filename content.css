@@ -187,3 +187,64 @@
 .poe2tq-sm-btn-cancel:hover{background:#2a1e10;}
 .poe2tq-sm-btn-save{border:1px solid #8a6030;background:#3a2a10;color:#f0d080;border-radius:4px;padding:5px 14px;font-size:12px;font-weight:bold;cursor:pointer;}
 .poe2tq-sm-btn-save:hover{background:#4a3a18;border-color:#c8a060;}
+
+.poe2tq-stat-suggest {
+  position: fixed;
+  z-index: 2147483646;
+  max-height: 320px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 4px;
+  background: #11100d;
+  border: 1px solid #5f4a25;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+.poe2tq-stat-suggest[hidden] {
+  display: none;
+}
+
+.poe2tq-stat-suggest-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  box-sizing: border-box;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #d8c49c;
+  text-align: left;
+  cursor: pointer;
+}
+
+.poe2tq-stat-suggest-item:hover,
+.poe2tq-stat-suggest-item[aria-selected="true"] {
+  background: #2a2114;
+  color: #f0d080;
+}
+
+.poe2tq-stat-suggest-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.poe2tq-stat-suggest-meta {
+  padding: 2px 5px;
+  border: 1px solid #4d3a1c;
+  border-radius: 3px;
+  color: #9f8b62;
+  background: #19150f;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
