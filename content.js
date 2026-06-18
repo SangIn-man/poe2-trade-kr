@@ -1386,7 +1386,6 @@ function findManualStatMatches(query, entries) {
 
 const manualStatInputState = new WeakMap();
 let manualStatEnhanceTimer = null;
-let activeManualStatDropdown = null;
 
 function scheduleManualStatSearchEnhance() {
   clearTimeout(manualStatEnhanceTimer);
@@ -1416,7 +1415,7 @@ function getManualStatInputContext(input) {
 }
 
 function isLikelyManualStatInput(input) {
-  if (!isTextLikeInput(input) || input.closest('#poe2-qs-sidebar-host, .poe2tq-stat-suggest')) return false;
+  if (!isTextLikeInput(input) || input.closest('#poe2-qs-sidebar-host')) return false;
   if (!isVisibleElement(input)) return false;
 
   const context = getManualStatInputContext(input);
@@ -1443,120 +1442,45 @@ function enhanceManualStatSearchInputs() {
 }
 
 function bindManualStatSearchInput(input) {
-  const state = { input, matches: [], selectedIndex: 0, renderTimer: null };
+  const state = { input, filterTimer: null, applying: false, lastAppliedQuery: '' };
   manualStatInputState.set(input, state);
 
-  input.addEventListener('input', () => scheduleManualStatSuggest(state));
-  input.addEventListener('focus', () => scheduleManualStatSuggest(state));
-  input.addEventListener('blur', () => {
-    setTimeout(() => hideManualStatDropdown(state), 120);
-  });
-  input.addEventListener('keydown', event => handleManualStatKeydown(event, state));
+  input.addEventListener('input', () => scheduleManualStatNativeFilter(state));
+  input.addEventListener('focus', () => scheduleManualStatNativeFilter(state));
 }
 
-function scheduleManualStatSuggest(state) {
-  clearTimeout(state.renderTimer);
-  state.renderTimer = setTimeout(() => renderManualStatSuggestions(state), 80);
+function scheduleManualStatNativeFilter(state) {
+  if (state.applying) return;
+  clearTimeout(state.filterTimer);
+  state.filterTimer = setTimeout(() => applyManualStatNativeFilter(state), 220);
 }
 
-async function renderManualStatSuggestions(state) {
+async function applyManualStatNativeFilter(state) {
+  if (state.applying) return;
   const query = state.input.value || '';
-  if (normalizeManualStatSearchText(query).length < 2) {
-    hideManualStatDropdown(state);
-    return;
-  }
+  const normalizedQuery = normalizeManualStatSearchText(query);
+  const queryTokens = tokenizeManualStatSearch(query);
+  if (normalizedQuery.length < 2 || queryTokens.length < 2) return;
+  if (query === state.lastAppliedQuery) return;
 
   const entries = await ensureManualStatEntries();
   if (document.activeElement !== state.input) return;
 
-  state.matches = findManualStatMatches(query, entries);
-  state.selectedIndex = 0;
-  if (!state.matches.length) {
-    hideManualStatDropdown(state);
-    return;
-  }
+  const entry = findManualStatMatches(query, entries)[0];
+  if (!entry || normalizeManualStatSearchText(entry.text) === normalizedQuery) return;
 
-  const dropdown = getManualStatDropdown(state);
-  dropdown.innerHTML = '';
-  state.matches.forEach((entry, index) => {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = 'poe2tq-stat-suggest-item';
-    item.setAttribute('role', 'option');
-    item.setAttribute('aria-selected', index === state.selectedIndex ? 'true' : 'false');
-    item.dataset.index = String(index);
-
-    const text = document.createElement('span');
-    text.className = 'poe2tq-stat-suggest-text';
-    text.textContent = entry.text;
-
-    const meta = document.createElement('span');
-    meta.className = 'poe2tq-stat-suggest-meta';
-    meta.textContent = entry.groupLabel || entry.type || '';
-
-    item.appendChild(text);
-    item.appendChild(meta);
-    item.addEventListener('mouseenter', () => setManualStatSelectedIndex(state, index));
-    item.addEventListener('mousedown', event => {
-      event.preventDefault();
-      selectManualStatEntry(state, entry);
-    });
-    dropdown.appendChild(item);
-  });
-
-  positionManualStatDropdown(state, dropdown);
-  dropdown.hidden = false;
-  activeManualStatDropdown = dropdown;
-}
-
-function getManualStatDropdown(state) {
-  if (state.dropdown && document.body.contains(state.dropdown)) return state.dropdown;
-  const dropdown = document.createElement('div');
-  dropdown.className = 'poe2tq-stat-suggest';
-  dropdown.setAttribute('role', 'listbox');
-  dropdown.hidden = true;
-  document.body.appendChild(dropdown);
-  state.dropdown = dropdown;
-  return dropdown;
-}
-
-function positionManualStatDropdown(state, dropdown) {
-  const rect = state.input.getBoundingClientRect();
-  dropdown.style.left = `${Math.max(8, rect.left)}px`;
-  dropdown.style.top = `${Math.max(8, rect.bottom + 4)}px`;
-  dropdown.style.width = `${Math.max(280, Math.min(560, rect.width || 320))}px`;
-}
-
-function hideManualStatDropdown(state) {
-  if (!state?.dropdown) return;
-  state.dropdown.hidden = true;
-  if (activeManualStatDropdown === state.dropdown) activeManualStatDropdown = null;
-}
-
-function setManualStatSelectedIndex(state, index) {
-  state.selectedIndex = Math.max(0, Math.min(index, state.matches.length - 1));
-  if (!state.dropdown) return;
-  state.dropdown.querySelectorAll('.poe2tq-stat-suggest-item').forEach((item, idx) => {
-    item.setAttribute('aria-selected', idx === state.selectedIndex ? 'true' : 'false');
-  });
-}
-
-function handleManualStatKeydown(event, state) {
-  if (!state.dropdown || state.dropdown.hidden || !state.matches.length) return;
-  if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    setManualStatSelectedIndex(state, state.selectedIndex + 1);
-  } else if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    setManualStatSelectedIndex(state, state.selectedIndex - 1);
-  } else if (event.key === 'Enter' || event.key === 'Tab') {
-    const entry = state.matches[state.selectedIndex];
-    if (!entry) return;
-    event.preventDefault();
-    selectManualStatEntry(state, entry);
-  } else if (event.key === 'Escape') {
-    hideManualStatDropdown(state);
-  }
+  state.applying = true;
+  state.lastAppliedQuery = entry.text;
+  dispatchManualStatInputEvents(state.input, entry.text);
+  try {
+    const len = state.input.value.length;
+    if (typeof state.input.setSelectionRange === 'function') {
+      state.input.setSelectionRange(len, len);
+    }
+  } catch {}
+  setTimeout(() => {
+    state.applying = false;
+  }, 0);
 }
 
 function setNativeInputValue(input, value) {
@@ -1582,42 +1506,6 @@ function dispatchManualStatInputEvents(input, value) {
   }
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
-
-function findNativeStatOption(input, entry) {
-  const root = input.closest('[class*="multiselect"], [class*="select"], [class*="filter"], form, section') || document;
-  const exact = normalizeManualStatSearchText(entry?.text || '');
-  const groupLabel = normalizeManualStatSearchText(entry?.groupLabel || entry?.groupId || '');
-  const candidates = Array.from(root.querySelectorAll('[role="option"], [class*="option"], [class*="result"], li, button, div, span'))
-    .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-stat-suggest'));
-  return candidates.find(el => {
-    const text = normalizeManualStatSearchText(el.textContent || '');
-    return text.includes(exact) && groupLabel && text.includes(groupLabel);
-  }) || candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
-    || candidates.find(el => normalizeManualStatSearchText(el.textContent || '').includes(exact));
-}
-
-function selectManualStatEntry(state, entry) {
-  hideManualStatDropdown(state);
-  dispatchManualStatInputEvents(state.input, entry.text);
-
-  setTimeout(() => {
-    try {
-      const option = findNativeStatOption(state.input, entry);
-      if (option) {
-        option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-        option.click();
-        return;
-      }
-      state.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-      state.input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true }));
-    } catch {}
-  }, 80);
-}
-
-window.addEventListener('scroll', () => {
-  if (activeManualStatDropdown) activeManualStatDropdown.hidden = true;
-}, true);
 
 function shouldSkipStatLine(label, category, item) {
   const text = stripTags(label);
