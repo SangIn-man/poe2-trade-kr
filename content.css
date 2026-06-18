@@ -70,17 +70,35 @@
 }
 
 #poe2tq-save-query-filter {
-  position: fixed;
-  left: 18px;
-  bottom: 18px;
-  z-index: 2147483645;
-  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin-left: 7px;
+  padding: 6px 10px;
   border: 1px solid #6a4a20;
   border-radius: 4px;
   background: #17120b;
   color: #d8bd7a;
-  font: 700 12px 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font: 700 12px/1.2 'Segoe UI', 'Malgun Gothic', sans-serif;
   cursor: pointer;
+  white-space: nowrap;
+  vertical-align: middle;
+  box-shadow: none;
+}
+
+#poe2tq-save-query-filter.poe2tq-save-query-inline {
+  position: static;
+  z-index: auto;
+}
+
+#poe2tq-save-query-filter.poe2tq-save-query-floating {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 2147483645;
+  margin-left: 0;
+  padding: 7px 11px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 }
 

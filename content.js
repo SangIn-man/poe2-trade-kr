@@ -15,6 +15,8 @@ const MANUAL_STAT_SEARCH_GROUP_LABELS = {
   enchant: '인챈트'
 };
 const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
+const QUERY_SAVE_BUTTON_INLINE_CLASS = 'poe2tq-save-query-inline';
+const QUERY_SAVE_BUTTON_FLOATING_CLASS = 'poe2tq-save-query-floating';
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
@@ -695,21 +697,82 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
   return filter;
 }
 
-function injectCurrentSearchSaveButton() {
-  const existing = document.getElementById(QUERY_SAVE_BUTTON_ID);
-  if (!getQueryId()) {
-    if (existing) existing.remove();
-    return;
-  }
-  if (existing) return;
-
+function createCurrentSearchSaveButton() {
   const btn = document.createElement('button');
   btn.id = QUERY_SAVE_BUTTON_ID;
   btn.type = 'button';
   btn.textContent = '＋ 현재 검색조건 저장';
   btn.title = '현재 거래소 검색 조건을 PoE2 Trade Quick 필터로 저장';
   btn.addEventListener('click', handleSaveCurrentTradeSearch);
-  document.body.appendChild(btn);
+  return btn;
+}
+
+function scoreTradeSearchActionButton(el) {
+  if (!el || isOwnExtensionNode(el) || !isVisibleElement(el)) return -1;
+  if (el.closest('.row[data-id]')) return -1;
+
+  const text = normalizeSpace(`${el.textContent || ''} ${el.value || ''}`).toLowerCase();
+  const attrs = [
+    el.id,
+    el.className,
+    el.getAttribute('type'),
+    el.getAttribute('aria-label'),
+    el.getAttribute('title'),
+    el.getAttribute('data-testid')
+  ].join(' ').toLowerCase();
+  const combined = `${text} ${attrs}`;
+  if (/(reset|clear|초기화|지우기|삭제|cancel|취소|save|저장)/i.test(combined)) return -1;
+  if (!/(search|submit|검색)/i.test(combined)) return -1;
+
+  let score = 0;
+  if (/^(검색|search)$/i.test(text)) score += 80;
+  else if (/(검색|search)/i.test(text)) score += 45;
+  if (/(search|submit)/i.test(attrs)) score += 30;
+  if (el instanceof HTMLButtonElement && (el.type || '').toLowerCase() === 'submit') score += 15;
+  if (el.closest('form')) score += 10;
+
+  const rect = el.getBoundingClientRect();
+  if (rect.top < window.innerHeight * 0.7) score += 8;
+  return score;
+}
+
+function findTradeSearchActionButton() {
+  let best = null;
+  let bestScore = -1;
+  document.querySelectorAll('button, a, input[type="submit"], input[type="button"]').forEach(el => {
+    const score = scoreTradeSearchActionButton(el);
+    if (score > bestScore) {
+      best = el;
+      bestScore = score;
+    }
+  });
+  return bestScore > 0 ? best : null;
+}
+
+function placeCurrentSearchSaveButton(btn) {
+  const searchButton = findTradeSearchActionButton();
+  if (!searchButton || !searchButton.parentElement) {
+    btn.classList.remove(QUERY_SAVE_BUTTON_INLINE_CLASS);
+    btn.classList.add(QUERY_SAVE_BUTTON_FLOATING_CLASS);
+    if (btn.parentElement !== document.body) document.body.appendChild(btn);
+    return;
+  }
+
+  btn.classList.remove(QUERY_SAVE_BUTTON_FLOATING_CLASS);
+  btn.classList.add(QUERY_SAVE_BUTTON_INLINE_CLASS);
+  if (searchButton.nextSibling !== btn) {
+    searchButton.parentElement.insertBefore(btn, searchButton.nextSibling);
+  }
+}
+
+function injectCurrentSearchSaveButton() {
+  let existing = document.getElementById(QUERY_SAVE_BUTTON_ID);
+  if (!getQueryId()) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (!existing) existing = createCurrentSearchSaveButton();
+  placeCurrentSearchSaveButton(existing);
 }
 
 async function handleSaveCurrentTradeSearch(event) {
@@ -794,8 +857,8 @@ function isVisibleElement(el) {
 
 function isOwnExtensionNode(node) {
   if (!(node instanceof Element)) return false;
-  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, .poe2tq-native-stat-wrapper')
-    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, .poe2tq-native-stat-wrapper');
+  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, .poe2tq-native-stat-wrapper')
+    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, .poe2tq-native-stat-wrapper');
 }
 
 function isOwnExtensionMutation(mutations) {
