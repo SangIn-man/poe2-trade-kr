@@ -758,6 +758,9 @@ function buildQuerySignature(filter) {
     category: filter.category || '',
     rarity: filter.rarity || '',
     typeLine: filter.typeLineActive === false ? '' : (filter.typeLine || ''),
+    tradeStatusOption: filter.tradeStatusOption || '',
+    tradeSaleTypeActive: filter.tradeSaleTypeActive === false ? false : true,
+    tradeSaleTypeOption: filter.tradeSaleTypeOption || '',
     ilvlMin: Number(filter.ilvlMin) || 0,
     ilvlMax: Number(filter.ilvlMax) || 0,
     areaLvlMin: Number(filter.areaLvlMin) || 0,
@@ -789,6 +792,13 @@ function normalizeSavedFilter(filter) {
   if (filter.savedPrice === undefined) filter.savedPrice = null;
   if (!filter.typeLine) filter.typeLine = '';
   if (filter.typeLineActive == null) filter.typeLineActive = true;
+  if (/거래소 검색조건에서 저장/.test(filter.note || '')) {
+    if (!filter.tradeStatusOption) filter.tradeStatusOption = 'any';
+    if (!Object.prototype.hasOwnProperty.call(filter, 'tradeSaleTypeActive')) {
+      filter.tradeSaleTypeActive = false;
+    }
+    if (filter.tradeSaleTypeOption == null) filter.tradeSaleTypeOption = '';
+  }
   filter.equipment = Array.isArray(filter.equipment) ? filter.equipment : [];
   filter.stats = Array.isArray(filter.stats) ? filter.stats : [];
   filter.equipment.forEach(e => {
@@ -2082,7 +2092,8 @@ async function doSearch(id, openInNew = true) {
 }
 
 function buildQuery(f) {
-  const q = { query:{ status:{ option:'securable' }, filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
+  const statusOption = f.tradeStatusOption || 'securable';
+  const q = { query:{ status:{ option: statusOption }, filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
   const tf = {};
   if (f.rarity)   tf.rarity   = { option: f.rarity };
   if (f.category) tf.category = { option: f.category };
@@ -2099,7 +2110,12 @@ function buildQuery(f) {
   if (f.areaLvlMin) mf.area_level = { min: Number(f.areaLvlMin) };
   if (Object.keys(mf).length) q.query.filters.misc_filters = { filters: mf };
 
-  q.query.filters.trade_filters = { filters: { sale_type: { option: 'priced' } } };
+  const hasSavedSaleTypeFlag = Object.prototype.hasOwnProperty.call(f, 'tradeSaleTypeActive');
+  if (!hasSavedSaleTypeFlag || f.tradeSaleTypeActive !== false) {
+    q.query.filters.trade_filters = {
+      filters: { sale_type: { option: f.tradeSaleTypeOption || 'priced' } }
+    };
+  }
 
   const equipmentFilters = {};
   (f.equipment || []).forEach(e => {

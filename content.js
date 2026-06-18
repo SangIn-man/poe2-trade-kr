@@ -8,8 +8,12 @@ const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location
 const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v1';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
-const MANUAL_STAT_SEARCH_GROUPS = null;
-const MANUAL_STAT_SEARCH_EXCLUDED_GROUPS = new Set(['pseudo']);
+const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit', 'enchant']);
+const MANUAL_STAT_SEARCH_GROUP_LABELS = {
+  explicit: '비고정',
+  implicit: '고정',
+  enchant: '인챈트'
+};
 const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 
 // ─── tracked rows ─────────────────────────────────────
@@ -581,6 +585,11 @@ function getFirstFilterValue(queryFilters, groupName, key, valueKey = 'option') 
   return group?.[key]?.[valueKey] || '';
 }
 
+function hasQueryFilter(queryFilters, groupName, key) {
+  const group = queryFilters?.[groupName]?.filters || {};
+  return !!group?.[key];
+}
+
 function buildCurrentSearchFilterName(stats, equipment) {
   const firstStats = (stats || []).slice(0, 2).map(stat => {
     const range = stat.noValue ? '' : makeRangeValueLabel(stat.min, stat.max);
@@ -637,6 +646,9 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
     reqLvlMin: numberOrNull(queryFilters.misc_filters?.filters?.req_level?.min) || 0,
     priceMax: 0,
     savedPrice: null,
+    tradeStatusOption: query.status?.option || '',
+    tradeSaleTypeActive: hasQueryFilter(queryFilters, 'trade_filters', 'sale_type'),
+    tradeSaleTypeOption: getFirstFilterValue(queryFilters, 'trade_filters', 'sale_type'),
     equipment,
     stats,
     note: `거래소 검색조건에서 저장 (${league}, ${queryId})`,
@@ -1559,7 +1571,6 @@ function flattenManualStatEntries(parsed) {
   const entries = [];
   (parsed?.result || []).forEach(group => {
     if (MANUAL_STAT_SEARCH_GROUPS && !MANUAL_STAT_SEARCH_GROUPS.has(group?.id)) return;
-    if (MANUAL_STAT_SEARCH_EXCLUDED_GROUPS.has(group?.id)) return;
     (group.entries || []).forEach(entry => {
       if (!entry?.id || !entry?.text) return;
       const text = statTextToPlainLine(entry.text);
@@ -1572,7 +1583,7 @@ function flattenManualStatEntries(parsed) {
         rawText: entry.text,
         type: entry.type || group.id || '',
         groupId: group.id || '',
-        groupLabel: group.label || group.id || '',
+        groupLabel: MANUAL_STAT_SEARCH_GROUP_LABELS[group.id] || group.label || group.id || '',
         normalized,
         compact: normalized.replace(/\s+/g, ''),
         tokens
@@ -1617,6 +1628,7 @@ function scoreManualStatEntry(entry, tokens, compactQuery) {
   if (entry.normalized.includes(tokens.join(' '))) score += 18;
   if (compactQuery && entry.compact.includes(compactQuery)) score += 10;
   if (entry.groupId === 'explicit') score += 4;
+  if (entry.groupId === 'enchant') score += 3;
   if (entry.groupId === 'implicit') score += 2;
   score -= Math.min(entry.text.length, 120) / 12;
   return score;
@@ -2171,6 +2183,9 @@ function buildQuerySignature(filter) {
     category: filter.category || '',
     rarity: filter.rarity || '',
     typeLine: filter.typeLineActive === false ? '' : (filter.typeLine || ''),
+    tradeStatusOption: filter.tradeStatusOption || '',
+    tradeSaleTypeActive: filter.tradeSaleTypeActive === false ? false : true,
+    tradeSaleTypeOption: filter.tradeSaleTypeOption || '',
     ilvlMin: Number(filter.ilvlMin) || 0,
     ilvlMax: Number(filter.ilvlMax) || 0,
     areaLvlMin: Number(filter.areaLvlMin) || 0,
