@@ -1879,7 +1879,7 @@ function makeCard(f) {
     const badgeHtml = knownPrefix
       ? `<button class="cat-badge cat-badge-${knownPrefix}" data-stat-idx="${i}">${CATEGORY_LABELS[knownPrefix]}</button>`
       : (prefix ? `<button class="cat-badge cat-badge-explicit" data-stat-idx="${i}" style="opacity:0.5">${prefix}</button>` : '');
-    return `<div class="stat-row-item" style="${active?'':'opacity:.4'}" data-stat-idx="${i}">
+    return `<div class="stat-row-item stat-row-with-delete" style="${active?'':'opacity:.4'}" data-stat-idx="${i}">
       ${badgeHtml}
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
