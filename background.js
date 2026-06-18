@@ -1,9 +1,35 @@
 // in-page iframe 사이드바 방식으로 전환됨.
-// 툴바 아이콘 클릭 시 활성 탭의 content script에 토글 메시지를 보낸다.
-// (거래소 페이지가 아니면 content script가 없어 sendMessage가 조용히 실패한다.)
+// 클린 설치 직후 이미 열려 있던 거래소 탭에는 content script가 없을 수 있으므로,
+// 메시지 실패 시 content.js/content.css를 즉시 주입한 뒤 다시 토글한다.
+function isTradeTabUrl(url) {
+  return /^https:\/\/(?:poe\.kakaogames\.com|www\.pathofexile\.com)\/trade2\//i.test(String(url || ''));
+}
+
+async function sendSidebarToggle(tabId) {
+  await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_SIDEBAR' });
+}
+
+async function injectTradeContentScript(tabId) {
+  await chrome.scripting.insertCSS({
+    target: { tabId },
+    files: ['content.css']
+  });
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ['content.js']
+  });
+}
+
 chrome.action.onClicked.addListener((tab) => {
-  if (!tab?.id) return;
-  chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR' }).catch(() => {});
+  if (!tab?.id || !isTradeTabUrl(tab.url)) return;
+  sendSidebarToggle(tab.id).catch(async () => {
+    try {
+      await injectTradeContentScript(tab.id);
+      await sendSidebarToggle(tab.id);
+    } catch (_) {
+      // 거래소 페이지가 아니거나 권한이 없는 탭이면 조용히 무시한다.
+    }
+  });
 });
 
 const DEFAULT_LEAGUE = 'Runes of Aldur';

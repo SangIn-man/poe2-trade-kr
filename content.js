@@ -1,4 +1,3 @@
-console.warn('🔥 POE2 content.js LOADED 🔥');
 'use strict';
 
 // ─── 거래소 사이트 판별 ───────────────────────────────

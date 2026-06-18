@@ -3,7 +3,7 @@
   "name": "PoE2 Trade Quick Search",
   "version": "1.2",
   "description": "Path of Exile 2 한국 거래소 즐겨찾기 & 원클릭 검색",
-  "permissions": ["storage", "tabs", "clipboardWrite"],
+  "permissions": ["storage", "tabs", "clipboardWrite", "scripting"],
   "host_permissions": [
     "https://poe.kakaogames.com/*",
     "https://www.pathofexile.com/*",
