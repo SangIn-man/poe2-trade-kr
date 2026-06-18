@@ -193,10 +193,22 @@
 }
 
 .poe2tq-native-stat-wrapper {
+  position: absolute !important;
+  top: calc(100% + 2px) !important;
+  left: 0 !important;
+  right: 0 !important;
   display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  min-width: 280px;
   max-height: 320px;
   overflow-y: auto;
+  box-sizing: border-box;
+  background: #0f0f0f;
+  border: 1px solid #3b3328;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.75);
   z-index: 2147483646 !important;
+  pointer-events: auto !important;
 }
 
 .poe2tq-native-stat-list {
@@ -204,6 +216,7 @@
   width: 100%;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
 .poe2tq-native-stat-option {
@@ -211,9 +224,17 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  color: #d0c0a0;
+  background: transparent;
+  line-height: 1.25;
 }
 
 .poe2tq-native-stat-option-active {
+  background: #2d251a !important;
+  color: #f0d080 !important;
   cursor: pointer;
 }
 
