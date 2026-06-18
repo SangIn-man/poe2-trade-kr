@@ -1652,37 +1652,84 @@ function findNativeManualStatOption(input, entry) {
   const root = getManualStatRoot(input);
   const exact = normalizeManualStatSearchText(entry?.text || '');
   const groupLabel = normalizeManualStatSearchText(entry?.groupLabel || entry?.groupId || '');
-  const candidates = Array.from(root.querySelectorAll('[role="option"], .multiselect__option, [class*="option"], li, span'))
-    .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-native-stat-wrapper'));
-  return candidates.find(el => {
+  const selectors = '[role="option"], .multiselect__option, [class*="option"], li, span';
+  const containers = new Set([
+    root,
+    ...Array.from(document.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"], .multiselect'))
+  ]);
+  const candidates = [];
+  containers.forEach(container => {
+    if (!container || container.closest?.('.poe2tq-native-stat-wrapper')) return;
+    container.querySelectorAll(selectors).forEach(el => {
+      if (isVisibleElement(el) && !el.closest('.poe2tq-native-stat-wrapper')) candidates.push(el);
+    });
+  });
+
+  const found = candidates.find(el => {
     const text = normalizeManualStatSearchText(el.textContent || '');
     return text.includes(exact) && groupLabel && text.includes(groupLabel);
   }) || candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
     || candidates.find(el => normalizeManualStatSearchText(el.textContent || '').includes(exact));
+
+  return found?.closest('.multiselect__option, [role="option"], li') || found || null;
 }
 
-function selectManualStatMatch(state, entry) {
+function clickNativeManualStatOption(option) {
+  if (!option) return false;
+  option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
+  option.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+  option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+  option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+  option.click();
+  return true;
+}
+
+function waitForNativeManualStatOption(input, entry, timeoutMs = 900) {
+  const startedAt = Date.now();
+  return new Promise(resolve => {
+    const tick = () => {
+      const option = findNativeManualStatOption(input, entry);
+      if (option) {
+        resolve(option);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(null);
+        return;
+      }
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
+function dispatchManualStatEnter(input) {
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+}
+
+async function selectManualStatMatch(state, entry) {
   if (!entry) return;
   state.selecting = true;
   hideManualStatDropdown(state);
   dispatchManualStatInputEvents(state.input, entry.text);
 
-  setTimeout(() => {
-    try {
-      const option = findNativeManualStatOption(state.input, entry);
-      if (option) {
-        option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-        option.click();
-      } else {
-        state.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-        state.input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true }));
-      }
-    } catch {}
+  try {
+    const option = await waitForNativeManualStatOption(state.input, entry);
+    if (option) {
+      clickNativeManualStatOption(option);
+    } else {
+      dispatchManualStatEnter(state.input);
+    }
+  } catch {
+    dispatchManualStatEnter(state.input);
+  } finally {
     setTimeout(() => {
       state.selecting = false;
     }, 80);
-  }, 80);
+  }
 }
 
 function setNativeInputValue(input, value) {

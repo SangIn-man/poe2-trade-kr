@@ -210,11 +210,13 @@ body.poe2tq-stat-suggest-active .multiselect__content-wrapper:not(.poe2tq-native
   max-height: 320px;
   overflow-y: auto;
   box-sizing: border-box;
-  background: #0f0f0f;
-  border: 1px solid #3b3328;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.75);
+  background: #151515;
+  border: 1px solid #322a20;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.8);
   z-index: 2147483646 !important;
   pointer-events: auto !important;
+  font-family: Verdana, Arial, 'Malgun Gothic', sans-serif;
+  font-size: 12px;
 }
 
 .poe2tq-native-stat-list {
@@ -232,15 +234,17 @@ body.poe2tq-stat-suggest-active .multiselect__content-wrapper:not(.poe2tq-native
   gap: 8px;
   width: 100%;
   box-sizing: border-box;
-  padding: 7px 10px;
-  color: #d0c0a0;
+  padding: 6px 10px;
+  color: #c8b890;
   background: transparent;
   line-height: 1.25;
+  border-bottom: 1px solid rgba(80, 68, 48, 0.35);
 }
 
+.poe2tq-native-stat-option:hover,
 .poe2tq-native-stat-option-active {
-  background: #2d251a !important;
-  color: #f0d080 !important;
+  background: #2b2418 !important;
+  color: #e8cf98 !important;
   cursor: pointer;
 }
 
@@ -252,7 +256,7 @@ body.poe2tq-stat-suggest-active .multiselect__content-wrapper:not(.poe2tq-native
 }
 
 .poe2tq-native-stat-meta {
-  opacity: 0.72;
+  color: #8d7a56;
   font-size: 10px;
   white-space: nowrap;
 }
