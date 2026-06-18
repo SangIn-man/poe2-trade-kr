@@ -1467,11 +1467,15 @@ function enhanceManualStatSearchInputs() {
 }
 
 function bindManualStatSearchInput(input) {
-  const state = { input, filterTimer: null, applying: false, lastAppliedQuery: '' };
+  const state = { input, filterTimer: null, applying: false, lastFilteredQuery: '' };
   manualStatInputState.set(input, state);
 
   input.addEventListener('input', () => scheduleManualStatNativeFilter(state));
   input.addEventListener('focus', () => scheduleManualStatNativeFilter(state));
+  input.addEventListener('blur', () => {
+    state.lastFilteredQuery = '';
+    clearTimeout(state.filterTimer);
+  });
 }
 
 function scheduleManualStatNativeFilter(state) {
@@ -1486,7 +1490,7 @@ async function applyManualStatNativeFilter(state) {
   const normalizedQuery = normalizeManualStatSearchText(query);
   const queryTokens = tokenizeManualStatSearch(query);
   if (normalizedQuery.length < 2 || queryTokens.length < 2) return;
-  if (query === state.lastAppliedQuery) return;
+  if (query === state.lastFilteredQuery) return;
 
   const entries = await ensureManualStatEntries();
   if (document.activeElement !== state.input) return;
@@ -1496,15 +1500,18 @@ async function applyManualStatNativeFilter(state) {
   if (!filterText || normalizeManualStatSearchText(filterText) === normalizedQuery) return;
 
   state.applying = true;
-  state.lastAppliedQuery = filterText;
+  state.lastFilteredQuery = query;
   dispatchManualStatInputEvents(state.input, filterText);
-  try {
-    const len = state.input.value.length;
-    if (typeof state.input.setSelectionRange === 'function') {
-      state.input.setSelectionRange(len, len);
-    }
-  } catch {}
   setTimeout(() => {
+    try {
+      if (document.activeElement === state.input) {
+        setNativeInputValue(state.input, query);
+        const len = query.length;
+        if (typeof state.input.setSelectionRange === 'function') {
+          state.input.setSelectionRange(len, len);
+        }
+      }
+    } catch {}
     state.applying = false;
   }, 0);
 }
