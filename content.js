@@ -608,6 +608,31 @@ function buildCurrentSearchFilterName(stats, equipment) {
   return '거래소 검색 조건';
 }
 
+function summarizeTradeQueryForDebug(query) {
+  const filters = query?.filters || {};
+  const summarizeFilterObject = obj => {
+    if (!obj || typeof obj !== 'object') return {};
+    return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, cloneJsonSafe(value)]));
+  };
+  return {
+    status: query?.status?.option || '',
+    filterGroups: Object.keys(filters),
+    typeFilters: summarizeFilterObject(filters.type_filters?.filters),
+    tradeFilters: summarizeFilterObject(filters.trade_filters?.filters),
+    miscFilters: summarizeFilterObject(filters.misc_filters?.filters),
+    equipmentFilters: summarizeFilterObject(filters.equipment_filters?.filters),
+    stats: (query?.stats || []).map(group => ({
+      type: group?.type || '',
+      disabled: group?.disabled === true,
+      filters: (group?.filters || []).map(stat => ({
+        id: stat?.id || '',
+        disabled: stat?.disabled === true,
+        value: cloneJsonSafe(stat?.value)
+      }))
+    }))
+  };
+}
+
 async function fetchCurrentTradeSearchPayload() {
   const queryId = getQueryId();
   const league = getTradeLeagueFromPath();
@@ -717,6 +742,8 @@ async function handleSaveCurrentTradeSearch(event) {
         league,
         queryId,
         sourceUrl: url,
+        querySummary: summarizeTradeQueryForDebug(payload?.query),
+        query: payload?.query || null,
         filter
       }
     }).catch(() => {});

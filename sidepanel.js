@@ -794,6 +794,68 @@ function cloneJsonSafe(value) {
   }
 }
 
+function appendSidepanelDebugLog(entry) {
+  chrome.runtime.sendMessage({ type: 'APPEND_DEBUG_LOG', entry }).catch(() => {});
+}
+
+function summarizeTradeQueryForDebug(query) {
+  const filters = query?.filters || {};
+  const summarizeFilterObject = obj => {
+    if (!obj || typeof obj !== 'object') return {};
+    return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, cloneJsonSafe(value)]));
+  };
+  return {
+    status: query?.status?.option || '',
+    filterGroups: Object.keys(filters),
+    typeFilters: summarizeFilterObject(filters.type_filters?.filters),
+    tradeFilters: summarizeFilterObject(filters.trade_filters?.filters),
+    miscFilters: summarizeFilterObject(filters.misc_filters?.filters),
+    equipmentFilters: summarizeFilterObject(filters.equipment_filters?.filters),
+    stats: (query?.stats || []).map(group => ({
+      type: group?.type || '',
+      disabled: group?.disabled === true,
+      filters: (group?.filters || []).map(stat => ({
+        id: stat?.id || '',
+        disabled: stat?.disabled === true,
+        value: cloneJsonSafe(stat?.value)
+      }))
+    }))
+  };
+}
+
+function summarizeFilterForDebug(filter) {
+  return {
+    id: filter?.id || '',
+    name: filter?.name || '',
+    league: filter?.league || '',
+    category: filter?.category || '',
+    rarity: filter?.rarity || '',
+    typeLine: filter?.typeLine || '',
+    typeLineActive: filter?.typeLineActive !== false,
+    tradeQueryId: filter?.tradeQueryId || '',
+    hasTradeQueryTemplate: !!filter?.tradeQueryTemplate,
+    tradeStatusOption: filter?.tradeStatusOption || '',
+    tradeSaleTypeActive: filter?.tradeSaleTypeActive,
+    tradeSaleTypeOption: filter?.tradeSaleTypeOption || '',
+    equipment: (filter?.equipment || []).map(e => ({
+      id: e?.id || '',
+      label: e?.label || '',
+      min: e?.min ?? null,
+      max: e?.max ?? null,
+      active: e?.active !== false
+    })),
+    stats: (filter?.stats || []).map(s => ({
+      id: s?.id || '',
+      fallbackId: s?.fallbackId || '',
+      label: s?.label || '',
+      min: s?.min ?? null,
+      max: s?.max ?? null,
+      noValue: s?.noValue === true,
+      active: s?.active !== false
+    }))
+  };
+}
+
 function normalizeSavedFilter(filter) {
   if (!filter || typeof filter !== 'object') return filter;
   filter.reqLvlMin = 0;
@@ -2025,20 +2087,25 @@ async function doSearch(id, openInNew = true) {
   if (btnNew) { btnNew.classList.add('loading'); btnNew.disabled = true; btnNew.innerHTML = '<span class="spin"></span> 검색 중'; }
   if (btnCur) { btnCur.classList.add('loading'); btnCur.disabled = true; btnCur.innerHTML = '<span class="spin"></span>'; }
 
+  let searchLeague = f.league || settings.league;
+  let query = null;
+  let querySource = '';
   try {
-    await hydrateTradeQueryTemplate(f);
-    const searchLeague = f.league || settings.league;
-    const query = buildQuery(f);
-    chrome.runtime.sendMessage({
-      type: 'APPEND_DEBUG_LOG',
-      entry: {
-        kind: 'search',
-        league: searchLeague,
-        filterId: f.id,
-        filterName: f.name,
-        query
-      }
-    }).catch(() => {});
+    const hydrated = await hydrateTradeQueryTemplate(f);
+    searchLeague = f.league || settings.league;
+    query = buildQuery(f);
+    querySource = f.tradeQueryTemplate ? 'trade-query-template' : 'assembled-filter';
+    appendSidepanelDebugLog({
+      kind: 'search-diagnostic',
+      league: searchLeague,
+      filterId: f.id,
+      filterName: f.name,
+      hydratedTradeQueryTemplate: hydrated,
+      querySource,
+      filterSummary: summarizeFilterForDebug(f),
+      querySummary: summarizeTradeQueryForDebug(query.query),
+      query
+    });
     const res = await fetch(KR_API_SEARCH(encodeURIComponent(searchLeague)), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2050,6 +2117,17 @@ async function doSearch(id, openInNew = true) {
     }
     const sData = await res.json();
     if (!sData.id) throw new Error('검색 ID를 받지 못했습니다');
+    appendSidepanelDebugLog({
+      kind: 'search-result',
+      league: searchLeague,
+      filterId: f.id,
+      filterName: f.name,
+      querySource,
+      queryId: sData.id,
+      total: sData.total || 0,
+      resultCount: Array.isArray(sData.result) ? sData.result.length : 0,
+      querySummary: summarizeTradeQueryForDebug(query.query)
+    });
     const topIds = Array.isArray(sData.result) ? sData.result.slice(0, 20) : [];
     if (topIds.length) {
       try {
@@ -2063,17 +2141,14 @@ async function doSearch(id, openInNew = true) {
         }
       } catch (evalErr) {
         console.error('[POE2TQ] eval error:', evalErr);
-        chrome.runtime.sendMessage({
-          type: 'APPEND_DEBUG_LOG',
-          entry: {
-            kind: 'search-eval-error',
-            league: searchLeague,
-            filterId: f.id,
-            filterName: f.name,
-            queryId: sData.id,
-            message: evalErr.message
-          }
-        }).catch(() => {});
+        appendSidepanelDebugLog({
+          kind: 'search-eval-error',
+          league: searchLeague,
+          filterId: f.id,
+          filterName: f.name,
+          queryId: sData.id,
+          message: evalErr.message
+        });
       }
     }
     const url = `${KR_TRADE_BASE}/${encodeURIComponent(searchLeague)}/${sData.id}`;
@@ -2095,6 +2170,17 @@ async function doSearch(id, openInNew = true) {
     const openLabel = openInNew ? '새 탭에' : '현재 탭에서';
     rd.innerHTML = `<div class="result-area"><div style="text-align:center;padding:10px;color:#80d040;font-size:11px">✅ 거래소 검색 결과를 ${openLabel} 열었습니다 (총 ${total}개)<br/><a href="${url}" target="_blank" style="color:#5080a0;font-size:10px">다시 열기 →</a></div></div>`;
   } catch(err) {
+    appendSidepanelDebugLog({
+      kind: 'search-error',
+      league: searchLeague,
+      filterId: f.id,
+      filterName: f.name,
+      querySource,
+      message: err.message,
+      filterSummary: summarizeFilterForDebug(f),
+      querySummary: query?.query ? summarizeTradeQueryForDebug(query.query) : null,
+      query
+    });
     rd.innerHTML = `<div class="result-area"><div class="result-error">⚠️ ${esc(err.message)}</div></div>`;
   } finally {
     if (btnNew) { btnNew.classList.remove('loading'); btnNew.disabled = false; btnNew.innerHTML = '🔍 새창'; }
@@ -2246,14 +2332,58 @@ function parseSavedTradeQueryInfo(filter) {
 async function hydrateTradeQueryTemplate(filter) {
   if (filter?.tradeQueryTemplate && typeof filter.tradeQueryTemplate === 'object') return false;
   const info = parseSavedTradeQueryInfo(filter);
-  if (!info.queryId || !info.league) return false;
+  if (!info.queryId || !info.league) {
+    if (/거래소 검색조건에서 저장/.test(filter?.note || '')) {
+      appendSidepanelDebugLog({
+        kind: 'trade-query-hydrate-skip',
+        reason: 'missing-query-id-or-league',
+        filterSummary: summarizeFilterForDebug(filter),
+        parsedInfo: info
+      });
+    }
+    return false;
+  }
 
   const url = `${KR_API_BASE}/search/poe2/${encodeURIComponent(info.league)}/${encodeURIComponent(info.queryId)}`;
-  const res = await fetch(url, { credentials: 'include' });
-  if (!res.ok) return false;
-  const payload = await res.json();
+  let payload = null;
+  try {
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) {
+      appendSidepanelDebugLog({
+        kind: 'trade-query-hydrate-failed',
+        reason: 'http-error',
+        status: res.status,
+        url,
+        filterSummary: summarizeFilterForDebug(filter),
+        parsedInfo: info
+      });
+      return false;
+    }
+    payload = await res.json();
+  } catch (err) {
+    appendSidepanelDebugLog({
+      kind: 'trade-query-hydrate-failed',
+      reason: 'fetch-error',
+      message: err.message,
+      url,
+      filterSummary: summarizeFilterForDebug(filter),
+      parsedInfo: info
+    });
+    return false;
+  }
+
   const query = payload?.query;
-  if (!query || typeof query !== 'object') return false;
+  if (!query || typeof query !== 'object') {
+    appendSidepanelDebugLog({
+      kind: 'trade-query-hydrate-failed',
+      reason: 'missing-query',
+      url,
+      payloadKeys: payload && typeof payload === 'object' ? Object.keys(payload) : [],
+      filterSummary: summarizeFilterForDebug(filter),
+      parsedInfo: info
+    });
+    return false;
+  }
 
   const queryFilters = query.filters || {};
   filter.tradeQueryId = info.queryId;
@@ -2264,6 +2394,14 @@ async function hydrateTradeQueryTemplate(filter) {
   filter.tradeSaleTypeOption = queryFilters.trade_filters?.filters?.sale_type?.option || '';
   updateFilterSourceHash(filter);
   await persist();
+  appendSidepanelDebugLog({
+    kind: 'trade-query-hydrate-success',
+    url,
+    filterId: filter.id,
+    filterName: filter.name,
+    parsedInfo: info,
+    querySummary: summarizeTradeQueryForDebug(query)
+  });
   return true;
 }
 
