@@ -24,6 +24,7 @@ chrome.tabs.onRemoved.addListener((tabId) => { delete _tabUrls[tabId]; });
 // await chrome.storage.local.get() 이후에는 gesture context가 소멸함.
 // 캐시를 사용하면 await 없이 즉시 확인해 gesture context를 유지할 수 있음.
 let _cachedSettings = {};
+let _closePanelTimeout = null;
 chrome.storage.local.get('settings', (r) => {
   _cachedSettings = r.settings || {};
   console.log('[AutoPanel] 캐시 초기화:', _cachedSettings);
@@ -35,50 +36,37 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
-// 탭 전환 시 — _tabUrls 캐시에서 즉시 URL 확인해 gesture context를 유지한 채 사이드패널 콘텐츠 표시/숨김
-// 패널을 완전히 닫는 대신 콘텐츠를 숨기는 방식으로 Edge/Whale 호환성 확보
-// (sidePanel.open()은 Chrome에서만 탭 전환 이벤트를 user gesture로 인정하므로 재열기가 불가한 브라우저 대응)
-chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
-  console.log('[AutoPanel] onActivated 진입, tabId:', tabId, 'windowId:', windowId);
-  console.log('[AutoPanel] onActivated - autoOpenPanel:', _cachedSettings?.autoOpenPanel);
+// 탭 전환 시 — _tabUrls 캐시에서 즉시 URL 확인해 gesture context를 유지한 채 사이드패널 열기/닫기
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   if (!_cachedSettings?.autoOpenPanel) return;
-
   const url = _tabUrls[tabId] || '';
-  console.log('[AutoPanel] _tabUrls 캐시 url:', url, 'isTradeUrl:', isTradeUrl(url));
-
   if (isTradeUrl(url)) {
-    console.log('[AutoPanel] onActivated - 거래소 탭, sidePanel.open 호출, tabId:', tabId);
-    chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-    chrome.sidePanel.open({ windowId }).catch(() => {});
-    chrome.runtime.sendMessage({ type: 'SHOW_PANEL_CONTENT' }).catch(() => {});
+    if (_closePanelTimeout) { clearTimeout(_closePanelTimeout); _closePanelTimeout = null; }
+    try {
+      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+      await chrome.sidePanel.open({ tabId, windowId });
+    } catch (_) {}
   } else {
-    console.log('[AutoPanel] non-trade 탭 전환 - setOptions enabled:false 호출, tabId:', tabId);
-    chrome.sidePanel.setOptions({ tabId, enabled: false });
-    chrome.runtime.sendMessage({ type: 'HIDE_PANEL_CONTENT' }).catch(() => {});
+    if (_closePanelTimeout) clearTimeout(_closePanelTimeout);
+    _closePanelTimeout = setTimeout(() => {
+      _closePanelTimeout = null;
+      chrome.runtime.sendMessage({ type: 'CLOSE_SIDE_PANEL' }).catch(() => {});
+    }, 300);
   }
 });
 
 // 탭 내 URL 변경 시 — 로드 완료 후 거래소 여부에 따라 사이드패널 활성화 상태 조정
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
-  console.log('[AutoPanel] onUpdated - autoOpenPanel:', _cachedSettings?.autoOpenPanel);
   if (!_cachedSettings?.autoOpenPanel) return;
 
   const url = tab?.url || '';
   if (url) _tabUrls[tabId] = url;
-  console.log('[AutoPanel] onUpdated - url:', url, '/ isTradeUrl:', isTradeUrl(url));
   if (isTradeUrl(url)) {
-    console.log('[AutoPanel] onUpdated - setOptions enabled:true, tabId:', tabId);
-    // setOptions는 fire-and-forget, open()은 동기적으로 같은 프레임에서 호출
-    // (콜백 안에서 호출하면 user gesture context가 소멸하여 open()이 실패함)
     chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
     if (tab.active) {
-      console.log('[AutoPanel] onUpdated - 활성 탭 거래소 URL 전환, sidePanel.open 호출, windowId:', tab.windowId);
       chrome.sidePanel.open({ windowId: tab.windowId });
     }
-  } else {
-    console.log('[AutoPanel] onUpdated - setOptions enabled:false, tabId:', tabId);
-    chrome.sidePanel.setOptions({ tabId, enabled: false });
   }
 });
 

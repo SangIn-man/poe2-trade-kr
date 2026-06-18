@@ -2600,22 +2600,8 @@ function updateRateBadge(data) {
   }
 }
 
-// background.js에서 보내는 패널 표시/숨김 메시지 수신
-// Edge/Whale 등 sidePanel.open()이 탭 전환 gesture를 인정하지 않는 브라우저 대응:
-// 패널을 닫는 대신 panel-hidden 클래스로 콘텐츠를 숨기고/보여줌
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'CLOSE_SIDE_PANEL') {
     window.close();
-    return;
-  }
-  if (msg.type === 'SHOW_PANEL_CONTENT') {
-    document.body.classList.remove('panel-hidden');
-    sendResponse({});
-    return;
-  }
-  if (msg.type === 'HIDE_PANEL_CONTENT') {
-    document.body.classList.add('panel-hidden');
-    sendResponse({});
-    return;
   }
 });
