@@ -1736,6 +1736,10 @@ async function applyManualStatNativeFilter(state) {
   if (document.activeElement !== state.input) return;
 
   if (state.dropdown && state.activeQuery === normalizedQuery) {
+    if (getNativeManualStatDropdownState(state.input).hasOptions) {
+      hideManualStatDropdown(state);
+      return;
+    }
     positionManualStatDropdown(state, state.dropdown);
     return;
   }
@@ -1744,6 +1748,11 @@ async function applyManualStatNativeFilter(state) {
   state.selectedIndex = 0;
   state.activeQuery = normalizedQuery;
   if (!state.matches.length) {
+    hideManualStatDropdown(state);
+    return;
+  }
+
+  if (getNativeManualStatDropdownState(state.input).hasOptions) {
     hideManualStatDropdown(state);
     return;
   }
@@ -1760,11 +1769,25 @@ function getManualStatRoot(input) {
 function hideNativeManualStatDropdowns(state) {
   restoreNativeManualStatDropdowns(state);
   state.hiddenNativeDropdowns = [];
+  const nativeState = getNativeManualStatDropdownState(state.input);
+  if (!nativeState.dropdown || nativeState.hasOptions) return;
+  state.hiddenNativeDropdowns.push({
+    el: nativeState.dropdown,
+    display: nativeState.dropdown.style.display,
+    visibility: nativeState.dropdown.style.visibility,
+    pointerEvents: nativeState.dropdown.style.pointerEvents
+  });
+  nativeState.dropdown.style.display = 'none';
+  nativeState.dropdown.style.visibility = 'hidden';
+  nativeState.dropdown.style.pointerEvents = 'none';
 }
 
 function restoreNativeManualStatDropdowns(state) {
   state.hiddenNativeDropdowns.forEach(item => {
-    if (item?.el) item.el.style.display = item.display || '';
+    if (!item?.el) return;
+    item.el.style.display = item.display || '';
+    item.el.style.visibility = item.visibility || '';
+    item.el.style.pointerEvents = item.pointerEvents || '';
   });
   state.hiddenNativeDropdowns = [];
 }
@@ -1801,6 +1824,21 @@ function findVisibleNativeManualStatDropdown(input) {
     });
   });
   return best?.el || null;
+}
+
+function getNativeManualStatDropdownState(input) {
+  const dropdown = findVisibleNativeManualStatDropdown(input);
+  if (!dropdown) return { dropdown: null, hasOptions: false };
+
+  const emptyPattern = /(검색\s*항목|찾을\s*수\s*없|결과\s*없|no\s*(?:elements?|results?|options?)|not\s*found|no\s*matching)/i;
+  const optionSelectors = '.multiselect__option, [role="option"], li.multiselect__element, li';
+  const options = Array.from(dropdown.querySelectorAll(optionSelectors))
+    .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-native-stat-wrapper'))
+    .map(el => normalizeManualStatSearchText(el.textContent || ''))
+    .filter(Boolean);
+
+  const hasOptions = options.some(text => !emptyPattern.test(text));
+  return { dropdown, hasOptions };
 }
 
 function positionManualStatDropdown(state, dropdown) {
