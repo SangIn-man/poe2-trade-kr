@@ -20,7 +20,8 @@ let cachedEvalContextPromise = null;
 let cachedTradeRates = null;
 
 if (IS_TRADE_SITE) {
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(mutations => {
+    if (isOwnExtensionMutation(mutations)) return;
     scanItems();
     scheduleManualStatSearchEnhance();
   });
@@ -518,6 +519,23 @@ function isVisibleElement(el) {
   if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
   const rect = el.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
+}
+
+function isOwnExtensionNode(node) {
+  if (!(node instanceof Element)) return false;
+  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, .poe2tq-native-stat-wrapper')
+    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, .poe2tq-native-stat-wrapper');
+}
+
+function isOwnExtensionMutation(mutations) {
+  if (!mutations || !mutations.length) return false;
+  return mutations.every(mutation => {
+    const added = Array.from(mutation.addedNodes || []).filter(node => node.nodeType === 1);
+    const removed = Array.from(mutation.removedNodes || []).filter(node => node.nodeType === 1);
+    if (isOwnExtensionNode(mutation.target)) return true;
+    if (!added.length && !removed.length) return false;
+    return added.every(isOwnExtensionNode) && removed.every(isOwnExtensionNode);
+  });
 }
 
 function getElementDescriptor(el, baseRect) {
@@ -1384,31 +1402,6 @@ function findManualStatMatches(query, entries) {
     .map(match => match.entry);
 }
 
-function countUniqueNativeStatMatches(phrase, entries) {
-  if (!phrase) return 0;
-  const unique = new Set();
-  (entries || []).forEach(entry => {
-    if (entry.normalized.includes(phrase)) unique.add(entry.normalized);
-  });
-  return unique.size;
-}
-
-function buildNativeStatFilterText(matches, entries) {
-  const top = matches?.[0];
-  if (!top) return '';
-  const words = top.normalized.split(' ').filter(Boolean);
-  if (!words.length) return top.text || '';
-
-  if ((matches || []).length === 1) return top.text || '';
-
-  for (let len = words.length - 1; len >= 1; len--) {
-    const phrase = words.slice(0, len).join(' ');
-    if (countUniqueNativeStatMatches(phrase, entries) >= 2) return phrase;
-  }
-
-  return words[0] || top.text || '';
-}
-
 const manualStatInputState = new WeakMap();
 let manualStatEnhanceTimer = null;
 
@@ -1467,53 +1460,220 @@ function enhanceManualStatSearchInputs() {
 }
 
 function bindManualStatSearchInput(input) {
-  const state = { input, filterTimer: null, applying: false, lastFilteredQuery: '' };
+  const state = {
+    input,
+    filterTimer: null,
+    selecting: false,
+    matches: [],
+    selectedIndex: 0,
+    dropdown: null,
+    hiddenNativeDropdowns: []
+  };
   manualStatInputState.set(input, state);
 
   input.addEventListener('input', () => scheduleManualStatNativeFilter(state));
   input.addEventListener('focus', () => scheduleManualStatNativeFilter(state));
+  input.addEventListener('keydown', event => handleManualStatKeydown(event, state), true);
   input.addEventListener('blur', () => {
-    state.lastFilteredQuery = '';
     clearTimeout(state.filterTimer);
+    setTimeout(() => hideManualStatDropdown(state), 120);
   });
 }
 
 function scheduleManualStatNativeFilter(state) {
-  if (state.applying) return;
+  if (state.selecting) return;
   clearTimeout(state.filterTimer);
   state.filterTimer = setTimeout(() => applyManualStatNativeFilter(state), 220);
 }
 
 async function applyManualStatNativeFilter(state) {
-  if (state.applying) return;
+  if (state.selecting) return;
   const query = state.input.value || '';
   const normalizedQuery = normalizeManualStatSearchText(query);
   const queryTokens = tokenizeManualStatSearch(query);
-  if (normalizedQuery.length < 2 || queryTokens.length < 2) return;
-  if (query === state.lastFilteredQuery) return;
+  if (normalizedQuery.length < 2 || !queryTokens.length) {
+    hideManualStatDropdown(state);
+    return;
+  }
 
   const entries = await ensureManualStatEntries();
   if (document.activeElement !== state.input) return;
 
-  const matches = findManualStatMatches(query, entries);
-  const filterText = buildNativeStatFilterText(matches, entries);
-  if (!filterText || normalizeManualStatSearchText(filterText) === normalizedQuery) return;
+  state.matches = findManualStatMatches(query, entries);
+  state.selectedIndex = 0;
+  if (!state.matches.length) {
+    hideManualStatDropdown(state);
+    return;
+  }
 
-  state.applying = true;
-  state.lastFilteredQuery = query;
-  dispatchManualStatInputEvents(state.input, filterText);
+  renderManualStatDropdown(state);
+}
+
+function getManualStatRoot(input) {
+  return input.closest('.multiselect, [class*="multiselect"], [class*="select"]')
+    || input.parentElement
+    || document.body;
+}
+
+function hideNativeManualStatDropdowns(state) {
+  const root = getManualStatRoot(state.input);
+  restoreNativeManualStatDropdowns(state);
+  state.hiddenNativeDropdowns = [];
+  root.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"]').forEach(el => {
+    if (el.classList.contains('poe2tq-native-stat-wrapper')) return;
+    state.hiddenNativeDropdowns.push({ el, display: el.style.display });
+    el.style.display = 'none';
+  });
+}
+
+function restoreNativeManualStatDropdowns(state) {
+  state.hiddenNativeDropdowns.forEach(item => {
+    if (item?.el) item.el.style.display = item.display || '';
+  });
+  state.hiddenNativeDropdowns = [];
+}
+
+function getManualStatDropdown(state) {
+  if (state.dropdown && document.body.contains(state.dropdown)) return state.dropdown;
+  const root = getManualStatRoot(state.input);
+  root.classList.add('poe2tq-native-stat-root');
+  const dropdown = document.createElement('div');
+  dropdown.className = 'multiselect__content-wrapper poe2tq-native-stat-wrapper';
+  dropdown.setAttribute('role', 'listbox');
+  root.appendChild(dropdown);
+  state.dropdown = dropdown;
+  return dropdown;
+}
+
+function renderManualStatDropdown(state) {
+  hideNativeManualStatDropdowns(state);
+  const dropdown = getManualStatDropdown(state);
+  dropdown.innerHTML = '';
+
+  const list = document.createElement('ul');
+  list.className = 'multiselect__content poe2tq-native-stat-list';
+  state.matches.forEach((entry, index) => {
+    const item = document.createElement('li');
+    item.className = 'multiselect__element poe2tq-native-stat-element';
+
+    const option = document.createElement('span');
+    option.className = 'multiselect__option poe2tq-native-stat-option';
+    if (index === state.selectedIndex) {
+      option.classList.add('multiselect__option--highlight');
+      option.classList.add('poe2tq-native-stat-option-active');
+    }
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', index === state.selectedIndex ? 'true' : 'false');
+    option.dataset.index = String(index);
+
+    const text = document.createElement('span');
+    text.className = 'poe2tq-native-stat-text';
+    text.textContent = entry.text;
+
+    const meta = document.createElement('span');
+    meta.className = 'poe2tq-native-stat-meta';
+    meta.textContent = entry.groupLabel || entry.groupId || '';
+
+    option.appendChild(text);
+    option.appendChild(meta);
+    option.addEventListener('mouseenter', () => setManualStatSelectedIndex(state, index));
+    option.addEventListener('mousedown', event => event.preventDefault());
+    option.addEventListener('click', event => {
+      event.preventDefault();
+      selectManualStatMatch(state, entry);
+    });
+
+    item.appendChild(option);
+    list.appendChild(item);
+  });
+
+  dropdown.appendChild(list);
+  dropdown.style.display = 'block';
+}
+
+function hideManualStatDropdown(state) {
+  if (state.dropdown) {
+    state.dropdown.remove();
+    state.dropdown = null;
+  }
+  restoreNativeManualStatDropdowns(state);
+  state.matches = [];
+  state.selectedIndex = 0;
+}
+
+function setManualStatSelectedIndex(state, index) {
+  if (!state.matches.length) return;
+  state.selectedIndex = Math.max(0, Math.min(index, state.matches.length - 1));
+  if (!state.dropdown) return;
+  state.dropdown.querySelectorAll('.poe2tq-native-stat-option').forEach((option, idx) => {
+    const active = idx === state.selectedIndex;
+    option.classList.toggle('multiselect__option--highlight', active);
+    option.classList.toggle('poe2tq-native-stat-option-active', active);
+    option.setAttribute('aria-selected', active ? 'true' : 'false');
+    if (active && typeof option.scrollIntoView === 'function') {
+      option.scrollIntoView({ block: 'nearest' });
+    }
+  });
+}
+
+function handleManualStatKeydown(event, state) {
+  if (!state.dropdown || !state.matches.length) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    event.stopPropagation();
+    setManualStatSelectedIndex(state, state.selectedIndex + 1);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    event.stopPropagation();
+    setManualStatSelectedIndex(state, state.selectedIndex - 1);
+  } else if (event.key === 'Enter' || event.key === 'Tab') {
+    const entry = state.matches[state.selectedIndex];
+    if (!entry) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectManualStatMatch(state, entry);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    hideManualStatDropdown(state);
+  }
+}
+
+function findNativeManualStatOption(input, entry) {
+  const root = getManualStatRoot(input);
+  const exact = normalizeManualStatSearchText(entry?.text || '');
+  const groupLabel = normalizeManualStatSearchText(entry?.groupLabel || entry?.groupId || '');
+  const candidates = Array.from(root.querySelectorAll('[role="option"], .multiselect__option, [class*="option"], li, span'))
+    .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-native-stat-wrapper'));
+  return candidates.find(el => {
+    const text = normalizeManualStatSearchText(el.textContent || '');
+    return text.includes(exact) && groupLabel && text.includes(groupLabel);
+  }) || candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
+    || candidates.find(el => normalizeManualStatSearchText(el.textContent || '').includes(exact));
+}
+
+function selectManualStatMatch(state, entry) {
+  if (!entry) return;
+  state.selecting = true;
+  hideManualStatDropdown(state);
+  dispatchManualStatInputEvents(state.input, entry.text);
+
   setTimeout(() => {
     try {
-      if (document.activeElement === state.input) {
-        setNativeInputValue(state.input, query);
-        const len = query.length;
-        if (typeof state.input.setSelectionRange === 'function') {
-          state.input.setSelectionRange(len, len);
-        }
+      const option = findNativeManualStatOption(state.input, entry);
+      if (option) {
+        option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+        option.click();
+      } else {
+        state.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        state.input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true }));
       }
     } catch {}
-    state.applying = false;
-  }, 0);
+    setTimeout(() => {
+      state.selecting = false;
+    }, 80);
+  }, 80);
 }
 
 function setNativeInputValue(input, value) {

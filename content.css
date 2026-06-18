@@ -187,3 +187,45 @@
 .poe2tq-sm-btn-cancel:hover{background:#2a1e10;}
 .poe2tq-sm-btn-save{border:1px solid #8a6030;background:#3a2a10;color:#f0d080;border-radius:4px;padding:5px 14px;font-size:12px;font-weight:bold;cursor:pointer;}
 .poe2tq-sm-btn-save:hover{background:#4a3a18;border-color:#c8a060;}
+
+.poe2tq-native-stat-root {
+  position: relative !important;
+}
+
+.poe2tq-native-stat-wrapper {
+  display: block !important;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 2147483646 !important;
+}
+
+.poe2tq-native-stat-list {
+  display: block !important;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.poe2tq-native-stat-option {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.poe2tq-native-stat-option-active {
+  cursor: pointer;
+}
+
+.poe2tq-native-stat-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poe2tq-native-stat-meta {
+  opacity: 0.72;
+  font-size: 10px;
+  white-space: nowrap;
+}
