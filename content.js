@@ -1647,7 +1647,7 @@ function simpleHash(str) {
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.style.cssText =
-    'position:fixed; top:0; right:0; height:100vh; z-index:2147483647;';
+    'position:fixed; top:0; height:100vh; z-index:2147483647;';
   document.documentElement.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'open' });
@@ -1666,9 +1666,14 @@ function simpleHash(str) {
       height: 100vh;
       width: var(--w);
       background: #1a1a1a;
-      box-shadow: -4px 0 18px rgba(0, 0, 0, 0.55);
       transition: width 0.18s ease;
       overflow: hidden;
+    }
+    .wrap.side-right .panel {
+      box-shadow: -4px 0 18px rgba(0, 0, 0, 0.55);
+    }
+    .wrap.side-left .panel {
+      box-shadow: 4px 0 18px rgba(0, 0, 0, 0.55);
     }
     .wrap.collapsed .panel {
       width: 0;
@@ -1678,12 +1683,19 @@ function simpleHash(str) {
     .resizer {
       position: absolute;
       top: 0;
-      left: 0;
       width: 6px;
       height: 100%;
       cursor: ew-resize;
       background: transparent;
       z-index: 2;
+    }
+    .wrap.side-right .resizer {
+      left: 0;
+      right: auto;
+    }
+    .wrap.side-left .resizer {
+      right: 0;
+      left: auto;
     }
     .resizer:hover {
       background: rgba(200, 146, 42, 0.35);
@@ -1700,7 +1712,6 @@ function simpleHash(str) {
     .handle {
       position: absolute;
       top: 50%;
-      left: -${HANDLE_WIDTH}px;
       transform: translateY(-50%);
       width: ${HANDLE_WIDTH}px;
       height: 64px;
@@ -1712,14 +1723,57 @@ function simpleHash(str) {
       font-size: 16px;
       font-weight: bold;
       border: 0;
-      border-radius: 8px 0 0 8px;
       cursor: pointer;
-      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.5);
       z-index: 3;
       user-select: none;
     }
+    .wrap.side-right .handle {
+      left: -${HANDLE_WIDTH}px;
+      right: auto;
+      border-radius: 8px 0 0 8px;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.5);
+    }
+    .wrap.side-left .handle {
+      right: -${HANDLE_WIDTH}px;
+      left: auto;
+      border-radius: 0 8px 8px 0;
+      box-shadow: 2px 0 8px rgba(0, 0, 0, 0.5);
+    }
     .handle:hover {
       background: #f0d080;
+    }
+    .side-toggle {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      margin-top: -44px;
+      width: ${HANDLE_WIDTH}px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #2a2a2a;
+      color: #f0d080;
+      font-size: 14px;
+      border: 0;
+      cursor: pointer;
+      z-index: 3;
+      user-select: none;
+    }
+    .wrap.side-right .side-toggle {
+      left: -${HANDLE_WIDTH}px;
+      right: auto;
+      border-radius: 6px 0 0 6px;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.5);
+    }
+    .wrap.side-left .side-toggle {
+      right: -${HANDLE_WIDTH}px;
+      left: auto;
+      border-radius: 0 6px 6px 0;
+      box-shadow: 2px 0 8px rgba(0, 0, 0, 0.5);
+    }
+    .side-toggle:hover {
+      background: #3a3a3a;
     }
   `;
   shadow.appendChild(style);
@@ -1731,6 +1785,12 @@ function simpleHash(str) {
   handle.className = 'handle';
   handle.type = 'button';
   handle.title = 'PoE2 사이드바 열기/닫기';
+
+  const sideToggle = document.createElement('button');
+  sideToggle.className = 'side-toggle';
+  sideToggle.type = 'button';
+  sideToggle.title = 'PoE2 사이드바 좌/우 위치 전환';
+  sideToggle.textContent = '⇄';
 
   const panel = document.createElement('div');
   panel.className = 'panel';
@@ -1744,15 +1804,27 @@ function simpleHash(str) {
   panel.appendChild(resizer);
   panel.appendChild(iframe);
   wrap.appendChild(handle);
+  wrap.appendChild(sideToggle);
   wrap.appendChild(panel);
   shadow.appendChild(wrap);
 
-  let state = { open: true, width: DEFAULT_WIDTH };
+  let state = { open: true, width: DEFAULT_WIDTH, side: 'right' };
 
   function applyState() {
+    const isLeft = state.side === 'left';
+    // host를 화면 좌/우 가장자리에 고정
+    host.style.right = isLeft ? 'auto' : '0';
+    host.style.left = isLeft ? '0' : 'auto';
+    wrap.classList.toggle('side-left', isLeft);
+    wrap.classList.toggle('side-right', !isLeft);
     wrap.style.setProperty('--w', `${state.width}px`);
     wrap.classList.toggle('collapsed', !state.open);
-    handle.textContent = state.open ? '▶' : '◀';
+    // 오른쪽 패널: 접기 ▶ / 펼치기 ◀, 왼쪽 패널: 좌우 반전
+    if (isLeft) {
+      handle.textContent = state.open ? '◀' : '▶';
+    } else {
+      handle.textContent = state.open ? '▶' : '◀';
+    }
   }
 
   function saveState() {
@@ -1773,6 +1845,18 @@ function simpleHash(str) {
     setOpen(!state.open);
   }
 
+  function setSide(side) {
+    const next = side === 'left' ? 'left' : 'right';
+    // open/width는 유지하고 side만 변경
+    state = { ...state, side: next };
+    applyState();
+    saveState();
+  }
+
+  function toggleSide() {
+    setSide(state.side === 'left' ? 'right' : 'left');
+  }
+
   // 초기 상태 로드
   try {
     chrome.storage.local.get(STORAGE_KEY, (r) => {
@@ -1784,7 +1868,8 @@ function simpleHash(str) {
       if (saved && typeof saved === 'object') {
         state = {
           open: typeof saved.open === 'boolean' ? saved.open : true,
-          width: clampWidth(Number(saved.width) || DEFAULT_WIDTH)
+          width: clampWidth(Number(saved.width) || DEFAULT_WIDTH),
+          side: saved.side === 'left' ? 'left' : 'right'
         };
       }
       applyState();
@@ -1798,12 +1883,21 @@ function simpleHash(str) {
     toggle();
   });
 
+  sideToggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggleSide();
+  });
+
   // 리사이저 드래그로 너비 조절
   let dragging = false;
 
   function onMouseMove(e) {
     if (!dragging) return;
-    const next = clampWidth(window.innerWidth - e.clientX);
+    // 오른쪽 패널: 왼쪽 가장자리 드래그 → innerWidth - clientX
+    // 왼쪽 패널: 오른쪽 가장자리 드래그 → clientX
+    const raw =
+      state.side === 'left' ? e.clientX : window.innerWidth - e.clientX;
+    const next = clampWidth(raw);
     state = { ...state, width: next };
     wrap.style.setProperty('--w', `${next}px`);
   }
