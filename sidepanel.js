@@ -542,7 +542,7 @@ const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Al
 let filtersByLeague = {};
 let buildsByLeague = {};
 let buildUiByLeague = {};
-let settings = { league: DEFAULT_LEAGUE, resultCount: 10, autoOpenPanel: false };
+let settings = { league: DEFAULT_LEAGUE, resultCount: 10 };
 let editingId = null;
 
 // UI 줌(zoom) — 브라우저(Whale/Chrome)별 배율 차이를 사용자가 직접 보정
@@ -561,6 +561,24 @@ const syncZoomControls = (z) => {
   const label = document.getElementById('uiZoomValue');
   if (slider) slider.value = String(val);
   if (label) label.textContent = `${Math.round(val * 100)}%`;
+};
+
+// 패널 너비 — content.js initSidebar 의 sidebarUI.width 와 동기화
+const SIDEBAR_UI_KEY = 'sidebarUI';
+const DEFAULT_PANEL_WIDTH = 460;
+const MIN_PANEL_WIDTH = 300;
+const MAX_PANEL_WIDTH = 760;
+const clampPanelWidth = (w) => {
+  const n = parseInt(w, 10);
+  if (!isFinite(n)) return DEFAULT_PANEL_WIDTH;
+  return Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, n));
+};
+const syncPanelWidthControls = (w) => {
+  const val = clampPanelWidth(w);
+  const slider = document.getElementById('panelWidthSlider');
+  const label = document.getElementById('panelWidthValue');
+  if (slider) slider.value = String(val);
+  if (label) label.textContent = `${val}px`;
 };
 let buildSectionCollapsed = true;
 let jewelSubFilter = 'all';
@@ -797,10 +815,18 @@ function normalizeSavedFilter(filter) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   // UI 줌 먼저 적용 (초기 렌더 깜빡임 최소화)
-  const zoomStore = await chrome.storage.local.get(['uiZoom']);
+  const zoomStore = await chrome.storage.local.get(['uiZoom', SIDEBAR_UI_KEY, 'showOnAllSites']);
   const initialZoom = clampZoom(zoomStore.uiZoom != null ? zoomStore.uiZoom : DEFAULT_UI_ZOOM);
   applyZoom(initialZoom);
   syncZoomControls(initialZoom);
+
+  // 패널 너비 슬라이더 초기 동기화 (sidebarUI.width, 없으면 기본 460)
+  const initialWidth = clampPanelWidth(zoomStore[SIDEBAR_UI_KEY]?.width ?? DEFAULT_PANEL_WIDTH);
+  syncPanelWidthControls(initialWidth);
+
+  // 모든 사이트 표시 토글 초기 상태
+  const showAllToggle = document.getElementById('toggleShowOnAllSites');
+  if (showAllToggle) showAllToggle.checked = !!zoomStore.showOnAllSites;
 
   await loadData();
   render();
@@ -827,13 +853,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       settings = { ...settings, ...(changes.settings.newValue || {}) };
       document.getElementById('leagueBadge').textContent = settings.league;
       document.getElementById('sLeague').value = settings.league;
-      document.getElementById('toggleAutoOpenPanel').checked = !!settings.autoOpenPanel;
       needsRender = true;
     }
     if (changes.uiZoom) {
       const z = clampZoom(changes.uiZoom.newValue != null ? changes.uiZoom.newValue : DEFAULT_UI_ZOOM);
       applyZoom(z);
       syncZoomControls(z);
+    }
+    // 외부(드래그 리사이즈)에서 패널 너비가 바뀌면 슬라이더/표시 동기화
+    if (changes[SIDEBAR_UI_KEY]) {
+      const nextWidth = changes[SIDEBAR_UI_KEY].newValue?.width;
+      if (nextWidth != null) syncPanelWidthControls(nextWidth);
+    }
+    // 다른 곳에서 showOnAllSites 가 바뀌면 토글 동기화
+    if (changes.showOnAllSites) {
+      const t = document.getElementById('toggleShowOnAllSites');
+      if (t) t.checked = !!changes.showOnAllSites.newValue;
     }
     if (needsRender) render();
   });
@@ -912,7 +947,6 @@ async function loadData() {
   document.getElementById('sLeague').value = settings.league;
   document.getElementById('sCount').value = settings.resultCount;
   document.getElementById('leagueBadge').textContent = settings.league;
-  document.getElementById('toggleAutoOpenPanel').checked = !!settings.autoOpenPanel;
 }
 
 const persist = () => chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
@@ -2272,12 +2306,30 @@ function bindSettings() {
   leagueInput.addEventListener('change', e => onLeagueChange(e.target.value));
   leagueInput.addEventListener('blur',   e => onLeagueChange(e.target.value));
   document.getElementById('sCount').addEventListener('change', e => { settings.resultCount=parseInt(e.target.value); persist(); });
-  document.getElementById('toggleAutoOpenPanel').addEventListener('change', e => {
-    const enabled = e.target.checked;
-    settings.autoOpenPanel = enabled;
-    persist();
-    chrome.runtime.sendMessage({ type: 'AUTO_PANEL_CHANGED', enabled }).catch(() => null);
-  });
+
+  // 모든 사이트에서 사이드바 표시 토글 (거래소가 아닌 사이트에도 주입)
+  const showAllToggle = document.getElementById('toggleShowOnAllSites');
+  if (showAllToggle) {
+    showAllToggle.addEventListener('change', e => {
+      chrome.storage.local.set({ showOnAllSites: e.target.checked });
+    });
+  }
+
+  // 패널 너비 슬라이더 — sidebarUI.width 만 갱신 (open/side 등 기존 값 보존)
+  const widthSlider = document.getElementById('panelWidthSlider');
+  if (widthSlider) {
+    // 드래그 중: px 표시 실시간 갱신
+    widthSlider.addEventListener('input', e => {
+      syncPanelWidthControls(e.target.value);
+    });
+    // 드래그 종료: width 만 머지 저장
+    widthSlider.addEventListener('change', async e => {
+      const w = clampPanelWidth(e.target.value);
+      const cur = await chrome.storage.local.get(SIDEBAR_UI_KEY);
+      const prev = (cur && cur[SIDEBAR_UI_KEY]) || {};
+      chrome.storage.local.set({ [SIDEBAR_UI_KEY]: { ...prev, width: w } });
+    });
+  }
 
   // UI 줌(zoom) 조절
   const zoomSlider = document.getElementById('uiZoomSlider');

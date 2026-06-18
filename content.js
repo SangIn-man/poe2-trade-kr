@@ -1,6 +1,11 @@
 console.warn('🔥 POE2 content.js LOADED 🔥');
 'use strict';
 
+// ─── 거래소 사이트 판별 ───────────────────────────────
+// content.js 는 <all_urls> 에 주입되므로, 거래소 전용 로직(⭐ 버튼,
+// MutationObserver, 매물 평가 등)은 거래소 호스트에서만 실행한다.
+const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location.hostname);
+
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
@@ -10,29 +15,31 @@ let cachedEvalContext = null;
 let cachedEvalContextPromise = null;
 let cachedTradeRates = null;
 
-const observer = new MutationObserver(() => scanItems());
-observer.observe(document.body, { childList: true, subtree: true });
-setTimeout(scanItems, 1000);
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local') return;
-  if (changes[TRADE_RATE_KEY]) {
-    cachedTradeRates = changes[TRADE_RATE_KEY].newValue || null;
-    scheduleEvaluation();
-  }
-  if (changes[SEARCH_EVAL_KEY]) {
-    cachedEvalContext = null;           // 캐시 무효화
-    cachedEvalContextPromise = null;    // 진행 중인 프로미스도 무효화
-    document.querySelectorAll('.row[data-id]').forEach(row => {
-      applySearchEvaluation(row).catch(() => {});
-    });
-    scheduleEvaluation();
-  }
-});
+if (IS_TRADE_SITE) {
+  const observer = new MutationObserver(() => scanItems());
+  observer.observe(document.body, { childList: true, subtree: true });
+  setTimeout(scanItems, 1000);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes[TRADE_RATE_KEY]) {
+      cachedTradeRates = changes[TRADE_RATE_KEY].newValue || null;
+      scheduleEvaluation();
+    }
+    if (changes[SEARCH_EVAL_KEY]) {
+      cachedEvalContext = null;           // 캐시 무효화
+      cachedEvalContextPromise = null;    // 진행 중인 프로미스도 무효화
+      document.querySelectorAll('.row[data-id]').forEach(row => {
+        applySearchEvaluation(row).catch(() => {});
+      });
+      scheduleEvaluation();
+    }
+  });
 
-storageGet([TRADE_RATE_KEY]).then(result => {
-  cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
-  scheduleEvaluation();
-}).catch(() => {});
+  storageGet([TRADE_RATE_KEY]).then(result => {
+    cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
+    scheduleEvaluation();
+  }).catch(() => {});
+}
 
 // ─── DOM-based search evaluation ──────────────────────
 function getRatePerDivine(currency) {
@@ -1631,15 +1638,23 @@ function simpleHash(str) {
 // 네이티브 chrome.sidePanel 대신 거래소 페이지에 우리가 제어하는
 // iframe 사이드바를 주입한다. 거래소 탭에서만 자연히 보이고,
 // 다른 탭으로 가면 페이지의 일부이므로 함께 사라진다.
-(function initSidebar() {
-  const HOST_ID = 'poe2-qs-sidebar-host';
+const SIDEBAR_HOST_ID = 'poe2-qs-sidebar-host';
+
+// 주입된 사이드바 host 엘리먼트를 제거 (모든 사이트 표시 토글 off 시)
+function removeSidebar() {
+  const existing = document.getElementById(SIDEBAR_HOST_ID);
+  if (existing) existing.remove();
+}
+
+function initSidebar() {
+  const HOST_ID = SIDEBAR_HOST_ID;
   const STORAGE_KEY = 'sidebarUI';
   const MIN_WIDTH = 300;
   const MAX_WIDTH = 760;
   const DEFAULT_WIDTH = 460;
   const HANDLE_WIDTH = 32;
 
-  // 중복 주입 방지
+  // 중복 주입 방지 (재호출해도 안전)
   if (document.getElementById(HOST_ID)) return;
 
   const clampWidth = (w) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w));
@@ -1927,4 +1942,50 @@ function simpleHash(str) {
       toggle();
     }
   });
-})();
+
+  // 설정 패널의 너비 슬라이더에서 width 가 바뀌면 즉시 --w 적용.
+  // 자기가 방금 드래그로 저장한 값과 같으면 무시(무한루프/튐 방지).
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes[STORAGE_KEY]) return;
+      const nextWidth = changes[STORAGE_KEY].newValue?.width;
+      if (nextWidth == null) return;
+      const clamped = clampWidth(Number(nextWidth));
+      if (clamped === state.width) return;
+      state = { ...state, width: clamped };
+      wrap.style.setProperty('--w', `${clamped}px`);
+    });
+  } catch (_) {
+    /* 컨텍스트 무효화 등은 무시 */
+  }
+}
+
+// ─── 사이드바 주입 조건 결정 ──────────────────────────
+// 거래소 사이트: 항상 주입.
+// 비거래소 사이트: showOnAllSites 가 true 일 때만 주입.
+if (IS_TRADE_SITE) {
+  initSidebar();
+} else {
+  try {
+    chrome.storage.local.get('showOnAllSites', (r) => {
+      if (chrome.runtime.lastError) return;
+      if (r && r.showOnAllSites) initSidebar();
+    });
+  } catch (_) {
+    /* 무시 */
+  }
+
+  // showOnAllSites 토글 변경을 즉시 반영 (거래소 사이트는 영향 없음)
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.showOnAllSites) return;
+      if (changes.showOnAllSites.newValue) {
+        initSidebar();
+      } else {
+        removeSidebar();
+      }
+    });
+  } catch (_) {
+    /* 무시 */
+  }
+}

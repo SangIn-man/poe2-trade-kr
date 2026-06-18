@@ -24,18 +24,12 @@
   "web_accessible_resources": [
     {
       "resources": ["sidepanel.html"],
-      "matches": [
-        "https://poe.kakaogames.com/*",
-        "https://www.pathofexile.com/*"
-      ]
+      "matches": ["<all_urls>"]
     }
   ],
   "content_scripts": [
     {
-      "matches": [
-        "https://poe.kakaogames.com/trade2/*",
-        "https://www.pathofexile.com/trade2/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"

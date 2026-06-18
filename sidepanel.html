@@ -907,13 +907,18 @@
             <span class="zoom-value" id="uiZoomValue">125%</span>
             <button class="btn-zoom-reset" id="btnZoomReset">초기화</button>
           </div>
+          <div class="zoom-row">
+            <label>패널 너비</label>
+            <input type="range" id="panelWidthSlider" class="zoom-slider" min="300" max="760" step="10" value="460"/>
+            <span class="zoom-value" id="panelWidthValue">460px</span>
+          </div>
         </div>
         <div class="settings-block">
           <h3>거래소 설정</h3>
           <div class="setting-row">
-            <label>거래소 페이지 자동 열기</label>
+            <label title="거래소가 아닌 사이트에서도 사이드바를 표시합니다">모든 사이트에서 사이드바 표시</label>
             <label class="toggle-switch">
-              <input type="checkbox" id="toggleAutoOpenPanel"/>
+              <input type="checkbox" id="toggleShowOnAllSites"/>
               <span class="toggle-track"></span>
             </label>
           </div>
