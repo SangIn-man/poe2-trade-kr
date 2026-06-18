@@ -9,6 +9,7 @@ const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v1';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
 const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit']);
+const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
@@ -24,11 +25,13 @@ if (IS_TRADE_SITE) {
     if (isOwnExtensionMutation(mutations)) return;
     scanItems();
     scheduleManualStatSearchEnhance();
+    injectCurrentSearchSaveButton();
   });
   observer.observe(document.body, { childList: true, subtree: true });
   setTimeout(() => {
     scanItems();
     scheduleManualStatSearchEnhance();
+    injectCurrentSearchSaveButton();
   }, 1000);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -490,6 +493,223 @@ function getApiBase() {
   return location.hostname === 'poe.kakaogames.com'
     ? 'https://poe.kakaogames.com/api/trade2'
     : 'https://www.pathofexile.com/api/trade2';
+}
+
+function getTradeLeagueFromPath() {
+  const m = location.pathname.match(/\/trade2\/search\/poe2\/([^\/?#]+)/);
+  return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+}
+
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  const num = Number(value);
+  return isFinite(num) ? num : null;
+}
+
+function buildTradeStatIdMapFromParsed(parsed) {
+  const map = new Map();
+  (parsed?.result || []).forEach(group => {
+    (group.entries || []).forEach(entry => {
+      if (!entry?.id) return;
+      map.set(entry.id, {
+        id: entry.id,
+        text: entry.text || entry.id,
+        type: entry.type || group.id || '',
+        groupId: group.id || '',
+        groupLabel: group.label || group.id || ''
+      });
+    });
+  });
+  return map;
+}
+
+async function ensureTradeStatIdMap() {
+  const parsed = await ensureTradeStatsPayload();
+  return buildTradeStatIdMapFromParsed(parsed);
+}
+
+function getQueryFilterValueRange(value) {
+  if (!value || typeof value !== 'object') return { min: null, max: null };
+  return {
+    min: numberOrNull(value.min),
+    max: numberOrNull(value.max)
+  };
+}
+
+function makeRangeValueLabel(min, max) {
+  if (min != null && max != null) return `${min}~${max}`;
+  if (min != null) return `${min}+`;
+  if (max != null) return `~${max}`;
+  return '';
+}
+
+function makeStatFromQueryFilter(queryFilter, statIdMap) {
+  const id = queryFilter?.id || '';
+  if (!id || queryFilter.disabled === true) return null;
+  const entry = statIdMap.get(id);
+  const { min, max } = getQueryFilterValueRange(queryFilter.value);
+  const hasRange = min != null || max != null;
+  const label = entry?.text || id;
+  return {
+    id,
+    label,
+    value: min != null ? min : null,
+    min,
+    max,
+    noValue: !hasRange,
+    active: true
+  };
+}
+
+function makeEquipmentFromQueryFilter(id, queryFilter) {
+  if (!id || queryFilter?.disabled === true) return null;
+  const { min, max } = getQueryFilterValueRange(queryFilter);
+  return {
+    id,
+    label: id,
+    value: min != null ? min : null,
+    min,
+    max,
+    active: true
+  };
+}
+
+function getFirstFilterValue(queryFilters, groupName, key, valueKey = 'option') {
+  const group = queryFilters?.[groupName]?.filters || {};
+  return group?.[key]?.[valueKey] || '';
+}
+
+function buildCurrentSearchFilterName(stats, equipment) {
+  const firstStats = (stats || []).slice(0, 2).map(stat => {
+    const range = stat.noValue ? '' : makeRangeValueLabel(stat.min, stat.max);
+    return `${stat.label}${range ? ` ${range}` : ''}`;
+  });
+  if (firstStats.length) return `거래소 검색: ${firstStats.join(' / ')}`;
+  if ((equipment || []).length) return `거래소 검색: 장비 조건 ${equipment.length}개`;
+  return '거래소 검색 조건';
+}
+
+async function fetchCurrentTradeSearchPayload() {
+  const queryId = getQueryId();
+  const league = getTradeLeagueFromPath();
+  if (!queryId || !league) throw new Error('검색 결과 URL에서 queryId/리그를 찾을 수 없습니다');
+  const url = `${getApiBase()}/search/poe2/${encodeURIComponent(league)}/${encodeURIComponent(queryId)}`;
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) throw new Error(`검색 조건 조회 실패 (HTTP ${res.status})`);
+  const payload = await res.json();
+  return { queryId, league, url, payload };
+}
+
+async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
+  const statIdMap = await ensureTradeStatIdMap();
+  const query = payload?.query || {};
+  const queryFilters = query.filters || {};
+  const stats = [];
+  const equipment = [];
+
+  (query.stats || []).forEach(group => {
+    if (group?.disabled === true) return;
+    (group.filters || []).forEach(queryFilter => {
+      const stat = makeStatFromQueryFilter(queryFilter, statIdMap);
+      if (stat) stats.push(stat);
+    });
+  });
+
+  const equipmentQueryFilters = queryFilters.equipment_filters?.filters || {};
+  Object.keys(equipmentQueryFilters).forEach(id => {
+    const equipmentFilter = makeEquipmentFromQueryFilter(id, equipmentQueryFilters[id]);
+    if (equipmentFilter) equipment.push(equipmentFilter);
+  });
+
+  const filter = {
+    id: Date.now() + Math.random(),
+    name: buildCurrentSearchFilterName(stats, equipment),
+    category: getFirstFilterValue(queryFilters, 'type_filters', 'category'),
+    rarity: getFirstFilterValue(queryFilters, 'type_filters', 'rarity'),
+    itemName: '',
+    typeLine: getFirstFilterValue(queryFilters, 'type_filters', 'type'),
+    typeLineActive: true,
+    ilvlMin: numberOrNull(queryFilters.misc_filters?.filters?.ilvl?.min) || 0,
+    ilvlMax: numberOrNull(queryFilters.misc_filters?.filters?.ilvl?.max),
+    areaLvlMin: numberOrNull(queryFilters.misc_filters?.filters?.area_level?.min) || 0,
+    reqLvlMin: numberOrNull(queryFilters.misc_filters?.filters?.req_level?.min) || 0,
+    priceMax: 0,
+    savedPrice: null,
+    equipment,
+    stats,
+    note: `거래소 검색조건에서 저장 (${league}, ${queryId})`,
+    sourceHash: '',
+    savedAt: new Date().toISOString(),
+    league
+  };
+  filter.sourceHash = simpleHash(buildQuerySignature(filter));
+  return filter;
+}
+
+function injectCurrentSearchSaveButton() {
+  const existing = document.getElementById(QUERY_SAVE_BUTTON_ID);
+  if (!getQueryId()) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return;
+
+  const btn = document.createElement('button');
+  btn.id = QUERY_SAVE_BUTTON_ID;
+  btn.type = 'button';
+  btn.textContent = '＋ 현재 검색조건 저장';
+  btn.title = '현재 거래소 검색 조건을 PoE2 Trade Quick 필터로 저장';
+  btn.addEventListener('click', handleSaveCurrentTradeSearch);
+  document.body.appendChild(btn);
+}
+
+async function handleSaveCurrentTradeSearch(event) {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  const prevText = btn.textContent;
+  btn.textContent = '저장 중...';
+  try {
+    const { queryId, league, url, payload } = await fetchCurrentTradeSearchPayload();
+    const filter = await buildFilterFromTradeSearchPayload(payload, league, queryId);
+    if (!filter.stats.length && !filter.equipment.length && !filter.category && !filter.rarity && !filter.typeLine) {
+      throw new Error('저장할 검색 조건이 없습니다');
+    }
+
+    const dup = await chrome.runtime.sendMessage({
+      type: 'CHECK_DUPLICATE',
+      hash: filter.sourceHash,
+      league
+    });
+    if (dup?.duplicate) {
+      showToast(`이미 저장된 필터입니다: "${dup.name}"`, 'warn');
+      btn.textContent = '이미 저장됨';
+      return;
+    }
+
+    await chrome.runtime.sendMessage({
+      type: 'APPEND_DEBUG_LOG',
+      entry: {
+        kind: 'save-current-query',
+        league,
+        queryId,
+        sourceUrl: url,
+        filter
+      }
+    }).catch(() => {});
+
+    const res = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter, league });
+    if (!res?.ok) throw new Error('필터 저장 실패');
+    showToast(`현재 검색조건 저장 완료 (${filter.stats.length}개 속성)`, 'ok');
+    btn.textContent = '저장 완료';
+  } catch (err) {
+    showToast('검색조건 저장 실패: ' + err.message, 'err');
+    btn.textContent = '저장 실패';
+  } finally {
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = prevText;
+    }, 1600);
+  }
 }
 
 function storageGet(keys) {
@@ -1883,15 +2103,17 @@ function buildQuerySignature(filter) {
   return JSON.stringify({
     category: filter.category || '',
     rarity: filter.rarity || '',
+    typeLine: filter.typeLineActive === false ? '' : (filter.typeLine || ''),
     ilvlMin: Number(filter.ilvlMin) || 0,
+    ilvlMax: Number(filter.ilvlMax) || 0,
     areaLvlMin: Number(filter.areaLvlMin) || 0,
     equipment: (filter.equipment || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => `${x.id}:${Number(x.min) || 0}`)
+      .map(x => `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}`)
+      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
       .sort()
   });
 }

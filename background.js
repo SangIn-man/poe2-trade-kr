@@ -157,7 +157,7 @@ function appendDebugLog(entry, sendResponse) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SAVE_FILTER') {
     chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings'], (result) => {
-      const league = getCurrentLeague(result);
+      const league = msg.league || msg.filter?.league || getCurrentLeague(result);
       const filtersByLeague = getMigratedFiltersByLeague(result);
       const buildsByLeague = result.buildsByLeague || {};
       const buildUiByLeague = result.buildUiByLeague || {};
@@ -195,7 +195,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'CHECK_DUPLICATE') {
     chrome.storage.local.get(['filters', 'filtersByLeague', 'settings'], (result) => {
-      const league = getCurrentLeague(result);
+      const league = msg.league || getCurrentLeague(result);
       const filtersByLeague = getMigratedFiltersByLeague(result);
       const arr = filtersByLeague[league] || [];
       const dup = arr.find(f => f.sourceHash === msg.hash);

@@ -757,15 +757,17 @@ function buildQuerySignature(filter) {
   return JSON.stringify({
     category: filter.category || '',
     rarity: filter.rarity || '',
+    typeLine: filter.typeLineActive === false ? '' : (filter.typeLine || ''),
     ilvlMin: Number(filter.ilvlMin) || 0,
+    ilvlMax: Number(filter.ilvlMax) || 0,
     areaLvlMin: Number(filter.areaLvlMin) || 0,
     equipment: (filter.equipment || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => `${x.id}:${Number(x.min) || 0}`)
+      .map(x => `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}`)
+      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
       .sort()
   });
 }
@@ -1716,14 +1718,21 @@ function makeCard(f) {
   const catLabel = f.category ? f.category.split('.').pop() : '';
 
   const summary = [];
-  if (f.ilvlMin)  summary.push(`iLvl ${f.ilvlMin}+`);
+  const ilvlMinNum = Number(f.ilvlMin);
+  const ilvlMaxNum = Number(f.ilvlMax);
+  const hasIlvlMin = isFinite(ilvlMinNum) && ilvlMinNum > 0;
+  const hasIlvlMax = isFinite(ilvlMaxNum) && ilvlMaxNum > 0;
+  const ilvlLabel = hasIlvlMin && hasIlvlMax
+    ? `iLvl ${f.ilvlMin}~${f.ilvlMax}`
+    : (hasIlvlMin ? `iLvl ${f.ilvlMin}+` : (hasIlvlMax ? `iLvl ~${f.ilvlMax}` : ''));
+  if (ilvlLabel) summary.push(ilvlLabel);
   const activeEquipment = (f.equipment||[]).filter(e => e.active !== false);
   if (activeEquipment.length) summary.push(`장비 ${activeEquipment.length}개`);
   const activeStats = (f.stats||[]).filter(s => s.active !== false);
   if (activeStats.length) summary.push(`스탯 ${activeStats.length}개`);
 
   const baseChips = [
-    f.ilvlMin    ? `<span class="info-chip ilvl">📦 iLvl ${f.ilvlMin}+</span>` : '',
+    ilvlLabel    ? `<span class="info-chip ilvl">📦 ${ilvlLabel}</span>` : '',
     f.areaLvlMin ? `<span class="info-chip area">🗺 지역Lv ${f.areaLvlMin}+</span>` : '',
     f.note       ? `<span class="info-chip">📝 ${esc(f.note)}</span>` : '',
   ].join('');
@@ -1731,12 +1740,22 @@ function makeCard(f) {
   const equipmentRows = (f.equipment||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
+    const minVal = Number(s.min);
+    const hasMin = isFinite(minVal);
+    const maxVal = Number(s.max);
+    const hasMax = isFinite(maxVal);
+    const minHtml = hasMin
+      ? `<span class="equip-min-value" data-filter-id="${f.id}" data-equip-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>`
+      : '';
+    const maxHtml = hasMax
+      ? `<span class="stat-max-val">~${s.max}</span>`
+      : (hasMin ? '<span class="stat-max-val">~∞</span>' : '');
     return `<div class="stat-row-item" style="${active?'':'opacity:.4'}">
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
         ${origText}
-        <span class="equip-min-value" data-filter-id="${f.id}" data-equip-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>
-        <span class="stat-max-val">~∞</span>
+        ${minHtml}
+        ${maxHtml}
       </span>
     </div>`;
   }).join('');
@@ -1744,6 +1763,16 @@ function makeCard(f) {
   const statRows = (f.stats||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
+    const minVal = Number(s.min);
+    const hasMin = isFinite(minVal);
+    const maxVal = Number(s.max);
+    const hasMax = isFinite(maxVal);
+    const minHtml = s.noValue
+      ? `<span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="수치 없는 옵션">있음</span>`
+      : (hasMin ? `<span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>` : '');
+    const maxHtml = s.noValue
+      ? ''
+      : (hasMax ? `<span class="stat-max-val">~${s.max}</span>` : (hasMin ? '<span class="stat-max-val">~∞</span>' : ''));
     const rawId = s.id || s.fallbackId || '';
     const prefixMatch = rawId.match(/^([^.]+)\./);
     const prefix = prefixMatch ? prefixMatch[1] : null;
@@ -1756,8 +1785,8 @@ function makeCard(f) {
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
         ${origText}
-        <span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>
-        <span class="stat-max-val">~∞</span>
+        ${minHtml}
+        ${maxHtml}
       </span>
       <button class="stat-delete-btn" data-filter-id="${f.id}" data-stat-idx="${i}" title="이 스탯 삭제">×</button>
     </div>`;
@@ -1909,6 +1938,7 @@ function makeCard(f) {
       const arr = getCurrentFilters();
       const target = arr.find(x => String(x.id) === String(filterId));
       if (!target || !target.stats || !target.stats[statIdx]) return;
+      if (target.stats[statIdx].noValue || !isFinite(Number(target.stats[statIdx].min))) return;
       const delta = e.deltaY < 0 ? 1 : -1;
       target.stats[statIdx].min = (Number(target.stats[statIdx].min) || 0) + delta;
       updateFilterSourceHash(target);
@@ -1929,6 +1959,7 @@ function makeCard(f) {
       const arr = getCurrentFilters();
       const target = arr.find(x => String(x.id) === String(filterId));
       if (!target || !target.equipment || !target.equipment[equipIdx]) return;
+      if (!isFinite(Number(target.equipment[equipIdx].min))) return;
       const delta = e.deltaY < 0 ? 1 : -1;
       target.equipment[equipIdx].min = Math.max(0, (Number(target.equipment[equipIdx].min) || 0) + delta);
       updateFilterSourceHash(target);
@@ -2059,7 +2090,12 @@ function buildQuery(f) {
   if (Object.keys(tf).length) q.query.filters.type_filters = { filters: tf };
 
   const mf = {};
-  if (f.ilvlMin)    mf.ilvl       = { min: Number(f.ilvlMin) };
+  const ilvlMin = Number(f.ilvlMin);
+  const ilvlMax = Number(f.ilvlMax);
+  const ilvlValue = {};
+  if (isFinite(ilvlMin) && ilvlMin > 0) ilvlValue.min = ilvlMin;
+  if (isFinite(ilvlMax) && ilvlMax > 0) ilvlValue.max = ilvlMax;
+  if (Object.keys(ilvlValue).length) mf.ilvl = ilvlValue;
   if (f.areaLvlMin) mf.area_level = { min: Number(f.areaLvlMin) };
   if (Object.keys(mf).length) q.query.filters.misc_filters = { filters: mf };
 
@@ -2069,8 +2105,12 @@ function buildQuery(f) {
   (f.equipment || []).forEach(e => {
     if (e.active === false || !e.id) return;
     const min = Number(e.min);
-    if (!isFinite(min) || min <= 0) return;
-    equipmentFilters[e.id] = { min };
+    const max = Number(e.max);
+    const value = {};
+    if (isFinite(min) && min > 0) value.min = min;
+    if (isFinite(max) && max > 0) value.max = max;
+    if (!Object.keys(value).length) return;
+    equipmentFilters[e.id] = value;
   });
   if (Object.keys(equipmentFilters).length) q.query.filters.equipment_filters = { filters: equipmentFilters };
 
@@ -2089,7 +2129,14 @@ function buildQuery(f) {
     // The trade API requires these to be queried with `max` (not `min`) so that
     // items with a roll of -35 or better (more negative = more reduction) are found.
     const minVal = Number(s.min);
-    const statValue = minVal < 0 ? { max: minVal } : { min: minVal };
+    const maxVal = Number(s.max);
+    const statValue = {};
+    if (isFinite(minVal)) {
+      if (minVal < 0 && !isFinite(maxVal)) statValue.max = minVal;
+      else statValue.min = minVal;
+    }
+    if (isFinite(maxVal)) statValue.max = maxVal;
+    if (!Object.keys(statValue).length) return;
     statFilters.push({ id: effectiveId, value: statValue, disabled: false });
   });
   if (statFilters.length) {
@@ -2687,4 +2734,3 @@ function updateRateBadge(data) {
     badge.style.display = 'none';
   }
 }
-
