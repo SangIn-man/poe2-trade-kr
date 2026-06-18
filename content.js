@@ -8,6 +8,7 @@ const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location
 const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v1';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
+const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit']);
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
@@ -1307,6 +1308,7 @@ function tokenizeManualStatSearch(text) {
 function flattenManualStatEntries(parsed) {
   const entries = [];
   (parsed?.result || []).forEach(group => {
+    if (!MANUAL_STAT_SEARCH_GROUPS.has(group?.id)) return;
     (group.entries || []).forEach(entry => {
       if (!entry?.id || !entry?.text) return;
       const normalized = normalizeManualStatSearchText(entry.text);
@@ -1362,7 +1364,7 @@ function scoreManualStatEntry(entry, tokens, compactQuery) {
   if (entry.normalized.includes(tokens.join(' '))) score += 18;
   if (compactQuery && entry.compact.includes(compactQuery)) score += 10;
   if (entry.groupId === 'explicit') score += 4;
-  if (entry.groupId === 'pseudo') score += 2;
+  if (entry.groupId === 'implicit') score += 2;
   score -= Math.min(entry.text.length, 120) / 12;
   return score;
 }
@@ -1581,12 +1583,16 @@ function dispatchManualStatInputEvents(input, value) {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-function findNativeStatOption(input, text) {
+function findNativeStatOption(input, entry) {
   const root = input.closest('[class*="multiselect"], [class*="select"], [class*="filter"], form, section') || document;
-  const exact = normalizeManualStatSearchText(text);
+  const exact = normalizeManualStatSearchText(entry?.text || '');
+  const groupLabel = normalizeManualStatSearchText(entry?.groupLabel || entry?.groupId || '');
   const candidates = Array.from(root.querySelectorAll('[role="option"], [class*="option"], [class*="result"], li, button, div, span'))
     .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-stat-suggest'));
-  return candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
+  return candidates.find(el => {
+    const text = normalizeManualStatSearchText(el.textContent || '');
+    return text.includes(exact) && groupLabel && text.includes(groupLabel);
+  }) || candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
     || candidates.find(el => normalizeManualStatSearchText(el.textContent || '').includes(exact));
 }
 
@@ -1596,7 +1602,7 @@ function selectManualStatEntry(state, entry) {
 
   setTimeout(() => {
     try {
-      const option = findNativeStatOption(state.input, entry.text);
+      const option = findNativeStatOption(state.input, entry);
       if (option) {
         option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
         option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
