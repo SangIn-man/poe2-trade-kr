@@ -786,6 +786,12 @@ function roundFilterNumber(value) {
   return Math.abs(num) % 1 === 0 ? Math.abs(num) : Number(Math.abs(num).toFixed(2));
 }
 
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  const num = Number(value);
+  return isFinite(num) ? num : null;
+}
+
 function cloneJsonSafe(value) {
   try {
     return value == null ? null : JSON.parse(JSON.stringify(value));
@@ -2220,11 +2226,11 @@ function buildQuery(f) {
   const equipmentFilters = {};
   (f.equipment || []).forEach(e => {
     if (e.active === false || !e.id) return;
-    const min = Number(e.min);
-    const max = Number(e.max);
+    const min = numberOrNull(e.min);
+    const max = numberOrNull(e.max);
     const value = {};
-    if (isFinite(min) && min > 0) value.min = min;
-    if (isFinite(max) && max > 0) value.max = max;
+    if (min != null && min > 0) value.min = min;
+    if (max != null && max > 0) value.max = max;
     if (!Object.keys(value).length) return;
     equipmentFilters[e.id] = value;
   });
@@ -2244,14 +2250,14 @@ function buildQuery(f) {
     // Negative stats (감소/reduction mods) are stored with negative min values.
     // The trade API requires these to be queried with `max` (not `min`) so that
     // items with a roll of -35 or better (more negative = more reduction) are found.
-    const minVal = Number(s.min);
-    const maxVal = Number(s.max);
+    const minVal = numberOrNull(s.min);
+    const maxVal = numberOrNull(s.max);
     const statValue = {};
-    if (isFinite(minVal)) {
-      if (minVal < 0 && !isFinite(maxVal)) statValue.max = minVal;
+    if (minVal != null) {
+      if (minVal < 0 && maxVal == null) statValue.max = minVal;
       else statValue.min = minVal;
     }
-    if (isFinite(maxVal)) statValue.max = maxVal;
+    if (maxVal != null) statValue.max = maxVal;
     if (!Object.keys(statValue).length) return;
     statFilters.push({ id: effectiveId, value: statValue, disabled: false });
   });
@@ -2286,14 +2292,14 @@ function applyFilterStatsToTradeQuery(query, filter) {
         delete queryFilter.value;
         return;
       }
-      const minVal = Number(stat.min);
-      const maxVal = Number(stat.max);
+      const minVal = numberOrNull(stat.min);
+      const maxVal = numberOrNull(stat.max);
       const value = {};
-      if (isFinite(minVal)) {
-        if (minVal < 0 && !isFinite(maxVal)) value.max = minVal;
+      if (minVal != null) {
+        if (minVal < 0 && maxVal == null) value.max = minVal;
         else value.min = minVal;
       }
-      if (isFinite(maxVal)) value.max = maxVal;
+      if (maxVal != null) value.max = maxVal;
       if (Object.keys(value).length) queryFilter.value = value;
     });
   });
@@ -2309,11 +2315,11 @@ function applyFilterEquipmentToTradeQuery(query, filter) {
   Object.keys(equipmentFilters).forEach(id => {
     const entry = equipmentById.get(id);
     if (!entry) return;
-    const minVal = Number(entry.min);
-    const maxVal = Number(entry.max);
+    const minVal = numberOrNull(entry.min);
+    const maxVal = numberOrNull(entry.max);
     const value = {};
-    if (isFinite(minVal) && minVal > 0) value.min = minVal;
-    if (isFinite(maxVal) && maxVal > 0) value.max = maxVal;
+    if (minVal != null && minVal > 0) value.min = minVal;
+    if (maxVal != null && maxVal > 0) value.max = maxVal;
     if (Object.keys(value).length) {
       equipmentFilters[id] = value;
     }
