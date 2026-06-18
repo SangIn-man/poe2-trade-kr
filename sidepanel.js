@@ -544,6 +544,24 @@ let buildsByLeague = {};
 let buildUiByLeague = {};
 let settings = { league: DEFAULT_LEAGUE, resultCount: 10, autoOpenPanel: false };
 let editingId = null;
+
+// UI 줌(zoom) — 브라우저(Whale/Chrome)별 배율 차이를 사용자가 직접 보정
+const DEFAULT_UI_ZOOM = 1.25;
+const MIN_UI_ZOOM = 0.8;
+const MAX_UI_ZOOM = 1.6;
+const clampZoom = (z) => {
+  const n = parseFloat(z);
+  if (!isFinite(n)) return DEFAULT_UI_ZOOM;
+  return Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, n));
+};
+const applyZoom = (z) => { document.body.style.zoom = String(clampZoom(z)); };
+const syncZoomControls = (z) => {
+  const val = clampZoom(z);
+  const slider = document.getElementById('uiZoomSlider');
+  const label = document.getElementById('uiZoomValue');
+  if (slider) slider.value = String(val);
+  if (label) label.textContent = `${Math.round(val * 100)}%`;
+};
 let buildSectionCollapsed = true;
 let jewelSubFilter = 'all';
 
@@ -778,6 +796,12 @@ function normalizeSavedFilter(filter) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // UI 줌 먼저 적용 (초기 렌더 깜빡임 최소화)
+  const zoomStore = await chrome.storage.local.get(['uiZoom']);
+  const initialZoom = clampZoom(zoomStore.uiZoom != null ? zoomStore.uiZoom : DEFAULT_UI_ZOOM);
+  applyZoom(initialZoom);
+  syncZoomControls(initialZoom);
+
   await loadData();
   render();
   bindTabs();
@@ -805,6 +829,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('sLeague').value = settings.league;
       document.getElementById('toggleAutoOpenPanel').checked = !!settings.autoOpenPanel;
       needsRender = true;
+    }
+    if (changes.uiZoom) {
+      const z = clampZoom(changes.uiZoom.newValue != null ? changes.uiZoom.newValue : DEFAULT_UI_ZOOM);
+      applyZoom(z);
+      syncZoomControls(z);
     }
     if (needsRender) render();
   });
@@ -2249,6 +2278,30 @@ function bindSettings() {
     persist();
     chrome.runtime.sendMessage({ type: 'AUTO_PANEL_CHANGED', enabled }).catch(() => null);
   });
+
+  // UI 줌(zoom) 조절
+  const zoomSlider = document.getElementById('uiZoomSlider');
+  const zoomReset = document.getElementById('btnZoomReset');
+  if (zoomSlider) {
+    // 슬라이더 드래그 중: 즉시 미리보기 (저장은 하지 않음)
+    zoomSlider.addEventListener('input', e => {
+      const z = clampZoom(e.target.value);
+      applyZoom(z);
+      syncZoomControls(z);
+    });
+    // 드래그 종료: 저장
+    zoomSlider.addEventListener('change', e => {
+      const z = clampZoom(e.target.value);
+      chrome.storage.local.set({ uiZoom: z });
+    });
+  }
+  if (zoomReset) {
+    zoomReset.addEventListener('click', () => {
+      applyZoom(DEFAULT_UI_ZOOM);
+      syncZoomControls(DEFAULT_UI_ZOOM);
+      chrome.storage.local.set({ uiZoom: DEFAULT_UI_ZOOM });
+    });
+  }
 }
 
 function bindImportExport() {
