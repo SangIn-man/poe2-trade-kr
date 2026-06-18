@@ -1535,19 +1535,27 @@ function restoreNativeManualStatDropdowns(state) {
 
 function getManualStatDropdown(state) {
   if (state.dropdown && document.body.contains(state.dropdown)) return state.dropdown;
-  const root = getManualStatRoot(state.input);
-  root.classList.add('poe2tq-native-stat-root');
   const dropdown = document.createElement('div');
   dropdown.className = 'multiselect__content-wrapper poe2tq-native-stat-wrapper';
   dropdown.setAttribute('role', 'listbox');
-  root.appendChild(dropdown);
+  document.body.appendChild(dropdown);
   state.dropdown = dropdown;
   return dropdown;
 }
 
+function positionManualStatDropdown(state, dropdown) {
+  const rect = state.input.getBoundingClientRect();
+  const width = Math.max(280, Math.min(640, rect.width || 320));
+  dropdown.style.left = `${Math.max(8, rect.left)}px`;
+  dropdown.style.top = `${Math.max(8, rect.bottom + 2)}px`;
+  dropdown.style.width = `${width}px`;
+}
+
 function renderManualStatDropdown(state) {
   hideNativeManualStatDropdowns(state);
+  document.body.classList.add('poe2tq-stat-suggest-active');
   const dropdown = getManualStatDropdown(state);
+  positionManualStatDropdown(state, dropdown);
   dropdown.innerHTML = '';
 
   const list = document.createElement('ul');
@@ -1592,6 +1600,7 @@ function renderManualStatDropdown(state) {
 }
 
 function hideManualStatDropdown(state) {
+  document.body.classList.remove('poe2tq-stat-suggest-active');
   if (state.dropdown) {
     state.dropdown.remove();
     state.dropdown = null;
