@@ -815,7 +815,7 @@ function normalizeSavedFilter(filter) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   // UI 줌 먼저 적용 (초기 렌더 깜빡임 최소화)
-  const zoomStore = await chrome.storage.local.get(['uiZoom', SIDEBAR_UI_KEY, 'showOnAllSites']);
+  const zoomStore = await chrome.storage.local.get(['uiZoom', SIDEBAR_UI_KEY]);
   const initialZoom = clampZoom(zoomStore.uiZoom != null ? zoomStore.uiZoom : DEFAULT_UI_ZOOM);
   applyZoom(initialZoom);
   syncZoomControls(initialZoom);
@@ -823,10 +823,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 패널 너비 슬라이더 초기 동기화 (sidebarUI.width, 없으면 기본 460)
   const initialWidth = clampPanelWidth(zoomStore[SIDEBAR_UI_KEY]?.width ?? DEFAULT_PANEL_WIDTH);
   syncPanelWidthControls(initialWidth);
-
-  // 모든 사이트 표시 토글 초기 상태
-  const showAllToggle = document.getElementById('toggleShowOnAllSites');
-  if (showAllToggle) showAllToggle.checked = !!zoomStore.showOnAllSites;
 
   await loadData();
   render();
@@ -864,11 +860,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (changes[SIDEBAR_UI_KEY]) {
       const nextWidth = changes[SIDEBAR_UI_KEY].newValue?.width;
       if (nextWidth != null) syncPanelWidthControls(nextWidth);
-    }
-    // 다른 곳에서 showOnAllSites 가 바뀌면 토글 동기화
-    if (changes.showOnAllSites) {
-      const t = document.getElementById('toggleShowOnAllSites');
-      if (t) t.checked = !!changes.showOnAllSites.newValue;
     }
     if (needsRender) render();
   });
@@ -2306,14 +2297,6 @@ function bindSettings() {
   leagueInput.addEventListener('change', e => onLeagueChange(e.target.value));
   leagueInput.addEventListener('blur',   e => onLeagueChange(e.target.value));
   document.getElementById('sCount').addEventListener('change', e => { settings.resultCount=parseInt(e.target.value); persist(); });
-
-  // 모든 사이트에서 사이드바 표시 토글 (거래소가 아닌 사이트에도 주입)
-  const showAllToggle = document.getElementById('toggleShowOnAllSites');
-  if (showAllToggle) {
-    showAllToggle.addEventListener('change', e => {
-      chrome.storage.local.set({ showOnAllSites: e.target.checked });
-    });
-  }
 
   // 패널 너비 슬라이더 — sidebarUI.width 만 갱신 (open/side 등 기존 값 보존)
   const widthSlider = document.getElementById('panelWidthSlider');

@@ -1640,12 +1640,6 @@ function simpleHash(str) {
 // 다른 탭으로 가면 페이지의 일부이므로 함께 사라진다.
 const SIDEBAR_HOST_ID = 'poe2-qs-sidebar-host';
 
-// 주입된 사이드바 host 엘리먼트를 제거 (모든 사이트 표시 토글 off 시)
-function removeSidebar() {
-  const existing = document.getElementById(SIDEBAR_HOST_ID);
-  if (existing) existing.remove();
-}
-
 function initSidebar() {
   const HOST_ID = SIDEBAR_HOST_ID;
   const STORAGE_KEY = 'sidebarUI';
@@ -1961,31 +1955,7 @@ function initSidebar() {
 }
 
 // ─── 사이드바 주입 조건 결정 ──────────────────────────
-// 거래소 사이트: 항상 주입.
-// 비거래소 사이트: showOnAllSites 가 true 일 때만 주입.
+// 거래소 사이트에서만 주입한다.
 if (IS_TRADE_SITE) {
   initSidebar();
-} else {
-  try {
-    chrome.storage.local.get('showOnAllSites', (r) => {
-      if (chrome.runtime.lastError) return;
-      if (r && r.showOnAllSites) initSidebar();
-    });
-  } catch (_) {
-    /* 무시 */
-  }
-
-  // showOnAllSites 토글 변경을 즉시 반영 (거래소 사이트는 영향 없음)
-  try {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes.showOnAllSites) return;
-      if (changes.showOnAllSites.newValue) {
-        initSidebar();
-      } else {
-        removeSidebar();
-      }
-    });
-  } catch (_) {
-    /* 무시 */
-  }
 }
