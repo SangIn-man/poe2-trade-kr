@@ -84,8 +84,6 @@
     .btn-search-cur.loading { opacity:.7; cursor:default; }
     .btn-open-q { background:var(--blue-bg); border:1px solid #1a3a60; color:var(--blue); padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
     .btn-open-q:hover { background:#0c1e30; }
-    .btn-edit-q { background:#18140c; border:1px solid #4a3515; color:#c8a060; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
-    .btn-edit-q:hover { background:#22180c; border-color:#7a5520; }
 
     .card-detail { display:none; border-top:1px solid var(--border); }
     .filter-card.open .card-detail { display:block; }
@@ -98,7 +96,7 @@
     .stat-vals { flex-shrink:0; display:flex; gap:4px; align-items:center; }
     .stat-orig { color:#5a4a2a; font-size:10px; text-decoration:line-through; }
     .stat-min-val { color:#80d040; font-weight:700; }
-    .stat-max-val { color:var(--text-faint); font-size:10px; }
+    .stat-range-sep { color:#6a5a35; font-size:10px; }
 
     /* 기본 정보 */
     .base-info { padding:6px 10px 0; display:flex; flex-wrap:wrap; gap:4px; }
@@ -199,13 +197,19 @@
     .stat-delete-btn { opacity:0; position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; color:#ff6060; cursor:pointer; font-size:13px; padding:0 2px; line-height:1; transition:opacity 0.15s; }
     .stat-row-item:hover .stat-delete-btn { opacity:1; }
 
-    /* 카드 인라인 min 값 마우스 휠 편집 */
-    .stat-min-value { cursor:ns-resize; color:#80d040; font-weight:700; user-select:none; border-bottom:1px dotted rgba(127,255,127,0.4); transition:background 0.1s; }
-    .stat-min-value:hover { background:rgba(127,255,127,0.1); border-radius:2px; }
+    /* 카드 인라인 min/max 값 마우스 휠 편집 */
+    .stat-min-value,.stat-max-value { cursor:ns-resize; font-weight:700; user-select:none; min-width:16px; min-height:14px; text-align:center; border-bottom:1px dotted rgba(127,255,127,0.4); transition:background 0.1s; }
+    .stat-min-value { color:#80d040; }
+    .stat-max-value { color:#d0a860; border-bottom-color:rgba(208,168,96,0.45); }
+    .stat-min-value:hover,.stat-max-value:hover { background:rgba(127,255,127,0.1); border-radius:2px; }
+    .stat-max-value:hover { background:rgba(208,168,96,0.12); }
+    .range-empty::before { content:' '; }
 
-    /* 카드 인라인 장비 조건 min 값 마우스 휠 편집 */
-    .equip-min-value { cursor:ns-resize; color:#80d040; font-weight:700; user-select:none; border-bottom:1px dotted rgba(255,200,100,0.4); transition:background 0.1s; }
-    .equip-min-value:hover { background:rgba(255,200,100,0.1); border-radius:2px; }
+    /* 카드 인라인 장비 조건 min/max 값 마우스 휠 편집 */
+    .equip-min-value,.equip-max-value { cursor:ns-resize; font-weight:700; user-select:none; min-width:16px; min-height:14px; text-align:center; border-bottom:1px dotted rgba(255,200,100,0.4); transition:background 0.1s; }
+    .equip-min-value { color:#80d040; }
+    .equip-max-value { color:#d0a860; }
+    .equip-min-value:hover,.equip-max-value:hover { background:rgba(255,200,100,0.1); border-radius:2px; }
 
     /* 필터 이름 인라인 편집 */
     .filter-name-edit {

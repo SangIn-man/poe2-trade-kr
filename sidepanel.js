@@ -1837,23 +1837,31 @@ function makeCard(f) {
     f.note       ? `<span class="info-chip">📝 ${esc(f.note)}</span>` : '',
   ].join('');
 
+  const makeInlineRange = (type, i, minVal, maxVal, item) => {
+    if (minVal == null && maxVal == null) return '';
+    const idxAttr = type === 'equip' ? 'data-equip-idx' : 'data-stat-idx';
+    const minClass = type === 'equip' ? 'equip-min-value' : 'stat-min-value';
+    const maxClass = type === 'equip' ? 'equip-max-value' : 'stat-max-value';
+    const minText = minVal != null ? esc(item.min) : '';
+    const maxText = maxVal != null ? esc(item.max) : '';
+    const minEmpty = minVal == null ? ' range-empty' : '';
+    const maxEmpty = maxVal == null ? ' range-empty' : '';
+    return `<span class="${minClass}${minEmpty}" data-filter-id="${esc(f.id)}" ${idxAttr}="${i}" data-range-bound="min" title="마우스 휠로 min 조정">${minText}</span>
+        <span class="stat-range-sep">~</span>
+        <span class="${maxClass}${maxEmpty}" data-filter-id="${esc(f.id)}" ${idxAttr}="${i}" data-range-bound="max" title="마우스 휠로 max 조정">${maxText}</span>`;
+  };
+
   const equipmentRows = (f.equipment||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
     const minVal = numberOrNull(s.min);
     const maxVal = numberOrNull(s.max);
-    const minHtml = minVal != null
-      ? `<span class="equip-min-value" data-filter-id="${f.id}" data-equip-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>`
-      : '';
-    const maxHtml = maxVal != null
-      ? `<span class="stat-max-val">~${s.max}</span>`
-      : '';
+    const rangeHtml = makeInlineRange('equip', i, minVal, maxVal, s);
     return `<div class="stat-row-item" style="${active?'':'opacity:.4'}">
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
         ${origText}
-        ${minHtml}
-        ${maxHtml}
+        ${rangeHtml}
       </span>
     </div>`;
   }).join('');
@@ -1863,12 +1871,7 @@ function makeCard(f) {
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
     const minVal = numberOrNull(s.min);
     const maxVal = numberOrNull(s.max);
-    const minHtml = (!s.noValue && minVal != null)
-      ? `<span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>`
-      : '';
-    const maxHtml = (!s.noValue && maxVal != null)
-      ? `<span class="stat-max-val">~${s.max}</span>`
-      : '';
+    const rangeHtml = s.noValue ? '' : makeInlineRange('stat', i, minVal, maxVal, s);
     const rawId = s.id || s.fallbackId || '';
     const prefixMatch = rawId.match(/^([^.]+)\./);
     const prefix = prefixMatch ? prefixMatch[1] : null;
@@ -1881,8 +1884,7 @@ function makeCard(f) {
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
         ${origText}
-        ${minHtml}
-        ${maxHtml}
+        ${rangeHtml}
       </span>
       <button class="stat-delete-btn" data-filter-id="${f.id}" data-stat-idx="${i}" title="이 스탯 삭제">×</button>
     </div>`;
@@ -1908,7 +1910,6 @@ function makeCard(f) {
       <button class="btn-search-q"   data-id="${f.id}">🔍 새창</button>
       <button class="btn-search-cur" data-id="${f.id}">🔗 현재창</button>
       <button class="btn-open-q"     data-id="${f.id}">🌐 KR거래소</button>
-      <button class="btn-edit-q"     data-id="${f.id}" title="필터 편집">✏️</button>
       ${allBuildsForMove.length > 0 ? `<select class="build-move-select" data-move-filter="${f.id}" title="빌드/탭으로 이동">${moveOptions}</select>` : ''}
     </div>
 
@@ -1927,9 +1928,16 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .equip-min-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
+    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .stat-max-value, .equip-min-value, .equip-max-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
     wrap.classList.toggle('open');
   });
+
+  const replaceCardKeepingOpen = target => {
+    const wasOpen = wrap.classList.contains('open');
+    const newCard = makeCard(target);
+    wrap.replaceWith(newCard);
+    if (wasOpen) newCard.classList.add('open');
+  };
 
   // Inline name editing
   const nameEl = wrap.querySelector('.filter-name-edit');
@@ -1976,7 +1984,6 @@ function makeCard(f) {
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
-  wrap.querySelector('.btn-edit-q').addEventListener('click', e => { e.stopPropagation(); openModal(f.id); });
   wrap.querySelector('.btn-delete-small').addEventListener('click', e => { e.stopPropagation(); delFilter(f.id); });
   const moveSelect = wrap.querySelector('[data-move-filter]');
   if (moveSelect) {
@@ -2018,52 +2025,65 @@ function makeCard(f) {
       target.stats.splice(statIdx, 1);
       updateFilterSourceHash(target);
       persist();
-      // Re-render only this card in-place
-      const newCard = makeCard(target);
-      wrap.replaceWith(newCard);
-      // Keep card open if it was open
-      if (wrap.classList.contains('open')) newCard.classList.add('open');
+      replaceCardKeepingOpen(target);
     });
   });
 
-  // Feature: mouse wheel on stat-min-value spans to adjust min value
-  wrap.querySelectorAll('.stat-min-value').forEach(span => {
+  const adjustInlineRange = (item, field, delta, allowNegative) => {
+    const cur = numberOrNull(item[field]);
+    const min = numberOrNull(item.min);
+    const max = numberOrNull(item.max);
+    let base = cur;
+    if (base == null) {
+      base = field === 'max' && min != null ? min : (field === 'min' && max != null ? max : 0);
+    }
+    let next = Number(base) + delta;
+    if (!allowNegative) next = Math.max(0, next);
+    if (field === 'min' && max != null) next = Math.min(next, max);
+    if (field === 'max' && min != null) next = Math.max(next, min);
+    item[field] = Number.isInteger(next) ? next : Number(next.toFixed(2));
+  };
+
+  // Feature: mouse wheel on inline min/max spans to adjust range values
+  wrap.querySelectorAll('.stat-min-value, .stat-max-value').forEach(span => {
     span.addEventListener('wheel', e => {
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
       const filterId = span.dataset.filterId;
       const statIdx  = parseInt(span.dataset.statIdx, 10);
+      const field = span.dataset.rangeBound === 'max' ? 'max' : 'min';
       const arr = getCurrentFilters();
       const target = arr.find(x => String(x.id) === String(filterId));
       if (!target || !target.stats || !target.stats[statIdx]) return;
-      if (target.stats[statIdx].noValue || !isFinite(Number(target.stats[statIdx].min))) return;
       const delta = e.deltaY < 0 ? 1 : -1;
-      target.stats[statIdx].min = (Number(target.stats[statIdx].min) || 0) + delta;
+      const stat = target.stats[statIdx];
+      if (stat.noValue && numberOrNull(stat.min) == null && numberOrNull(stat.max) == null) return;
+      adjustInlineRange(stat, field, delta, true);
+      stat.noValue = numberOrNull(stat.min) == null && numberOrNull(stat.max) == null;
       updateFilterSourceHash(target);
       persist();
-      // Update display text in-place without full re-render
-      span.textContent = target.stats[statIdx].min + '+';
+      replaceCardKeepingOpen(target);
     }, { passive: false });
   });
 
-  // Feature: mouse wheel on equip-min-value spans to adjust equipment min value
-  wrap.querySelectorAll('.equip-min-value').forEach(span => {
+  // Feature: mouse wheel on inline equipment min/max spans to adjust range values
+  wrap.querySelectorAll('.equip-min-value, .equip-max-value').forEach(span => {
     span.addEventListener('wheel', e => {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
       const filterId = span.dataset.filterId;
       const equipIdx = parseInt(span.dataset.equipIdx, 10);
+      const field = span.dataset.rangeBound === 'max' ? 'max' : 'min';
       const arr = getCurrentFilters();
       const target = arr.find(x => String(x.id) === String(filterId));
       if (!target || !target.equipment || !target.equipment[equipIdx]) return;
-      if (!isFinite(Number(target.equipment[equipIdx].min))) return;
       const delta = e.deltaY < 0 ? 1 : -1;
-      target.equipment[equipIdx].min = Math.max(0, (Number(target.equipment[equipIdx].min) || 0) + delta);
+      adjustInlineRange(target.equipment[equipIdx], field, delta, false);
       updateFilterSourceHash(target);
       persist();
-      // Update display text in-place without full re-render
-      span.textContent = target.equipment[equipIdx].min + '+';
+      replaceCardKeepingOpen(target);
     }, { passive: false });
   });
 
