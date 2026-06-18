@@ -1736,10 +1736,6 @@ async function applyManualStatNativeFilter(state) {
   if (document.activeElement !== state.input) return;
 
   if (state.dropdown && state.activeQuery === normalizedQuery) {
-    if (getNativeManualStatDropdownState(state.input).hasOptions) {
-      hideManualStatDropdown(state);
-      return;
-    }
     positionManualStatDropdown(state, state.dropdown);
     return;
   }
@@ -1748,11 +1744,6 @@ async function applyManualStatNativeFilter(state) {
   state.selectedIndex = 0;
   state.activeQuery = normalizedQuery;
   if (!state.matches.length) {
-    hideManualStatDropdown(state);
-    return;
-  }
-
-  if (getNativeManualStatDropdownState(state.input).hasOptions) {
     hideManualStatDropdown(state);
     return;
   }
@@ -1769,17 +1760,17 @@ function getManualStatRoot(input) {
 function hideNativeManualStatDropdowns(state) {
   restoreNativeManualStatDropdowns(state);
   state.hiddenNativeDropdowns = [];
-  const nativeState = getNativeManualStatDropdownState(state.input);
-  if (!nativeState.dropdown || nativeState.hasOptions) return;
+  const nativeDropdown = findVisibleNativeManualStatDropdown(state.input);
+  if (!nativeDropdown) return;
   state.hiddenNativeDropdowns.push({
-    el: nativeState.dropdown,
-    display: nativeState.dropdown.style.display,
-    visibility: nativeState.dropdown.style.visibility,
-    pointerEvents: nativeState.dropdown.style.pointerEvents
+    el: nativeDropdown,
+    display: nativeDropdown.style.display,
+    visibility: nativeDropdown.style.visibility,
+    pointerEvents: nativeDropdown.style.pointerEvents
   });
-  nativeState.dropdown.style.display = 'none';
-  nativeState.dropdown.style.visibility = 'hidden';
-  nativeState.dropdown.style.pointerEvents = 'none';
+  nativeDropdown.style.display = 'none';
+  nativeDropdown.style.visibility = 'hidden';
+  nativeDropdown.style.pointerEvents = 'none';
 }
 
 function restoreNativeManualStatDropdowns(state) {
@@ -1826,47 +1817,12 @@ function findVisibleNativeManualStatDropdown(input) {
   return best?.el || null;
 }
 
-function getNativeManualStatDropdownState(input) {
-  const dropdown = findVisibleNativeManualStatDropdown(input);
-  if (!dropdown) return { dropdown: null, hasOptions: false };
-
-  const emptyPattern = /(검색\s*항목|찾을\s*수\s*없|결과\s*없|no\s*(?:elements?|results?|options?)|not\s*found|no\s*matching)/i;
-  const optionSelectors = '.multiselect__option, [role="option"], li.multiselect__element, li';
-  const options = Array.from(dropdown.querySelectorAll(optionSelectors))
-    .filter(el => isVisibleElement(el) && !el.closest('.poe2tq-native-stat-wrapper'))
-    .map(el => normalizeManualStatSearchText(el.textContent || ''))
-    .filter(Boolean);
-
-  const hasOptions = options.some(text => !emptyPattern.test(text));
-  return { dropdown, hasOptions };
-}
-
 function positionManualStatDropdown(state, dropdown) {
   const rect = state.input.getBoundingClientRect();
-  const gap = 8;
-  let width = Math.max(280, Math.min(520, rect.width || 320));
-  let left = rect.left;
-  let top = rect.bottom + 2;
-  const rightSpace = window.innerWidth - rect.right - gap - 8;
-  const nativeDropdown = findVisibleNativeManualStatDropdown(state.input);
-  const nativeRect = nativeDropdown?.getBoundingClientRect();
-  const canUseRightSide = rightSpace >= 280 && (!nativeRect || nativeRect.right <= rect.right + 4);
-  if (canUseRightSide) {
-    width = Math.min(420, rightSpace);
-    left = rect.right + gap;
-    top = rect.top;
-  } else {
-    if (nativeRect) {
-      top = nativeRect.bottom + 4;
-    } else {
-      top = rect.bottom + 170;
-    }
-    width = Math.min(width, window.innerWidth - 16);
-    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-  }
-  const maxTop = Math.max(8, window.innerHeight - 120);
-  dropdown.style.left = `${Math.max(8, left)}px`;
-  dropdown.style.top = `${Math.max(8, Math.min(top, maxTop))}px`;
+  const width = Math.max(280, Math.min(640, rect.width || 320, window.innerWidth - 16));
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+  dropdown.style.left = `${left}px`;
+  dropdown.style.top = `${Math.max(8, rect.bottom + 2)}px`;
   dropdown.style.width = `${width}px`;
 }
 
