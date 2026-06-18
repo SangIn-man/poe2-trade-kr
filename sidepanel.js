@@ -2600,8 +2600,3 @@ function updateRateBadge(data) {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'CLOSE_SIDE_PANEL') {
-    window.close();
-  }
-});

@@ -1,15 +1,6 @@
 console.warn('🔥 POE2 content.js LOADED 🔥');
 'use strict';
 
-// 거래소 페이지 로드 시 사이드패널 자동 열기 요청
-chrome.runtime.sendMessage({ type: 'TRADE_PAGE_LOADED' }).catch(() => {});
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    chrome.runtime.sendMessage({ type: 'TRADE_TAB_VISIBLE' }).catch(() => {});
-  }
-});
-
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
@@ -1635,3 +1626,211 @@ function simpleHash(str) {
   }
   return Math.abs(h).toString(36);
 }
+
+// ─── in-page iframe 사이드바 ──────────────────────────────
+// 네이티브 chrome.sidePanel 대신 거래소 페이지에 우리가 제어하는
+// iframe 사이드바를 주입한다. 거래소 탭에서만 자연히 보이고,
+// 다른 탭으로 가면 페이지의 일부이므로 함께 사라진다.
+(function initSidebar() {
+  const HOST_ID = 'poe2-qs-sidebar-host';
+  const STORAGE_KEY = 'sidebarUI';
+  const MIN_WIDTH = 300;
+  const MAX_WIDTH = 700;
+  const DEFAULT_WIDTH = 400;
+  const HANDLE_WIDTH = 32;
+
+  // 중복 주입 방지
+  if (document.getElementById(HOST_ID)) return;
+
+  const clampWidth = (w) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w));
+
+  const host = document.createElement('div');
+  host.id = HOST_ID;
+  host.style.cssText =
+    'position:fixed; top:0; right:0; height:100vh; z-index:2147483647;';
+  document.documentElement.appendChild(host);
+
+  const shadow = host.attachShadow({ mode: 'open' });
+
+  const style = document.createElement('style');
+  style.textContent = `
+    :host { all: initial; }
+    .wrap {
+      --w: ${DEFAULT_WIDTH}px;
+      position: relative;
+      height: 100vh;
+      font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+    }
+    .panel {
+      position: relative;
+      height: 100vh;
+      width: var(--w);
+      background: #1a1a1a;
+      box-shadow: -4px 0 18px rgba(0, 0, 0, 0.55);
+      transition: width 0.18s ease;
+      overflow: hidden;
+    }
+    .wrap.collapsed .panel {
+      width: 0;
+      overflow: hidden;
+      box-shadow: none;
+    }
+    .resizer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 6px;
+      height: 100%;
+      cursor: ew-resize;
+      background: transparent;
+      z-index: 2;
+    }
+    .resizer:hover {
+      background: rgba(200, 146, 42, 0.35);
+    }
+    .wrap.collapsed .resizer {
+      display: none;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+    }
+    .handle {
+      position: absolute;
+      top: 50%;
+      left: -${HANDLE_WIDTH}px;
+      transform: translateY(-50%);
+      width: ${HANDLE_WIDTH}px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #c8922a;
+      color: #1a1a1a;
+      font-size: 16px;
+      font-weight: bold;
+      border: 0;
+      border-radius: 8px 0 0 8px;
+      cursor: pointer;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.5);
+      z-index: 3;
+      user-select: none;
+    }
+    .handle:hover {
+      background: #f0d080;
+    }
+  `;
+  shadow.appendChild(style);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'wrap';
+
+  const handle = document.createElement('button');
+  handle.className = 'handle';
+  handle.type = 'button';
+  handle.title = 'PoE2 사이드바 열기/닫기';
+
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+
+  const resizer = document.createElement('div');
+  resizer.className = 'resizer';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = chrome.runtime.getURL('sidepanel.html');
+
+  panel.appendChild(resizer);
+  panel.appendChild(iframe);
+  wrap.appendChild(handle);
+  wrap.appendChild(panel);
+  shadow.appendChild(wrap);
+
+  let state = { open: true, width: DEFAULT_WIDTH };
+
+  function applyState() {
+    wrap.style.setProperty('--w', `${state.width}px`);
+    wrap.classList.toggle('collapsed', !state.open);
+    handle.textContent = state.open ? '▶' : '◀';
+  }
+
+  function saveState() {
+    try {
+      chrome.storage.local.set({ [STORAGE_KEY]: { ...state } });
+    } catch (_) {
+      /* 컨텍스트 무효화 등은 무시 */
+    }
+  }
+
+  function setOpen(open) {
+    state = { ...state, open };
+    applyState();
+    saveState();
+  }
+
+  function toggle() {
+    setOpen(!state.open);
+  }
+
+  // 초기 상태 로드
+  try {
+    chrome.storage.local.get(STORAGE_KEY, (r) => {
+      if (chrome.runtime.lastError) {
+        applyState();
+        return;
+      }
+      const saved = r && r[STORAGE_KEY];
+      if (saved && typeof saved === 'object') {
+        state = {
+          open: typeof saved.open === 'boolean' ? saved.open : true,
+          width: clampWidth(Number(saved.width) || DEFAULT_WIDTH)
+        };
+      }
+      applyState();
+    });
+  } catch (_) {
+    applyState();
+  }
+
+  handle.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggle();
+  });
+
+  // 리사이저 드래그로 너비 조절
+  let dragging = false;
+
+  function onMouseMove(e) {
+    if (!dragging) return;
+    const next = clampWidth(window.innerWidth - e.clientX);
+    state = { ...state, width: next };
+    wrap.style.setProperty('--w', `${next}px`);
+  }
+
+  function onMouseUp() {
+    if (!dragging) return;
+    dragging = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    // 드래그 중 막아둔 iframe 포인터 이벤트 복구
+    iframe.style.pointerEvents = '';
+    saveState();
+  }
+
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    // 드래그 중 iframe이 mousemove를 삼키지 않도록 포인터 이벤트 차단
+    iframe.style.pointerEvents = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+
+  // background에서 오는 토글 메시지 수신
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.type === 'TOGGLE_SIDEBAR') {
+      toggle();
+    }
+  });
+})();

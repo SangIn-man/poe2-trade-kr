@@ -1,73 +1,9 @@
+// in-page iframe 사이드바 방식으로 전환됨.
+// 툴바 아이콘 클릭 시 활성 탭의 content script에 토글 메시지를 보낸다.
+// (거래소 페이지가 아니면 content script가 없어 sendMessage가 조용히 실패한다.)
 chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
-});
-
-// 거래소 URL 체크 함수
-function isTradeUrl(url) {
-  return url && (
-    url.includes('poe.kakaogames.com/trade2') ||
-    url.includes('pathofexile.com/trade2')
-  );
-}
-
-// 탭 URL 메모리 캐시 (onActivated에서 비동기 콜백 없이 즉시 URL 확인용)
-// chrome.tabs.get() 콜백은 비동기라 user gesture context가 소멸 → sidePanel.open() 실패
-// 미리 URL을 캐싱해두면 onActivated에서 동기적으로 즉시 확인 가능
-const _tabUrls = {};
-chrome.tabs.query({}, (tabs) => {
-  tabs.forEach(tab => { if (tab.url) _tabUrls[tab.id] = tab.url; });
-});
-chrome.tabs.onRemoved.addListener((tabId) => { delete _tabUrls[tabId]; });
-
-// settings 메모리 캐시 (gesture context 유지용)
-// chrome.sidePanel.open()은 user gesture 컨텍스트에서만 동작하므로,
-// await chrome.storage.local.get() 이후에는 gesture context가 소멸함.
-// 캐시를 사용하면 await 없이 즉시 확인해 gesture context를 유지할 수 있음.
-let _cachedSettings = {};
-let _closePanelTimeout = null;
-chrome.storage.local.get('settings', (r) => {
-  _cachedSettings = r.settings || {};
-  console.log('[AutoPanel] 캐시 초기화:', _cachedSettings);
-});
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.settings) {
-    _cachedSettings = changes.settings.newValue || {};
-    console.log('[AutoPanel] 캐시 업데이트:', _cachedSettings);
-  }
-});
-
-// 탭 전환 시 — _tabUrls 캐시에서 즉시 URL 확인해 gesture context를 유지한 채 사이드패널 열기/닫기
-chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
-  if (!_cachedSettings?.autoOpenPanel) return;
-  const url = _tabUrls[tabId] || '';
-  if (isTradeUrl(url)) {
-    if (_closePanelTimeout) { clearTimeout(_closePanelTimeout); _closePanelTimeout = null; }
-    try {
-      await chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-      await chrome.sidePanel.open({ tabId, windowId });
-    } catch (_) {}
-  } else {
-    if (_closePanelTimeout) clearTimeout(_closePanelTimeout);
-    _closePanelTimeout = setTimeout(() => {
-      _closePanelTimeout = null;
-      chrome.runtime.sendMessage({ type: 'CLOSE_SIDE_PANEL' }).catch(() => {});
-    }, 300);
-  }
-});
-
-// 탭 내 URL 변경 시 — 로드 완료 후 거래소 여부에 따라 사이드패널 활성화 상태 조정
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== 'complete') return;
-  if (!_cachedSettings?.autoOpenPanel) return;
-
-  const url = tab?.url || '';
-  if (url) _tabUrls[tabId] = url;
-  if (isTradeUrl(url)) {
-    chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
-    if (tab.active) {
-      chrome.sidePanel.open({ windowId: tab.windowId });
-    }
-  }
+  if (!tab?.id) return;
+  chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR' }).catch(() => {});
 });
 
 const DEFAULT_LEAGUE = 'Runes of Aldur';
@@ -219,23 +155,6 @@ function appendDebugLog(entry, sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'TRADE_PAGE_LOADED') {
-    // await 없이 캐시에서 즉시 확인 후 바로 open 호출
-    if (_cachedSettings?.autoOpenPanel) {
-      chrome.sidePanel.open({ windowId: sender.tab.windowId });
-    }
-    sendResponse({});
-    return true;
-  }
-
-  if (msg.type === 'TRADE_TAB_VISIBLE') {
-    if (_cachedSettings?.autoOpenPanel) {
-      chrome.sidePanel.open({ windowId: sender.tab.windowId });
-    }
-    sendResponse({});
-    return true;
-  }
-
   if (msg.type === 'SAVE_FILTER') {
     chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings'], (result) => {
       const league = getCurrentLeague(result);
@@ -337,21 +256,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(r => r.json())
       .then(data => sendResponse({ ok: true, data }))
       .catch(e => sendResponse({ ok: false, error: e.message }));
-    return true;
-  }
-
-  if (msg.type === 'AUTO_PANEL_CHANGED') {
-    // 설정이 꺼질 때 현재 탭의 sidePanel을 다시 활성화 (열린 패널은 유지)
-    if (!msg.enabled) {
-      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-        if (tabs && tabs[0]) {
-          try {
-            await chrome.sidePanel.setOptions({ tabId: tabs[0].id, enabled: true, path: 'sidepanel.html' });
-          } catch (e) {}
-        }
-      });
-    }
-    sendResponse({ ok: true });
     return true;
   }
 });
