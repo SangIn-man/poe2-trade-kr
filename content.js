@@ -1384,6 +1384,31 @@ function findManualStatMatches(query, entries) {
     .map(match => match.entry);
 }
 
+function countUniqueNativeStatMatches(phrase, entries) {
+  if (!phrase) return 0;
+  const unique = new Set();
+  (entries || []).forEach(entry => {
+    if (entry.normalized.includes(phrase)) unique.add(entry.normalized);
+  });
+  return unique.size;
+}
+
+function buildNativeStatFilterText(matches, entries) {
+  const top = matches?.[0];
+  if (!top) return '';
+  const words = top.normalized.split(' ').filter(Boolean);
+  if (!words.length) return top.text || '';
+
+  if ((matches || []).length === 1) return top.text || '';
+
+  for (let len = words.length - 1; len >= 1; len--) {
+    const phrase = words.slice(0, len).join(' ');
+    if (countUniqueNativeStatMatches(phrase, entries) >= 2) return phrase;
+  }
+
+  return words[0] || top.text || '';
+}
+
 const manualStatInputState = new WeakMap();
 let manualStatEnhanceTimer = null;
 
@@ -1466,12 +1491,13 @@ async function applyManualStatNativeFilter(state) {
   const entries = await ensureManualStatEntries();
   if (document.activeElement !== state.input) return;
 
-  const entry = findManualStatMatches(query, entries)[0];
-  if (!entry || normalizeManualStatSearchText(entry.text) === normalizedQuery) return;
+  const matches = findManualStatMatches(query, entries);
+  const filterText = buildNativeStatFilterText(matches, entries);
+  if (!filterText || normalizeManualStatSearchText(filterText) === normalizedQuery) return;
 
   state.applying = true;
-  state.lastAppliedQuery = entry.text;
-  dispatchManualStatInputEvents(state.input, entry.text);
+  state.lastAppliedQuery = filterText;
+  dispatchManualStatInputEvents(state.input, filterText);
   try {
     const len = state.input.value.length;
     if (typeof state.input.setSelectionRange === 'function') {
