@@ -84,6 +84,8 @@
     .btn-search-cur.loading { opacity:.7; cursor:default; }
     .btn-open-q { background:var(--blue-bg); border:1px solid #1a3a60; color:var(--blue); padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
     .btn-open-q:hover { background:#0c1e30; }
+    .btn-edit-q { background:#18140c; border:1px solid #4a3515; color:#c8a060; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
+    .btn-edit-q:hover { background:#22180c; border-color:#7a5520; }
 
     .card-detail { display:none; border-top:1px solid var(--border); }
     .filter-card.open .card-detail { display:block; }
@@ -178,8 +180,9 @@
     .stat-edit-list { display:flex; flex-direction:column; gap:4px; margin-top:4px; }
     .stat-edit-row { display:flex; align-items:center; gap:4px; background:#0a0908; border:1px solid var(--border); border-radius:4px; padding:4px 6px; }
     .stat-edit-label { flex:1; font-size:10px; color:#a09060; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .stat-edit-min { width:52px; background:#0f0e09; border:1px solid var(--border2); color:var(--green); padding:3px 5px; border-radius:3px; font-size:11px; font-family:inherit; text-align:center; }
-    .stat-edit-min:focus { outline:none; border-color:var(--green); }
+    .stat-edit-min,.stat-edit-max { width:52px; background:#0f0e09; border:1px solid var(--border2); color:var(--green); padding:3px 5px; border-radius:3px; font-size:11px; font-family:inherit; text-align:center; }
+    .stat-edit-max { color:#d0a860; }
+    .stat-edit-min:focus,.stat-edit-max:focus { outline:none; border-color:var(--green); }
     .stat-toggle { background:none; border:none; cursor:pointer; font-size:12px; padding:0 2px; opacity:.6; transition:opacity .15s; }
     .stat-toggle:hover { opacity:1; }
     .stat-toggle.off { opacity:.3; }
@@ -1007,11 +1010,11 @@
       <input type="text" id="eNote" placeholder="메모..."/>
     </div>
     <div class="fg">
-      <label>장비 조건 편집 <span style="color:#5a4a2a;font-size:9px">(최솟값 수정 · 토글로 활성/비활성)</span></label>
+      <label>장비 조건 편집 <span style="color:#5a4a2a;font-size:9px">(min / max 수정 · 토글로 활성/비활성)</span></label>
       <div class="stat-edit-list" id="equipEditList"></div>
     </div>
     <div class="fg">
-      <label>스탯 조건 편집 <span style="color:#5a4a2a;font-size:9px">(최솟값 수정 · 토글로 활성/비활성)</span></label>
+      <label>스탯 조건 편집 <span style="color:#5a4a2a;font-size:9px">(min / max 비우면 속성 존재만 검색)</span></label>
       <div class="stat-edit-list" id="statEditList"></div>
     </div>
     <div class="modal-btns">

@@ -767,11 +767,15 @@ function buildQuerySignature(filter) {
     areaLvlMin: Number(filter.areaLvlMin) || 0,
     equipment: (filter.equipment || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
+      .map(x => `${x.id}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}`)
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
+      .map(x => {
+        const min = numberOrNull(x.min);
+        const max = numberOrNull(x.max);
+        return x.noValue || (min == null && max == null) ? `${x.id}:flag` : `${x.id}:${min ?? ''}:${max ?? ''}`;
+      })
       .sort()
   });
 }
@@ -881,18 +885,27 @@ function normalizeSavedFilter(filter) {
   filter.equipment.forEach(e => {
     if (!e) return;
     if (e.active == null) e.active = true;
-    if (e.value != null && isFinite(Number(e.value))) e.min = roundFilterNumber(e.value);
+    if (e.max === undefined) e.max = null;
+    if (numberOrNull(e.min) == null && numberOrNull(e.max) == null && e.value != null && isFinite(Number(e.value))) {
+      e.min = roundFilterNumber(e.value);
+    }
   });
   filter.stats.forEach(s => {
     if (!s) return;
     if (s.active == null) s.active = true;
-    if (s.noValue == null) s.noValue = (s.value == null && !isFinite(Number(s.min)));
-    if (!s.noValue && s.value != null && isFinite(Number(s.value))) {
+    if (s.max === undefined) s.max = null;
+    const hasRange = numberOrNull(s.min) != null || numberOrNull(s.max) != null;
+    if (s.noValue !== true && !hasRange && s.value != null && isFinite(Number(s.value))) {
       // Preserve the sign for negative stats (감소 stats stored as negative values).
       const sign = Number(s.value) < 0 ? -1 : 1;
       s.min = sign * roundFilterNumber(s.value);
     }
-    if (s.noValue) s.min = null;
+    const hasRangeAfterValueFallback = numberOrNull(s.min) != null || numberOrNull(s.max) != null;
+    if (s.noValue == null) s.noValue = !hasRangeAfterValueFallback;
+    if (s.noValue) {
+      s.min = null;
+      s.max = null;
+    }
     // Migrate: if id is unknown but fallbackId is valid, promote fallbackId → id
     if (s.id && s.id.includes('unknown') && s.fallbackId && !s.fallbackId.includes('unknown')) {
       s.id = s.fallbackId;
@@ -1827,16 +1840,14 @@ function makeCard(f) {
   const equipmentRows = (f.equipment||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
-    const minVal = Number(s.min);
-    const hasMin = isFinite(minVal);
-    const maxVal = Number(s.max);
-    const hasMax = isFinite(maxVal);
-    const minHtml = hasMin
+    const minVal = numberOrNull(s.min);
+    const maxVal = numberOrNull(s.max);
+    const minHtml = minVal != null
       ? `<span class="equip-min-value" data-filter-id="${f.id}" data-equip-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>`
       : '';
-    const maxHtml = hasMax
+    const maxHtml = maxVal != null
       ? `<span class="stat-max-val">~${s.max}</span>`
-      : (hasMin ? '<span class="stat-max-val">~∞</span>' : '');
+      : '';
     return `<div class="stat-row-item" style="${active?'':'opacity:.4'}">
       <span class="stat-label-t">${esc(s.label)}</span>
       <span class="stat-vals">
@@ -1850,16 +1861,14 @@ function makeCard(f) {
   const statRows = (f.stats||[]).map((s, i) => {
     const active = s.active !== false;
     const origText = s.value != null ? `<span class="stat-orig">${s.value}</span>` : '';
-    const minVal = Number(s.min);
-    const hasMin = isFinite(minVal);
-    const maxVal = Number(s.max);
-    const hasMax = isFinite(maxVal);
-    const minHtml = s.noValue
-      ? `<span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="수치 없는 옵션">있음</span>`
-      : (hasMin ? `<span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>` : '');
-    const maxHtml = s.noValue
-      ? ''
-      : (hasMax ? `<span class="stat-max-val">~${s.max}</span>` : (hasMin ? '<span class="stat-max-val">~∞</span>' : ''));
+    const minVal = numberOrNull(s.min);
+    const maxVal = numberOrNull(s.max);
+    const minHtml = (!s.noValue && minVal != null)
+      ? `<span class="stat-min-value" data-filter-id="${f.id}" data-stat-idx="${i}" title="마우스 휠로 조정">${s.min}+</span>`
+      : '';
+    const maxHtml = (!s.noValue && maxVal != null)
+      ? `<span class="stat-max-val">~${s.max}</span>`
+      : '';
     const rawId = s.id || s.fallbackId || '';
     const prefixMatch = rawId.match(/^([^.]+)\./);
     const prefix = prefixMatch ? prefixMatch[1] : null;
@@ -1899,17 +1908,18 @@ function makeCard(f) {
       <button class="btn-search-q"   data-id="${f.id}">🔍 새창</button>
       <button class="btn-search-cur" data-id="${f.id}">🔗 현재창</button>
       <button class="btn-open-q"     data-id="${f.id}">🌐 KR거래소</button>
+      <button class="btn-edit-q"     data-id="${f.id}" title="필터 편집">✏️</button>
       ${allBuildsForMove.length > 0 ? `<select class="build-move-select" data-move-filter="${f.id}" title="빌드/탭으로 이동">${moveOptions}</select>` : ''}
     </div>
 
     <div class="card-detail">
       ${baseChips ? `<div class="base-info">${baseChips}</div>` : ''}
       ${equipmentRows ? `<div class="stat-table">
-        <div class="stat-table-title">장비 조건 (원본값 → 필터 최솟값)</div>
+        <div class="stat-table-title">장비 조건 (원본값 → min / max)</div>
         ${equipmentRows}
       </div>` : ''}
       ${statRows ? `<div class="stat-table">
-        <div class="stat-table-title">스탯 조건 (원본값 → 필터 최솟값)</div>
+        <div class="stat-table-title">스탯 조건 (원본값 → min / max)</div>
         ${statRows}
       </div>` : ''}
       <div id="result-${f.id}"></div>
@@ -1966,6 +1976,7 @@ function makeCard(f) {
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
   wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
+  wrap.querySelector('.btn-edit-q').addEventListener('click', e => { e.stopPropagation(); openModal(f.id); });
   wrap.querySelector('.btn-delete-small').addEventListener('click', e => { e.stopPropagation(); delFilter(f.id); });
   const moveSelect = wrap.querySelector('[data-move-filter]');
   if (moveSelect) {
@@ -2258,7 +2269,10 @@ function buildQuery(f) {
       else statValue.min = minVal;
     }
     if (maxVal != null) statValue.max = maxVal;
-    if (!Object.keys(statValue).length) return;
+    if (!Object.keys(statValue).length) {
+      statFilters.push({ id: effectiveId, disabled: false });
+      return;
+    }
     statFilters.push({ id: effectiveId, value: statValue, disabled: false });
   });
   if (statFilters.length) {
@@ -2288,12 +2302,12 @@ function applyFilterStatsToTradeQuery(query, filter) {
       const stat = statById.get(queryFilter?.id || '');
       if (!stat) return;
       queryFilter.disabled = stat.active === false;
-      if (stat.noValue) {
+      const minVal = numberOrNull(stat.min);
+      const maxVal = numberOrNull(stat.max);
+      if (stat.noValue || (minVal == null && maxVal == null)) {
         delete queryFilter.value;
         return;
       }
-      const minVal = numberOrNull(stat.min);
-      const maxVal = numberOrNull(stat.max);
       const value = {};
       if (minVal != null) {
         if (minVal < 0 && maxVal == null) value.max = minVal;
@@ -2487,7 +2501,8 @@ function openModal(id) {
     row.innerHTML = `
       <button class="stat-toggle ${active?'':'off'}" data-idx="${i}" title="활성/비활성">${active?'✅':'⬜'}</button>
       <span class="stat-edit-label" title="${esc(s.label)}">${esc(s.label)}</span>
-      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.min}" min="0" step="0.1" title="최솟값"/>
+      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.min ?? ''}" min="0" step="0.1" placeholder="min" title="최솟값"/>
+      <input type="number" class="stat-edit-max" data-idx="${i}" value="${s.max ?? ''}" min="0" step="0.1" placeholder="max" title="최댓값"/>
     `;
     row.querySelector('.stat-toggle').addEventListener('click', function() {
       const isOn = !this.classList.contains('off');
@@ -2522,7 +2537,8 @@ function openModal(id) {
       <button class="stat-toggle ${active?'':'off'}" data-idx="${i}" title="활성/비활성">${active?'✅':'⬜'}</button>
       <span class="stat-edit-label" title="${esc(s.label)}">${esc(s.label)}</span>
       ${badgeHtml}
-      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.noValue ? '' : (s.min ?? '')}" step="1" title="${s.noValue ? '수치 없는 옵션' : '최솟값 (감소 스탯은 음수)'}" ${s.noValue ? 'disabled placeholder="플래그"' : ''}/>
+      <input type="number" class="stat-edit-min" data-idx="${i}" value="${s.noValue ? '' : (s.min ?? '')}" step="1" placeholder="min" title="최솟값 (감소 스탯은 음수)"/>
+      <input type="number" class="stat-edit-max" data-idx="${i}" value="${s.noValue ? '' : (s.max ?? '')}" step="1" placeholder="max" title="최댓값"/>
     `;
     row.querySelector('.stat-toggle').addEventListener('click', function() {
       const isOn = !this.classList.contains('off');
@@ -2569,18 +2585,19 @@ function saveModal() {
     if (!f.equipment || !f.equipment[i]) return;
     const toggle = row.querySelector('.stat-toggle');
     f.equipment[i].active = !toggle.classList.contains('off');
-    f.equipment[i].min    = parseFloat(row.querySelector('.stat-edit-min').value)||0;
+    f.equipment[i].min = numberOrNull(row.querySelector('.stat-edit-min').value);
+    f.equipment[i].max = numberOrNull(row.querySelector('.stat-edit-max').value);
   });
 
   document.querySelectorAll('#statEditList .stat-edit-row').forEach((row, i) => {
     if (!f.stats[i]) return;
     const toggle = row.querySelector('.stat-toggle');
     f.stats[i].active = !toggle.classList.contains('off');
-    if (f.stats[i].noValue) {
-      f.stats[i].min = null;
-    } else {
-      f.stats[i].min = parseFloat(row.querySelector('.stat-edit-min').value)||0;
-    }
+    const minVal = numberOrNull(row.querySelector('.stat-edit-min').value);
+    const maxVal = numberOrNull(row.querySelector('.stat-edit-max').value);
+    f.stats[i].min = minVal;
+    f.stats[i].max = maxVal;
+    f.stats[i].noValue = minVal == null && maxVal == null;
 
     // Apply category badge prefix to the stat id
     const badge = row.querySelector('.cat-badge');

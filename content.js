@@ -2229,11 +2229,15 @@ function buildQuerySignature(filter) {
     areaLvlMin: Number(filter.areaLvlMin) || 0,
     equipment: (filter.equipment || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
+      .map(x => `${x.id}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}`)
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => x.noValue ? `${x.id}:flag` : `${x.id}:${Number(x.min) || 0}:${Number(x.max) || 0}`)
+      .map(x => {
+        const min = numberOrNull(x.min);
+        const max = numberOrNull(x.max);
+        return x.noValue || (min == null && max == null) ? `${x.id}:flag` : `${x.id}:${min ?? ''}:${max ?? ''}`;
+      })
       .sort()
   });
 }
