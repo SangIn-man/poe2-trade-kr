@@ -106,14 +106,29 @@ function ensureBuildState(league, filtersByLeague, buildsByLeague, buildUiByLeag
   return { buildsByLeague, buildUiByLeague, selectedBuild, activeTab, changed };
 }
 
-function inferTargetTabKey(filter) {
+function getFilterSearchText(filter) {
   const category = String(filter?.category || '').toLowerCase();
   const name = String(filter?.name || '').toLowerCase();
   const itemName = String(filter?.itemName || '').toLowerCase();
   const typeLine = String(filter?.typeLine || '').toLowerCase();
-  const haystack = `${category} ${name} ${itemName} ${typeLine}`;
+  const note = String(filter?.note || '').toLowerCase();
+  const stats = (filter?.stats || []).map(stat => [
+    stat?.label,
+    stat?.id,
+    stat?.fallbackId
+  ].filter(Boolean).join(' ')).join(' ');
+  const equipment = (filter?.equipment || []).map(entry => [
+    entry?.label,
+    entry?.id
+  ].filter(Boolean).join(' ')).join(' ');
+  return `${category} ${name} ${itemName} ${typeLine} ${note} ${stats} ${equipment}`.toLowerCase();
+}
 
-  if (/(tablet|slate|waystone|map|서판|지도)/i.test(haystack)) {
+function inferTargetTabKey(filter) {
+  const category = String(filter?.category || '').toLowerCase();
+  const haystack = getFilterSearchText(filter);
+
+  if (/(tablet|slate|waystone|map|ritual|abyss|expedition|sanctum|breach|delirium|서판|지도|의식|심연|탐험|사원|균열|환영)/i.test(haystack)) {
     return 'slate';
   }
 

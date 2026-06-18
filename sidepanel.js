@@ -595,17 +595,54 @@ const JEWEL_SUB_TYPES = [
   { key: 'phantom', label: '환영' },
 ];
 
+function getFilterSearchText(f) {
+  const stats = (f?.stats || []).map(stat => [
+    stat?.label,
+    stat?.id,
+    stat?.fallbackId
+  ].filter(Boolean).join(' ')).join(' ');
+  const equipment = (f?.equipment || []).map(entry => [
+    entry?.label,
+    entry?.id
+  ].filter(Boolean).join(' ')).join(' ');
+  return [
+    f?.category,
+    f?.typeLine,
+    f?.name,
+    f?.itemName,
+    f?.note,
+    stats,
+    equipment
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
 function getJewelSubType(f) {
-  const s = ((f.category || '') + ' ' + (f.typeLine || '') + ' ' + (f.name || '') + ' ' + (f.itemName || '')).toLowerCase();
-  if (s.includes('timeless') || s.includes('의식')) return 'timeless';
+  const s = getFilterSearchText(f);
+  if (s.includes('timeless') || s.includes('ritual') || s.includes('의식')) return 'timeless';
   if (s.includes('abyss') || s.includes('심연')) return 'abyss';
   if (s.includes('tainted') || s.includes('방사능')) return 'tainted';
   if (s.includes('warden') || s.includes('감독관')) return 'warden';
   if (s.includes('expedition') || s.includes('탐험')) return 'expedition';
   if (s.includes('sanctum') || s.includes('사원')) return 'sanctum';
-  if (s.includes('fractured')||s.includes('균열')) return 'fractured';
-  if (s.includes('phantom')||s.includes('환영')) return 'phantom';
+  if (s.includes('fractured') || s.includes('breach') || s.includes('균열')) return 'fractured';
+  if (s.includes('phantom') || s.includes('delirium') || s.includes('환영')) return 'phantom';
   return 'base';
+}
+
+function getPreferredMandatoryTabKey(f) {
+  const category = String(f?.category || '').toLowerCase();
+  const s = getFilterSearchText(f);
+  if (/(tablet|slate|waystone|map|ritual|abyss|expedition|sanctum|breach|delirium|서판|지도|의식|심연|탐험|사원|균열|환영)/i.test(s)) {
+    return 'slate';
+  }
+  if (
+    /^(weapon|armour|accessory)\./.test(category)
+    || /^(jewel|flask)$/.test(category)
+    || /(helmet|gloves|boots|belt|ring|amulet|quiver|shield|focus|buckler|wand|sceptre|spear|flail|claw|dagger|sword|axe|mace|staff|crossbow|활|반지|목걸이|장갑|투구|장화|갑옷|방패|주얼|플라스크)/i.test(s)
+  ) {
+    return 'equipment';
+  }
+  return '';
 }
 
 const getCurrentFilters = () => filtersByLeague[settings.league] || [];
@@ -735,6 +772,29 @@ function ensureBuildDataForLeague(league) {
       assigned.add(filterId);
       changed = true;
     }
+  });
+
+  const filterById = new Map(filters.map(filter => [String(filter.id), filter]));
+  builds.forEach(build => {
+    const mandatoryTabs = new Map(
+      build.tabs
+        .filter(tab => tab.key === 'equipment' || tab.key === 'slate')
+        .map(tab => [tab.key, tab])
+    );
+    mandatoryTabs.forEach((tab, tabKey) => {
+      [...(tab.filterIds || [])].forEach(filterId => {
+        const filter = filterById.get(String(filterId));
+        const preferredKey = getPreferredMandatoryTabKey(filter);
+        if (!preferredKey || preferredKey === tabKey) return;
+        const targetTab = mandatoryTabs.get(preferredKey);
+        if (!targetTab) return;
+        tab.filterIds = tab.filterIds.filter(id => String(id) !== String(filterId));
+        if (!targetTab.filterIds.some(id => String(id) === String(filterId))) {
+          targetTab.filterIds.push(String(filterId));
+        }
+        changed = true;
+      });
+    });
   });
 
   if (!ui.selectedBuildId || !builds.some(build => build.id === ui.selectedBuildId)) {
