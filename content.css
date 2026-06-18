@@ -218,12 +218,6 @@
   position: relative !important;
 }
 
-body.poe2tq-stat-suggest-active .multiselect__content-wrapper:not(.poe2tq-native-stat-wrapper) {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
 .poe2tq-native-stat-wrapper {
   position: fixed !important;
   top: 0;

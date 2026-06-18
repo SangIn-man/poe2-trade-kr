@@ -8,7 +8,8 @@ const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location
 const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v1';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
-const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit']);
+const MANUAL_STAT_SEARCH_GROUPS = null;
+const MANUAL_STAT_SEARCH_EXCLUDED_GROUPS = new Set(['pseudo']);
 const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 
 // ─── tracked rows ─────────────────────────────────────
@@ -511,9 +512,10 @@ function buildTradeStatIdMapFromParsed(parsed) {
   (parsed?.result || []).forEach(group => {
     (group.entries || []).forEach(entry => {
       if (!entry?.id) return;
+      const text = statTextToPlainLine(entry.text || entry.id);
       map.set(entry.id, {
         id: entry.id,
-        text: entry.text || entry.id,
+        text,
         type: entry.type || group.id || '',
         groupId: group.id || '',
         groupLabel: group.label || group.id || ''
@@ -1288,6 +1290,18 @@ function stripTags(text) {
   return String(text || '').replace(/<[^>]*>/g, '').trim();
 }
 
+function statTextToPlainLine(text) {
+  return String(text || '')
+    .replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2')
+    .replace(/\[([^\]|]+)\]/g, '$1')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(?:div|p|li|span)>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseFirstNumber(text) {
   const m = stripTags(text).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
   return m ? Number(m[0]) : NaN;
@@ -1389,9 +1403,7 @@ let cachedManualStatEntries = null;
 let cachedManualStatEntriesPromise = null;
 
 function normalizeStatText(text) {
-  return stripTags(text)
-    .replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2')
-    .replace(/\[([^\]|]+)\]/g, '$1')
+  return statTextToPlainLine(text)
     .replace(/,/g, '')
     .replace(/([+-]?\d+(?:\.\d+)?)\s*(?:to|~|-)\s*([+-]?\d+(?:\.\d+)?)/gi, '#~#')
     .replace(/[+-]?\d+(?:\.\d+)?/g, '#')
@@ -1405,10 +1417,12 @@ function flattenTradeStatEntries(groups, out) {
   (groups || []).forEach(group => {
     (group.entries || []).forEach(entry => {
       if (!entry?.id || !entry?.text) return;
+      const text = statTextToPlainLine(entry.text);
+      if (!text) return;
       out.push({
         id: entry.id,
-        text: entry.text,
-        normalized: normalizeStatText(entry.text)
+        text,
+        normalized: normalizeStatText(text)
       });
     });
   });
@@ -1526,9 +1540,7 @@ function resolveTradeStatId(label, category, fallbackId) {
 }
 
 function normalizeManualStatSearchText(text) {
-  return stripTags(text)
-    .replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2')
-    .replace(/\[([^\]|]+)\]/g, '$1')
+  return statTextToPlainLine(text)
     .replace(/[+#%~(),./\\[\]{}:;'"!?<>|=*_`-]+/g, ' ')
     .replace(/\d+(?:\.\d+)?/g, ' ')
     .replace(/\s+/g, ' ')
@@ -1546,15 +1558,18 @@ function tokenizeManualStatSearch(text) {
 function flattenManualStatEntries(parsed) {
   const entries = [];
   (parsed?.result || []).forEach(group => {
-    if (!MANUAL_STAT_SEARCH_GROUPS.has(group?.id)) return;
+    if (MANUAL_STAT_SEARCH_GROUPS && !MANUAL_STAT_SEARCH_GROUPS.has(group?.id)) return;
+    if (MANUAL_STAT_SEARCH_EXCLUDED_GROUPS.has(group?.id)) return;
     (group.entries || []).forEach(entry => {
       if (!entry?.id || !entry?.text) return;
-      const normalized = normalizeManualStatSearchText(entry.text);
-      const tokens = tokenizeManualStatSearch(entry.text);
+      const text = statTextToPlainLine(entry.text);
+      const normalized = normalizeManualStatSearchText(text);
+      const tokens = tokenizeManualStatSearch(text);
       if (!normalized || !tokens.length) return;
       entries.push({
         id: entry.id,
-        text: entry.text,
+        text,
+        rawText: entry.text,
         type: entry.type || group.id || '',
         groupId: group.id || '',
         groupLabel: group.label || group.id || '',
@@ -1743,14 +1758,8 @@ function getManualStatRoot(input) {
 }
 
 function hideNativeManualStatDropdowns(state) {
-  const root = getManualStatRoot(state.input);
   restoreNativeManualStatDropdowns(state);
   state.hiddenNativeDropdowns = [];
-  root.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"]').forEach(el => {
-    if (el.classList.contains('poe2tq-native-stat-wrapper')) return;
-    state.hiddenNativeDropdowns.push({ el, display: el.style.display });
-    el.style.display = 'none';
-  });
 }
 
 function restoreNativeManualStatDropdowns(state) {
@@ -1770,11 +1779,56 @@ function getManualStatDropdown(state) {
   return dropdown;
 }
 
+function findVisibleNativeManualStatDropdown(input) {
+  const inputRect = input.getBoundingClientRect();
+  const containers = [
+    getManualStatRoot(input),
+    ...Array.from(document.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"], .multiselect'))
+  ];
+  let best = null;
+  containers.forEach(container => {
+    if (!container || container.closest?.('.poe2tq-native-stat-wrapper')) return;
+    const candidates = container.matches?.('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"]')
+      ? [container]
+      : Array.from(container.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"]'));
+    candidates.forEach(el => {
+      if (!isVisibleElement(el) || el.closest('.poe2tq-native-stat-wrapper')) return;
+      const rect = el.getBoundingClientRect();
+      const overlapsInputX = rect.right >= inputRect.left - 20 && rect.left <= inputRect.right + 20;
+      const isBelowInput = rect.bottom >= inputRect.bottom && rect.top <= inputRect.bottom + 220;
+      if (!overlapsInputX || !isBelowInput) return;
+      if (!best || rect.height > best.rect.height) best = { el, rect };
+    });
+  });
+  return best?.el || null;
+}
+
 function positionManualStatDropdown(state, dropdown) {
   const rect = state.input.getBoundingClientRect();
-  const width = Math.max(280, Math.min(640, rect.width || 320));
-  dropdown.style.left = `${Math.max(8, rect.left)}px`;
-  dropdown.style.top = `${Math.max(8, rect.bottom + 2)}px`;
+  const gap = 8;
+  let width = Math.max(280, Math.min(520, rect.width || 320));
+  let left = rect.left;
+  let top = rect.bottom + 2;
+  const rightSpace = window.innerWidth - rect.right - gap - 8;
+  const nativeDropdown = findVisibleNativeManualStatDropdown(state.input);
+  const nativeRect = nativeDropdown?.getBoundingClientRect();
+  const canUseRightSide = rightSpace >= 280 && (!nativeRect || nativeRect.right <= rect.right + 4);
+  if (canUseRightSide) {
+    width = Math.min(420, rightSpace);
+    left = rect.right + gap;
+    top = rect.top;
+  } else {
+    if (nativeRect) {
+      top = nativeRect.bottom + 4;
+    } else {
+      top = rect.bottom + 170;
+    }
+    width = Math.min(width, window.innerWidth - 16);
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  }
+  const maxTop = Math.max(8, window.innerHeight - 120);
+  dropdown.style.left = `${Math.max(8, left)}px`;
+  dropdown.style.top = `${Math.max(8, Math.min(top, maxTop))}px`;
   dropdown.style.width = `${width}px`;
 }
 
@@ -1823,6 +1877,9 @@ function renderManualStatDropdown(state) {
 
   dropdown.appendChild(list);
   dropdown.style.display = 'block';
+  setTimeout(() => {
+    if (state.dropdown) positionManualStatDropdown(state, state.dropdown);
+  }, 50);
 }
 
 function hideManualStatDropdown(state) {
@@ -1960,32 +2017,48 @@ function dispatchManualStatEnter(input) {
   dispatchManualStatKey(input, 'Enter', 'Enter', 13);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getManualStatInputVariants(entry) {
+  const variants = [];
+  const add = value => {
+    const text = statTextToPlainLine(value);
+    if (text && !variants.includes(text)) variants.push(text);
+  };
+  add(entry?.text);
+  add(entry?.rawText);
+  if (entry?.normalized) add(entry.normalized);
+  return variants;
+}
+
 async function selectManualStatMatch(state, entry) {
   if (!entry) return;
   state.selecting = true;
   hideManualStatDropdown(state);
-  dispatchManualStatInputEvents(state.input, entry.text);
+  let selected = false;
 
   try {
-    const option = await waitForNativeManualStatOption(state.input, entry);
-    if (option) {
-      clickNativeManualStatOption(option);
-      setTimeout(() => {
-        const inputText = normalizeManualStatSearchText(state.input.value || '');
-        const entryText = normalizeManualStatSearchText(entry.text || '');
-        if (inputText && entryText && inputText.includes(entryText)) {
-          dispatchManualStatEnter(state.input);
-        }
-      }, 80);
-    } else {
-      dispatchManualStatEnter(state.input);
+    const variants = getManualStatInputVariants(entry);
+    for (const text of variants) {
+      dispatchManualStatInputEvents(state.input, text);
+      await sleep(70);
+      const option = await waitForNativeManualStatOption(state.input, entry, 320);
+      if (!option) continue;
+      selected = clickNativeManualStatOption(option);
+      if (selected) break;
     }
   } catch {
-    dispatchManualStatEnter(state.input);
+    selected = false;
   } finally {
+    if (!selected) {
+      dispatchManualStatInputEvents(state.input, entry.text || entry.rawText || '');
+      showToast('거래소 후보를 자동 선택하지 못했습니다. 원래 목록에서 선택해 주세요.', 'warn');
+    }
     setTimeout(() => {
       state.selecting = false;
-    }, 80);
+    }, 120);
   }
 }
 
