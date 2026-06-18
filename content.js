@@ -511,6 +511,14 @@ function numberOrNull(value) {
   return isFinite(num) ? num : null;
 }
 
+function cloneJsonSafe(value) {
+  try {
+    return value == null ? null : JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
+}
+
 function buildTradeStatIdMapFromParsed(parsed) {
   const map = new Map();
   (parsed?.result || []).forEach(group => {
@@ -649,6 +657,8 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
     tradeStatusOption: query.status?.option || '',
     tradeSaleTypeActive: hasQueryFilter(queryFilters, 'trade_filters', 'sale_type'),
     tradeSaleTypeOption: getFirstFilterValue(queryFilters, 'trade_filters', 'sale_type'),
+    tradeQueryId: queryId,
+    tradeQueryTemplate: cloneJsonSafe(query),
     equipment,
     stats,
     note: `거래소 검색조건에서 저장 (${league}, ${queryId})`,
@@ -2186,6 +2196,7 @@ function buildQuerySignature(filter) {
     tradeStatusOption: filter.tradeStatusOption || '',
     tradeSaleTypeActive: filter.tradeSaleTypeActive === false ? false : true,
     tradeSaleTypeOption: filter.tradeSaleTypeOption || '',
+    tradeQueryTemplateHash: filter.tradeQueryTemplate ? simpleHash(JSON.stringify(filter.tradeQueryTemplate)) : '',
     ilvlMin: Number(filter.ilvlMin) || 0,
     ilvlMax: Number(filter.ilvlMax) || 0,
     areaLvlMin: Number(filter.areaLvlMin) || 0,

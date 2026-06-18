@@ -761,6 +761,7 @@ function buildQuerySignature(filter) {
     tradeStatusOption: filter.tradeStatusOption || '',
     tradeSaleTypeActive: filter.tradeSaleTypeActive === false ? false : true,
     tradeSaleTypeOption: filter.tradeSaleTypeOption || '',
+    tradeQueryTemplateHash: filter.tradeQueryTemplate ? simpleHash(JSON.stringify(filter.tradeQueryTemplate)) : '',
     ilvlMin: Number(filter.ilvlMin) || 0,
     ilvlMax: Number(filter.ilvlMax) || 0,
     areaLvlMin: Number(filter.areaLvlMin) || 0,
@@ -783,6 +784,14 @@ function roundFilterNumber(value) {
   const num = Number(value);
   if (!isFinite(num)) return 0;
   return Math.abs(num) % 1 === 0 ? Math.abs(num) : Number(Math.abs(num).toFixed(2));
+}
+
+function cloneJsonSafe(value) {
+  try {
+    return value == null ? null : JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
 }
 
 function normalizeSavedFilter(filter) {
@@ -2017,18 +2026,20 @@ async function doSearch(id, openInNew = true) {
   if (btnCur) { btnCur.classList.add('loading'); btnCur.disabled = true; btnCur.innerHTML = '<span class="spin"></span>'; }
 
   try {
+    await hydrateTradeQueryTemplate(f);
+    const searchLeague = f.league || settings.league;
     const query = buildQuery(f);
     chrome.runtime.sendMessage({
       type: 'APPEND_DEBUG_LOG',
       entry: {
         kind: 'search',
-        league: settings.league,
+        league: searchLeague,
         filterId: f.id,
         filterName: f.name,
         query
       }
     }).catch(() => {});
-    const res = await fetch(KR_API_SEARCH(encodeURIComponent(settings.league)), {
+    const res = await fetch(KR_API_SEARCH(encodeURIComponent(searchLeague)), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(query)
@@ -2056,7 +2067,7 @@ async function doSearch(id, openInNew = true) {
           type: 'APPEND_DEBUG_LOG',
           entry: {
             kind: 'search-eval-error',
-            league: settings.league,
+            league: searchLeague,
             filterId: f.id,
             filterName: f.name,
             queryId: sData.id,
@@ -2065,7 +2076,7 @@ async function doSearch(id, openInNew = true) {
         }).catch(() => {});
       }
     }
-    const url = `${KR_TRADE_BASE}/${encodeURIComponent(settings.league)}/${sData.id}`;
+    const url = `${KR_TRADE_BASE}/${encodeURIComponent(searchLeague)}/${sData.id}`;
     if (openInNew) {
       console.log('[POE2TQ] tabs.create url:', url);
       chrome.tabs.create({ url });
@@ -2092,6 +2103,9 @@ async function doSearch(id, openInNew = true) {
 }
 
 function buildQuery(f) {
+  const templateQuery = buildQueryFromTradeTemplate(f);
+  if (templateQuery) return templateQuery;
+
   const statusOption = f.tradeStatusOption || 'securable';
   const q = { query:{ status:{ option: statusOption }, filters:{}, stats:[{type:'and',filters:[]}] }, sort:{price:'asc'} };
   const tf = {};
@@ -2159,6 +2173,98 @@ function buildQuery(f) {
     q.query.stats[0].filters = statFilters;
   }
   return q;
+}
+
+function buildQueryFromTradeTemplate(f) {
+  const query = cloneJsonSafe(f.tradeQueryTemplate);
+  if (!query || typeof query !== 'object') return null;
+  applyFilterStatsToTradeQuery(query, f);
+  applyFilterEquipmentToTradeQuery(query, f);
+  return { query, sort: { price: 'asc' } };
+}
+
+function applyFilterStatsToTradeQuery(query, filter) {
+  const statById = new Map();
+  (filter.stats || []).forEach(stat => {
+    [stat.id, stat.fallbackId].forEach(id => {
+      if (id && !String(id).includes('unknown')) statById.set(id, stat);
+    });
+  });
+
+  (query.stats || []).forEach(group => {
+    (group.filters || []).forEach(queryFilter => {
+      const stat = statById.get(queryFilter?.id || '');
+      if (!stat) return;
+      queryFilter.disabled = stat.active === false;
+      if (stat.noValue) {
+        delete queryFilter.value;
+        return;
+      }
+      const minVal = Number(stat.min);
+      const maxVal = Number(stat.max);
+      const value = {};
+      if (isFinite(minVal)) {
+        if (minVal < 0 && !isFinite(maxVal)) value.max = minVal;
+        else value.min = minVal;
+      }
+      if (isFinite(maxVal)) value.max = maxVal;
+      if (Object.keys(value).length) queryFilter.value = value;
+    });
+  });
+}
+
+function applyFilterEquipmentToTradeQuery(query, filter) {
+  const equipmentById = new Map();
+  (filter.equipment || []).forEach(entry => {
+    if (entry?.id) equipmentById.set(entry.id, entry);
+  });
+
+  const equipmentFilters = query.filters?.equipment_filters?.filters || {};
+  Object.keys(equipmentFilters).forEach(id => {
+    const entry = equipmentById.get(id);
+    if (!entry) return;
+    const minVal = Number(entry.min);
+    const maxVal = Number(entry.max);
+    const value = {};
+    if (isFinite(minVal) && minVal > 0) value.min = minVal;
+    if (isFinite(maxVal) && maxVal > 0) value.max = maxVal;
+    if (Object.keys(value).length) {
+      equipmentFilters[id] = value;
+    }
+  });
+}
+
+function parseSavedTradeQueryInfo(filter) {
+  const note = String(filter?.note || '');
+  const m = note.match(/거래소 검색조건에서 저장\s*\((.*),\s*([^)]+)\)/);
+  return {
+    league: filter?.league || (m ? m[1].trim() : settings.league),
+    queryId: filter?.tradeQueryId || (m ? m[2].trim() : '')
+  };
+}
+
+async function hydrateTradeQueryTemplate(filter) {
+  if (filter?.tradeQueryTemplate && typeof filter.tradeQueryTemplate === 'object') return false;
+  const info = parseSavedTradeQueryInfo(filter);
+  if (!info.queryId || !info.league) return false;
+
+  const url = `${KR_API_BASE}/search/poe2/${encodeURIComponent(info.league)}/${encodeURIComponent(info.queryId)}`;
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) return false;
+  const payload = await res.json();
+  const query = payload?.query;
+  if (!query || typeof query !== 'object') return false;
+
+  const queryFilters = query.filters || {};
+  filter.tradeQueryId = info.queryId;
+  filter.league = info.league;
+  filter.tradeQueryTemplate = cloneJsonSafe(query);
+  filter.tradeStatusOption = query.status?.option || filter.tradeStatusOption || '';
+  filter.tradeSaleTypeActive = !!queryFilters.trade_filters?.filters?.sale_type;
+  filter.tradeSaleTypeOption = queryFilters.trade_filters?.filters?.sale_type?.option || '';
+  updateFilterSourceHash(filter);
+  await persist();
+  return true;
 }
 
 function openKR(id) {
