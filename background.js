@@ -10,12 +10,6 @@ function isTradeUrl(url) {
   );
 }
 
-// 마지막으로 활성화된 거래소 탭 ID 추적 (패널 상태 완전 제거용)
-let _lastTradeTabId = null;
-
-// non-trade 탭 전환 시 CLOSE_SIDE_PANEL 딜레이 타이머 (거래소 탭으로 빠르게 복귀할 때 취소용)
-let _closePanelTimeout = null;
-
 // 탭 URL 메모리 캐시 (onActivated에서 비동기 콜백 없이 즉시 URL 확인용)
 // chrome.tabs.get() 콜백은 비동기라 user gesture context가 소멸 → sidePanel.open() 실패
 // 미리 URL을 캐싱해두면 onActivated에서 동기적으로 즉시 확인 가능
@@ -41,8 +35,9 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
-// 탭 전환 시 — _tabUrls 캐시에서 즉시 URL 확인해 gesture context를 유지한 채 사이드패널 열기/닫기
-// (비동기 chrome.tabs.get 콜백 제거 → gesture context 유지 → sidePanel.open() 정상 동작)
+// 탭 전환 시 — _tabUrls 캐시에서 즉시 URL 확인해 gesture context를 유지한 채 사이드패널 콘텐츠 표시/숨김
+// 패널을 완전히 닫는 대신 콘텐츠를 숨기는 방식으로 Edge/Whale 호환성 확보
+// (sidePanel.open()은 Chrome에서만 탭 전환 이벤트를 user gesture로 인정하므로 재열기가 불가한 브라우저 대응)
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
   console.log('[AutoPanel] onActivated 진입, tabId:', tabId, 'windowId:', windowId);
   console.log('[AutoPanel] onActivated - autoOpenPanel:', _cachedSettings?.autoOpenPanel);
@@ -53,21 +48,13 @@ chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
 
   if (isTradeUrl(url)) {
     console.log('[AutoPanel] onActivated - 거래소 탭, sidePanel.open 호출, tabId:', tabId);
-    _lastTradeTabId = tabId;
-    if (_closePanelTimeout) {
-      clearTimeout(_closePanelTimeout);
-      _closePanelTimeout = null;
-    }
-    chrome.sidePanel.open({ windowId });
+    chrome.sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' });
+    chrome.sidePanel.open({ windowId }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'SHOW_PANEL_CONTENT' }).catch(() => {});
   } else {
     console.log('[AutoPanel] non-trade 탭 전환 - setOptions enabled:false 호출, tabId:', tabId);
     chrome.sidePanel.setOptions({ tabId, enabled: false });
-
-    // 패널이 완전히 로드된 후 닫히도록 딜레이 추가 (거래소 탭으로 빠르게 복귀하면 취소됨)
-    _closePanelTimeout = setTimeout(() => {
-      _closePanelTimeout = null;
-      chrome.runtime.sendMessage({ type: 'CLOSE_SIDE_PANEL' }).catch(() => {});
-    }, 300);
+    chrome.runtime.sendMessage({ type: 'HIDE_PANEL_CONTENT' }).catch(() => {});
   }
 });
 

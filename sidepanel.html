@@ -842,6 +842,20 @@
     .import-modal-box h3 { margin: 0; color: #d4b483; font-size: 14px; }
     .import-file-info { color: #9a9a9a; font-size: 12px; margin: 0; }
     .import-modal-btns { display: flex; flex-direction: column; gap: 8px; }
+    body.panel-hidden .layout {
+      display: none;
+    }
+    body.panel-hidden {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    body.panel-hidden::after {
+      content: '거래소 탭에서 패널이 활성화됩니다';
+      color: #888;
+      font-size: 13px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
