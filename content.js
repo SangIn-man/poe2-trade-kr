@@ -1706,7 +1706,7 @@ function getManualStatInputContext(input) {
     input.id, input.name, input.className, input.placeholder,
     input.getAttribute('aria-label'), input.getAttribute('autocomplete')
   ].join(' ').toLowerCase();
-  const region = input.closest('[class*="stat"], [class*="filter"], [class*="mod"], [class*="multi"], [class*="select"], section, form, fieldset, div');
+  const region = input.closest('[class*="stat"], [class*="mod"], [class*="affix"], [class*="multi"], [class*="select"], [class*="filter"], section, fieldset, div');
   const regionClass = (region?.className || '').toLowerCase();
   const regionText = normalizeSpace((region?.textContent || '').slice(0, 400)).toLowerCase();
   return {
@@ -1716,22 +1716,63 @@ function getManualStatInputContext(input) {
   };
 }
 
+function getManualStatAncestorContexts(input) {
+  const contexts = [];
+  let el = input;
+  for (let depth = 0; el && el !== document.body && depth < 10; depth++, el = el.parentElement) {
+    const className = typeof el.className === 'string' ? el.className : '';
+    const attrs = [
+      el.id,
+      className,
+      el.getAttribute?.('data-field'),
+      el.getAttribute?.('data-filter'),
+      el.getAttribute?.('data-filter-group'),
+      el.getAttribute?.('data-group'),
+      el.getAttribute?.('aria-label')
+    ].join(' ');
+    const text = normalizeSpace((el.textContent || '').slice(0, 700));
+    contexts.push({
+      depth,
+      all: `${attrs} ${text}`.toLowerCase()
+    });
+  }
+  return contexts;
+}
+
+function isManualStatContext(input) {
+  const attrs = [
+    input.id, input.name, input.className, input.placeholder,
+    input.getAttribute('aria-label'), input.getAttribute('autocomplete')
+  ].join(' ').toLowerCase();
+
+  if (/(league|리그|account|계정|price|가격|item name|name|이름|base type|item type|아이템 유형|아이템 종류|분류)/i.test(attrs)) {
+    return false;
+  }
+
+  const statHint = /(?:^|[\s_.-])(stats?|mods?|affix|pseudo|explicit|implicit|enchant|rune)(?:$|[\s_.-])|stat[_ .-]?filters?|filter[_ .-]?stats?|속성|스탯|능력치|비고정|고정|인챈트/i;
+  const nonStatHint = /(type[_ -]?filters?|item[_ -]?filters?|item type|base type|equipment[_ -]?filters?|weapon[_ -]?filters?|armou?r[_ -]?filters?|misc[_ -]?filters?|trade[_ -]?filters?|socket|sockets|requirement|requirements|rarity|category|league|account|price|sale|아이템 필터|아이템 유형|아이템 종류|아이템 분류|분류|장비 필터|무기 필터|방어구 필터|기타 필터|거래 필터|소켓|요구|희귀도|가격|판매|리그|계정|이름)/i;
+  const contexts = getManualStatAncestorContexts(input);
+  let nearestStatDepth = Infinity;
+  let nearestNonStatDepth = Infinity;
+
+  contexts.forEach(ctx => {
+    if (nearestStatDepth === Infinity && statHint.test(ctx.all)) nearestStatDepth = ctx.depth;
+    if (nearestNonStatDepth === Infinity && nonStatHint.test(ctx.all)) nearestNonStatDepth = ctx.depth;
+  });
+
+  return nearestStatDepth !== Infinity && (nearestNonStatDepth === Infinity || nearestStatDepth < nearestNonStatDepth);
+}
+
 function isLikelyManualStatInput(input) {
   if (!isTextLikeInput(input) || input.closest('#poe2-qs-sidebar-host')) return false;
   if (!isVisibleElement(input)) return false;
 
   const context = getManualStatInputContext(input);
-  if (/(league|리그|account|계정|price|가격|item name|name|이름|base type|분류)/i.test(context.attrs)) {
+  if (/(league|리그|account|계정|price|가격|item name|name|이름|base type|item type|아이템 유형|아이템 종류|분류)/i.test(context.attrs)) {
     return false;
   }
 
-  if (/(stat|stats|mod|mods|affix|속성|스탯|능력치|필터|filter)/i.test(context.all)) {
-    if (!/(type filters?|아이템 필터|장비 필터)/i.test(context.region)) {
-      return true;
-    }
-  }
-
-  return /(multiselect__input|select2-search__field|search-field|filter-input)/i.test(input.className || '');
+  return isManualStatContext(input);
 }
 
 function enhanceManualStatSearchInputs() {
@@ -1773,6 +1814,10 @@ function scheduleManualStatNativeFilter(state) {
 
 async function applyManualStatNativeFilter(state) {
   if (state.selecting) return;
+  if (!isLikelyManualStatInput(state.input)) {
+    hideManualStatDropdown(state);
+    return;
+  }
   const query = state.input.value || '';
   const normalizedQuery = normalizeManualStatSearchText(query);
   const queryTokens = tokenizeManualStatSearch(query);
