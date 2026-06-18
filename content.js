@@ -1635,8 +1635,8 @@ function simpleHash(str) {
   const HOST_ID = 'poe2-qs-sidebar-host';
   const STORAGE_KEY = 'sidebarUI';
   const MIN_WIDTH = 300;
-  const MAX_WIDTH = 700;
-  const DEFAULT_WIDTH = 400;
+  const MAX_WIDTH = 760;
+  const DEFAULT_WIDTH = 460;
   const HANDLE_WIDTH = 32;
 
   // 중복 주입 방지
