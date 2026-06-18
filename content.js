@@ -1466,6 +1466,7 @@ function bindManualStatSearchInput(input) {
     selecting: false,
     matches: [],
     selectedIndex: 0,
+    activeQuery: '',
     dropdown: null,
     hiddenNativeDropdowns: []
   };
@@ -1499,8 +1500,14 @@ async function applyManualStatNativeFilter(state) {
   const entries = await ensureManualStatEntries();
   if (document.activeElement !== state.input) return;
 
+  if (state.dropdown && state.activeQuery === normalizedQuery) {
+    positionManualStatDropdown(state, state.dropdown);
+    return;
+  }
+
   state.matches = findManualStatMatches(query, entries);
   state.selectedIndex = 0;
+  state.activeQuery = normalizedQuery;
   if (!state.matches.length) {
     hideManualStatDropdown(state);
     return;
@@ -1584,7 +1591,6 @@ function renderManualStatDropdown(state) {
 
     option.appendChild(text);
     option.appendChild(meta);
-    option.addEventListener('mouseenter', () => setManualStatSelectedIndex(state, index));
     option.addEventListener('mousedown', event => event.preventDefault());
     option.addEventListener('click', event => {
       event.preventDefault();
@@ -1608,6 +1614,7 @@ function hideManualStatDropdown(state) {
   restoreNativeManualStatDropdowns(state);
   state.matches = [];
   state.selectedIndex = 0;
+  state.activeQuery = '';
 }
 
 function setManualStatSelectedIndex(state, index) {
@@ -1630,20 +1637,24 @@ function handleManualStatKeydown(event, state) {
   if (event.key === 'ArrowDown') {
     event.preventDefault();
     event.stopPropagation();
+    clearTimeout(state.filterTimer);
     setManualStatSelectedIndex(state, state.selectedIndex + 1);
   } else if (event.key === 'ArrowUp') {
     event.preventDefault();
     event.stopPropagation();
+    clearTimeout(state.filterTimer);
     setManualStatSelectedIndex(state, state.selectedIndex - 1);
   } else if (event.key === 'Enter' || event.key === 'Tab') {
     const entry = state.matches[state.selectedIndex];
     if (!entry) return;
     event.preventDefault();
     event.stopPropagation();
+    clearTimeout(state.filterTimer);
     selectManualStatMatch(state, entry);
   } else if (event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
+    clearTimeout(state.filterTimer);
     hideManualStatDropdown(state);
   }
 }
@@ -1676,9 +1687,12 @@ function findNativeManualStatOption(input, entry) {
 
 function clickNativeManualStatOption(option) {
   if (!option) return false;
+  option.focus?.();
   option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
   option.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+  option.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', view: window }));
   option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+  option.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'mouse', view: window }));
   option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
   option.click();
   return true;
@@ -1703,11 +1717,27 @@ function waitForNativeManualStatOption(input, entry, timeoutMs = 900) {
   });
 }
 
+function dispatchManualStatKey(input, key, code, keyCode) {
+  ['keydown', 'keyup'].forEach(type => {
+    const event = new KeyboardEvent(type, {
+      key,
+      code,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+    try {
+      Object.defineProperty(event, 'keyCode', { get: () => keyCode });
+      Object.defineProperty(event, 'which', { get: () => keyCode });
+    } catch {}
+    input.dispatchEvent(event);
+  });
+}
+
 function dispatchManualStatEnter(input) {
-  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true }));
-  input.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true }));
-  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
-  input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+  input.focus();
+  dispatchManualStatKey(input, 'ArrowDown', 'ArrowDown', 40);
+  dispatchManualStatKey(input, 'Enter', 'Enter', 13);
 }
 
 async function selectManualStatMatch(state, entry) {
@@ -1720,6 +1750,13 @@ async function selectManualStatMatch(state, entry) {
     const option = await waitForNativeManualStatOption(state.input, entry);
     if (option) {
       clickNativeManualStatOption(option);
+      setTimeout(() => {
+        const inputText = normalizeManualStatSearchText(state.input.value || '');
+        const entryText = normalizeManualStatSearchText(entry.text || '');
+        if (inputText && entryText && inputText.includes(entryText)) {
+          dispatchManualStatEnter(state.input);
+        }
+      }, 80);
     } else {
       dispatchManualStatEnter(state.input);
     }
