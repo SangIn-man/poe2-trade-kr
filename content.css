@@ -113,6 +113,44 @@
   opacity: 0.7;
 }
 
+/* 키워드 검색 토글 (History 버튼 왼쪽) */
+#poe2tq-keyword-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin-right: 7px;
+  padding: 6px 10px;
+  border: 1px solid #4a4a4a;
+  border-radius: 4px;
+  background: #161616;
+  color: #9a9a9a;
+  font: 700 12px/1.2 'Segoe UI', 'Malgun Gothic', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: middle;
+  box-shadow: none;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+
+#poe2tq-keyword-search-toggle:hover {
+  border-color: #6a6a6a;
+  color: #c8c8c8;
+  background: #1d1d1d;
+}
+
+#poe2tq-keyword-search-toggle.poe2tq-keyword-toggle-on {
+  border-color: #3f8a4a;
+  color: #8fe6a0;
+  background: #0f1a11;
+}
+
+#poe2tq-keyword-search-toggle.poe2tq-keyword-toggle-on:hover {
+  border-color: #4fb060;
+  color: #b6f5c2;
+  background: #122116;
+}
+
 /* Toast */
 .poe2tq-toast {
   position: fixed;

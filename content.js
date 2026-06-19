@@ -18,6 +18,14 @@ const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 const QUERY_SAVE_BUTTON_INLINE_CLASS = 'poe2tq-save-query-inline';
 const QUERY_SAVE_BUTTON_FLOATING_CLASS = 'poe2tq-save-query-floating';
 
+// ─── 키워드 검색 토글 ─────────────────────────────────
+// 거래소 UI의 History 버튼 왼쪽에 토글 버튼을 주입한다.
+// ON 일 때만 커스텀 키워드 검색 드롭다운(manual stat)을 노출하고,
+// OFF 일 때는 거래소 기본 UI를 그대로 사용한다. (기본값: OFF)
+const KEYWORD_SEARCH_TOGGLE_ID = 'poe2tq-keyword-search-toggle';
+const KEYWORD_SEARCH_ENABLED_KEY = 'keywordSearchEnabled';
+let keywordSearchEnabled = false;
+
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
@@ -34,12 +42,14 @@ if (IS_TRADE_SITE) {
       scanItems();
       scheduleManualStatSearchEnhance();
       injectCurrentSearchSaveButton();
+      injectKeywordSearchToggle();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     setTimeout(() => {
       scanItems();
       scheduleManualStatSearchEnhance();
       injectCurrentSearchSaveButton();
+      injectKeywordSearchToggle();
     }, 1000);
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
@@ -55,12 +65,20 @@ if (IS_TRADE_SITE) {
         });
         scheduleEvaluation();
       }
+      if (changes[KEYWORD_SEARCH_ENABLED_KEY]) {
+        applyKeywordSearchEnabled(changes[KEYWORD_SEARCH_ENABLED_KEY].newValue === true);
+      }
     });
 
     storageGet([TRADE_RATE_KEY]).then(result => {
       cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
       scheduleEvaluation();
     }).catch(err => reportContentScriptError('trade-rate-load', err, false));
+
+    storageGet([KEYWORD_SEARCH_ENABLED_KEY]).then(result => {
+      keywordSearchEnabled = result?.[KEYWORD_SEARCH_ENABLED_KEY] === true;
+      injectKeywordSearchToggle();
+    }).catch(() => {});
   } catch (err) {
     reportContentScriptError('content-bootstrap', err, true);
   }
@@ -779,6 +797,93 @@ function injectCurrentSearchSaveButton() {
   placeCurrentSearchSaveButton(existing);
 }
 
+// ─── 키워드 검색 토글 버튼 ────────────────────────────
+function scoreTradeHistoryButton(el) {
+  if (!el || isOwnExtensionNode(el) || !isVisibleElement(el)) return -1;
+  if (el.closest('.row[data-id]')) return -1;
+
+  const text = normalizeSpace(`${el.textContent || ''} ${el.value || ''}`).toLowerCase();
+  const attrs = [
+    el.id,
+    el.className,
+    el.getAttribute('aria-label'),
+    el.getAttribute('title'),
+    el.getAttribute('data-testid'),
+    el.getAttribute('href')
+  ].join(' ').toLowerCase();
+  const combined = `${text} ${attrs}`;
+  if (!/(history|히스토리|기록|최근\s*검색)/i.test(combined)) return -1;
+
+  let score = 0;
+  if (/^(history|히스토리|기록)$/i.test(text)) score += 80;
+  else if (/(history|히스토리|기록)/i.test(text)) score += 45;
+  if (/(history)/i.test(attrs)) score += 30;
+  const rect = el.getBoundingClientRect();
+  if (rect.top < window.innerHeight * 0.7) score += 8;
+  return score;
+}
+
+function findTradeHistoryButton() {
+  let best = null;
+  let bestScore = -1;
+  document.querySelectorAll('button, a, input[type="submit"], input[type="button"]').forEach(el => {
+    const score = scoreTradeHistoryButton(el);
+    if (score > bestScore) {
+      best = el;
+      bestScore = score;
+    }
+  });
+  return bestScore > 0 ? best : null;
+}
+
+function updateKeywordSearchToggleLabel(btn) {
+  if (!btn) return;
+  btn.classList.toggle('poe2tq-keyword-toggle-on', keywordSearchEnabled);
+  btn.setAttribute('aria-checked', keywordSearchEnabled ? 'true' : 'false');
+  btn.textContent = keywordSearchEnabled ? '🔍 키워드 ON' : '🔍 키워드 OFF';
+  btn.title = keywordSearchEnabled
+    ? '키워드 검색 ON — 클릭하면 거래소 기본 검색으로 전환'
+    : '키워드 검색 OFF — 클릭하면 키워드 검색 드롭다운 활성화';
+}
+
+function createKeywordSearchToggle() {
+  const btn = document.createElement('button');
+  btn.id = KEYWORD_SEARCH_TOGGLE_ID;
+  btn.type = 'button';
+  btn.setAttribute('role', 'switch');
+  btn.addEventListener('click', event => {
+    event.preventDefault();
+    const next = !keywordSearchEnabled;
+    applyKeywordSearchEnabled(next);
+    chrome.storage.local.set({ [KEYWORD_SEARCH_ENABLED_KEY]: next });
+  });
+  updateKeywordSearchToggleLabel(btn);
+  return btn;
+}
+
+// in-memory 상태와 UI/드롭다운을 동기화한다(저장은 호출 측에서).
+function applyKeywordSearchEnabled(value) {
+  keywordSearchEnabled = value === true;
+  updateKeywordSearchToggleLabel(document.getElementById(KEYWORD_SEARCH_TOGGLE_ID));
+  if (keywordSearchEnabled) {
+    scheduleManualStatSearchEnhance();
+  } else {
+    // OFF 로 전환되면 열려 있던 커스텀 드롭다운을 닫고 거래소 기본 UI를 복원
+    manualStatStates.forEach(state => hideManualStatDropdown(state));
+  }
+}
+
+function injectKeywordSearchToggle() {
+  const historyBtn = findTradeHistoryButton();
+  let existing = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
+  if (!historyBtn || !historyBtn.parentElement) return;
+  if (!existing) existing = createKeywordSearchToggle();
+  updateKeywordSearchToggleLabel(existing);
+  if (historyBtn.previousElementSibling !== existing) {
+    historyBtn.parentElement.insertBefore(existing, historyBtn);
+  }
+}
+
 async function handleSaveCurrentTradeSearch(event) {
   const btn = event.currentTarget;
   btn.disabled = true;
@@ -861,8 +966,8 @@ function isVisibleElement(el) {
 
 function isOwnExtensionNode(node) {
   if (!(node instanceof Element)) return false;
-  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, .poe2tq-native-stat-wrapper')
-    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, .poe2tq-native-stat-wrapper');
+  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, #poe2tq-keyword-search-toggle, .poe2tq-native-stat-wrapper')
+    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, #poe2tq-keyword-search-toggle, .poe2tq-native-stat-wrapper');
 }
 
 function isOwnExtensionMutation(mutations) {
@@ -1829,6 +1934,7 @@ function findManualStatMatches(query, entries) {
 }
 
 const manualStatInputState = new WeakMap();
+const manualStatStates = new Set();
 let manualStatEnhanceTimer = null;
 
 function scheduleManualStatSearchEnhance() {
@@ -1938,6 +2044,7 @@ function bindManualStatSearchInput(input) {
     hiddenNativeDropdowns: []
   };
   manualStatInputState.set(input, state);
+  manualStatStates.add(state);
 
   input.addEventListener('input', () => scheduleManualStatNativeFilter(state));
   input.addEventListener('focus', () => scheduleManualStatNativeFilter(state));
@@ -1950,12 +2057,17 @@ function bindManualStatSearchInput(input) {
 
 function scheduleManualStatNativeFilter(state) {
   if (state.selecting) return;
+  if (!keywordSearchEnabled) return;
   clearTimeout(state.filterTimer);
   state.filterTimer = setTimeout(() => applyManualStatNativeFilter(state), 220);
 }
 
 async function applyManualStatNativeFilter(state) {
   if (state.selecting) return;
+  if (!keywordSearchEnabled) {
+    hideManualStatDropdown(state);
+    return;
+  }
   if (!isLikelyManualStatInput(state.input)) {
     hideManualStatDropdown(state);
     return;
