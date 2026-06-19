@@ -1398,6 +1398,11 @@ async function loadData() {
 }
 
 const persist = () => chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
+let draggingFilterId = null;
+let filterOrderBeforeDrag = '';
+let filterDragAutoScrollFrame = 0;
+let filterDragAutoScrollTarget = null;
+let filterDragAutoScrollSpeed = 0;
 
 function render() {
   const list = document.getElementById('filterList');
@@ -1450,6 +1455,152 @@ function render() {
     const card = makeCard(f);
     if (openIds.has(String(f.id))) card.classList.add('open');
     list.appendChild(card);
+  });
+  bindFilterDragSorting(list);
+}
+
+function getFilterCardVisualIds(list) {
+  if (!list) return [];
+  return Array.from(list.querySelectorAll('.filter-card[data-filter-id]'))
+    .map(card => String(card.dataset.filterId || ''))
+    .filter(Boolean);
+}
+
+function reorderFiltersByVisualIds(visualIds) {
+  const current = getCurrentFilters();
+  if (!current.length || visualIds.length < 2) return false;
+  const currentById = new Map(current.map(filter => [String(filter.id), filter]));
+  const uniqueVisualIds = [];
+  const seen = new Set();
+  visualIds.forEach(id => {
+    const key = String(id);
+    if (!key || seen.has(key) || !currentById.has(key)) return;
+    seen.add(key);
+    uniqueVisualIds.push(key);
+  });
+  if (uniqueVisualIds.length < 2) return false;
+
+  // 화면은 저장 배열을 reverse()해서 보여주므로, 화면 위->아래 순서를 저장 배열 아래->위 순서로 변환한다.
+  const desiredStoredIds = uniqueVisualIds.slice().reverse();
+  const visibleSet = new Set(desiredStoredIds);
+  let nextVisibleIndex = 0;
+  let changed = false;
+  const nextFilters = current.map(filter => {
+    const key = String(filter.id);
+    if (!visibleSet.has(key)) return filter;
+    const next = currentById.get(desiredStoredIds[nextVisibleIndex++]) || filter;
+    if (String(next.id) !== key) changed = true;
+    return next;
+  });
+  if (!changed) return false;
+  setCurrentFilters(nextFilters);
+  return true;
+}
+
+function clearFilterDragState(list) {
+  stopFilterDragAutoScroll();
+  list?.classList.remove('drag-sorting');
+  list?.querySelectorAll('.filter-card.dragging').forEach(card => {
+    card.classList.remove('dragging');
+    card.draggable = false;
+    delete card.dataset.dragReady;
+  });
+  draggingFilterId = null;
+  filterOrderBeforeDrag = '';
+}
+
+function commitFilterDragOrder(list) {
+  if (!draggingFilterId) return;
+  const nextOrder = getFilterCardVisualIds(list);
+  const changed = nextOrder.join('|') !== filterOrderBeforeDrag && reorderFiltersByVisualIds(nextOrder);
+  clearFilterDragState(list);
+  if (!changed) return;
+  persist();
+  render();
+}
+
+function getFilterDragScrollTarget(list) {
+  const scrollArea = list?.closest('.scroll-area');
+  if (scrollArea && isScrollableY(scrollArea)) return scrollArea;
+  return findFallbackWheelTarget(1);
+}
+
+function stopFilterDragAutoScroll() {
+  if (filterDragAutoScrollFrame) cancelAnimationFrame(filterDragAutoScrollFrame);
+  filterDragAutoScrollFrame = 0;
+  filterDragAutoScrollTarget = null;
+  filterDragAutoScrollSpeed = 0;
+}
+
+function stepFilterDragAutoScroll() {
+  if (!draggingFilterId || !filterDragAutoScrollTarget || !filterDragAutoScrollSpeed) {
+    stopFilterDragAutoScroll();
+    return;
+  }
+  scrollWheelTarget(filterDragAutoScrollTarget, filterDragAutoScrollSpeed);
+  filterDragAutoScrollFrame = requestAnimationFrame(stepFilterDragAutoScroll);
+}
+
+function updateFilterDragAutoScroll(list, clientY) {
+  const target = getFilterDragScrollTarget(list);
+  if (!target) {
+    stopFilterDragAutoScroll();
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  const edge = Math.min(64, Math.max(34, rect.height * 0.18));
+  const maxScroll = Math.max(0, target.scrollHeight - target.clientHeight);
+  let speed = 0;
+
+  if (clientY < rect.top + edge) {
+    const ratio = Math.min(1, Math.max(0, (rect.top + edge - clientY) / edge));
+    speed = -Math.round(4 + ratio * 22);
+  } else if (clientY > rect.bottom - edge) {
+    const ratio = Math.min(1, Math.max(0, (clientY - (rect.bottom - edge)) / edge));
+    speed = Math.round(4 + ratio * 22);
+  }
+
+  if ((speed < 0 && target.scrollTop <= 0) || (speed > 0 && target.scrollTop >= maxScroll - 1)) {
+    speed = 0;
+  }
+
+  if (!speed) {
+    stopFilterDragAutoScroll();
+    return;
+  }
+
+  filterDragAutoScrollTarget = target;
+  filterDragAutoScrollSpeed = speed;
+  if (!filterDragAutoScrollFrame) {
+    filterDragAutoScrollFrame = requestAnimationFrame(stepFilterDragAutoScroll);
+  }
+}
+
+function bindFilterDragSorting(list) {
+  if (!list || list.dataset.dragSortBound === '1') return;
+  list.dataset.dragSortBound = '1';
+  const dragSurface = list.closest('.scroll-area') || list;
+
+  dragSurface.addEventListener('dragover', e => {
+    if (!draggingFilterId) return;
+    const draggingCard = list.querySelector('.filter-card.dragging');
+    if (!draggingCard) return;
+    e.preventDefault();
+    updateFilterDragAutoScroll(list, e.clientY);
+    const target = e.target.closest('.filter-card[data-filter-id]');
+    if (!target || target === draggingCard || !list.contains(target)) return;
+    const rect = target.getBoundingClientRect();
+    const insertAfter = e.clientY > rect.top + rect.height / 2;
+    if (insertAfter) target.after(draggingCard);
+    else target.before(draggingCard);
+  });
+
+  dragSurface.addEventListener('drop', e => {
+    if (!draggingFilterId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    commitFilterDragOrder(list);
   });
 }
 
@@ -2227,6 +2378,8 @@ function makeCard(f) {
   const wrap = document.createElement('div');
   wrap.className = 'filter-card';
   wrap.id = `card-${f.id}`;
+  wrap.dataset.filterId = String(f.id);
+  wrap.draggable = false;
   const selectedBuild = getSelectedBuild();
   const activeBuildTab = getActiveBuildTab(selectedBuild);
   const allBuildsForMove = getCurrentBuilds();
@@ -2322,6 +2475,7 @@ function makeCard(f) {
 
   wrap.innerHTML = `
     <div class="filter-card-head" data-id="${f.id}">
+      <button class="filter-drag-handle" type="button" title="드래그해서 순서 변경" aria-label="필터 순서 변경">⋮⋮</button>
       <span class="card-arrow">▶</span>
       <div class="card-title">
         <div class="card-name" style="color:${rarityColor}"><span class="filter-name-edit" contenteditable="false" title="클릭해서 이름 편집">${esc(f.name)}</span></div>
@@ -2357,8 +2511,42 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.cat-badge, .stat-delete-btn, .stat-min-value, .stat-max-value, .equip-min-value, .equip-max-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
+    if (e.target.closest('.filter-drag-handle, .cat-badge, .stat-delete-btn, .stat-min-value, .stat-max-value, .equip-min-value, .equip-max-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
     wrap.classList.toggle('open');
+  });
+
+  const dragHandle = wrap.querySelector('.filter-drag-handle');
+  if (dragHandle) {
+    dragHandle.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      wrap.dataset.dragReady = '1';
+      wrap.draggable = true;
+    });
+    dragHandle.addEventListener('mouseup', () => {
+      if (!draggingFilterId) {
+        wrap.draggable = false;
+        delete wrap.dataset.dragReady;
+      }
+    });
+  }
+
+  wrap.addEventListener('dragstart', e => {
+    if (wrap.dataset.dragReady !== '1') {
+      e.preventDefault();
+      return;
+    }
+    draggingFilterId = String(f.id);
+    const list = document.getElementById('filterList');
+    filterOrderBeforeDrag = getFilterCardVisualIds(list).join('|');
+    wrap.classList.add('dragging');
+    list?.classList.add('drag-sorting');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggingFilterId);
+  });
+
+  wrap.addEventListener('dragend', () => {
+    const list = document.getElementById('filterList');
+    commitFilterDragOrder(list);
   });
 
   const replaceCardKeepingOpen = target => {

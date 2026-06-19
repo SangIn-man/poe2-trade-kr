@@ -71,11 +71,20 @@
 
     /* Filter cards */
     .filter-list { display:flex; flex-direction:column; gap:7px; }
+    .filter-list.drag-sorting { user-select:none; }
     .filter-card { background:var(--bg2); border:1px solid var(--border); border-radius:6px; overflow:hidden; transition:border-color .15s; }
     .filter-card:hover { border-color:#5a4018; }
+    .filter-card.dragging { opacity:.45; border-color:var(--gold); }
 
     .filter-card-head { display:flex; align-items:center; padding:8px 10px; gap:7px; cursor:pointer; user-select:none; }
     .filter-card-head:hover { background:#161410; }
+    .filter-drag-handle {
+      width:16px; height:22px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center;
+      background:transparent; border:0; color:#5f5137; cursor:grab; font-size:15px; line-height:1; padding:0;
+      font-family:inherit;
+    }
+    .filter-drag-handle:hover { color:var(--gold-lt); }
+    .filter-drag-handle:active { cursor:grabbing; }
     .card-arrow { font-size:9px; color:var(--text-dim); transition:transform .2s; flex-shrink:0; }
     .filter-card.open .card-arrow { transform:rotate(90deg); }
     .card-title { flex:1; min-width:0; }
