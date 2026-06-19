@@ -1551,31 +1551,81 @@ function removeFilterFromBuildTab(buildId, filterId) {
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
 const TRADE_RATE_KEY = 'tradeCurrencyRates';
 
-function tradeValueToText(value, depth = 0) {
-  if (value == null || depth > 5) return '';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    if (value.length <= 2 && value.length > 0) return tradeValueToText(value[0], depth + 1);
-    return value.map(entry => tradeValueToText(entry, depth + 1)).filter(Boolean).join(' ');
-  }
-  if (typeof value === 'object') {
-    if (Object.prototype.hasOwnProperty.call(value, '0')) return tradeValueToText(value[0], depth + 1);
-    for (const key of ['text', 'string', 'value', 'name', 'typeLine', 'baseType', 'label']) {
+function tradeEntryValueToText(value, depth) {
+  if (Array.isArray(value)) return tradeValueToText(value[0], depth + 1);
+  if (value && typeof value === 'object') {
+    for (const key of ['text', 'string', 'value', 'name', 'line', 'mod', 'descrText', 'description', 'displayText']) {
       if (value[key] != null && value[key] !== value) return tradeValueToText(value[key], depth + 1);
     }
     if (value.min != null || value.max != null) {
       const min = value.min != null ? tradeValueToText(value.min, depth + 1) : '';
       const max = value.max != null ? tradeValueToText(value.max, depth + 1) : '';
-      return min && max ? `${min}~${max}` : (min || max);
+      return min && max && min !== max ? `${min}~${max}` : (max || min);
+    }
+  }
+  return tradeValueToText(value, depth + 1);
+}
+
+function tradeObjectValuesToText(value, depth) {
+  const source = Array.isArray(value?.values) ? value.values
+    : Array.isArray(value?.magnitudes) ? value.magnitudes
+      : [];
+  return source.map(entry => tradeEntryValueToText(entry, depth + 1)).filter(Boolean);
+}
+
+function renderTradeObjectText(value, depth) {
+  for (const key of ['text', 'string', 'name', 'label', 'line', 'mod', 'descrText', 'description', 'displayText']) {
+    if (value[key] == null || value[key] === value) continue;
+    const template = tradeValueToText(value[key], depth + 1);
+    if (!template) continue;
+
+    const values = tradeObjectValuesToText(value, depth + 1);
+    if (values.length === 0) return template;
+
+    const rendered = template.replace(/\{(\d+)\}/g, (_, idx) => values[Number(idx)] || '');
+    if (value.displayMode === 1) return `${values.join(' ')} ${rendered}`.trim();
+    if (value.displayMode === 3 || rendered !== template) return rendered.trim();
+
+    const missingValues = values.filter(v => v && !rendered.includes(v));
+    return missingValues.length ? `${rendered} ${missingValues.join(' ')}`.trim() : rendered.trim();
+  }
+  return '';
+}
+
+function tradeValueToText(value, depth = 0) {
+  if (value == null || depth > 8) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const looksLikeValueTuple = value.length > 0 && value.length <= 3 &&
+      (value.length === 1 || typeof value[1] === 'number' || typeof value[1] === 'string' || value[1] == null);
+    if (looksLikeValueTuple) return tradeEntryValueToText(value, depth + 1);
+    return value.map(entry => tradeValueToText(entry, depth + 1)).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    const rendered = renderTradeObjectText(value, depth + 1);
+    if (rendered) return rendered;
+    if (Object.prototype.hasOwnProperty.call(value, '0')) return tradeValueToText(value[0], depth + 1);
+    if (value.min != null || value.max != null) {
+      const min = value.min != null ? tradeValueToText(value.min, depth + 1) : '';
+      const max = value.max != null ? tradeValueToText(value.max, depth + 1) : '';
+      return min && max && min !== max ? `${min}~${max}` : (max || min);
+    }
+    for (const key of ['value', 'typeLine', 'baseType']) {
+      if (value[key] != null && value[key] !== value) return tradeValueToText(value[key], depth + 1);
     }
   }
   return '';
 }
 
 function stripTradeTags(text) {
-  return tradeValueToText(text).replace(/<[^>]*>/g, '').trim();
+  return tradeValueToText(text)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(?:div|p|li|span)>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseTradeFirstNumber(text) {

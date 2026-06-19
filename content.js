@@ -1397,31 +1397,81 @@ function guessCategoryFromItem(item) {
   return '';
 }
 
-function tradeValueToText(value, depth = 0) {
-  if (value == null || depth > 5) return '';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    if (value.length <= 2 && value.length > 0) return tradeValueToText(value[0], depth + 1);
-    return value.map(entry => tradeValueToText(entry, depth + 1)).filter(Boolean).join(' ');
-  }
-  if (typeof value === 'object') {
-    if (Object.prototype.hasOwnProperty.call(value, '0')) return tradeValueToText(value[0], depth + 1);
-    for (const key of ['text', 'string', 'value', 'name', 'typeLine', 'baseType', 'label']) {
+function tradeEntryValueToText(value, depth) {
+  if (Array.isArray(value)) return tradeValueToText(value[0], depth + 1);
+  if (value && typeof value === 'object') {
+    for (const key of ['text', 'string', 'value', 'name', 'line', 'mod', 'descrText', 'description', 'displayText']) {
       if (value[key] != null && value[key] !== value) return tradeValueToText(value[key], depth + 1);
     }
     if (value.min != null || value.max != null) {
       const min = value.min != null ? tradeValueToText(value.min, depth + 1) : '';
       const max = value.max != null ? tradeValueToText(value.max, depth + 1) : '';
-      return min && max ? `${min}~${max}` : (min || max);
+      return min && max && min !== max ? `${min}~${max}` : (max || min);
+    }
+  }
+  return tradeValueToText(value, depth + 1);
+}
+
+function tradeObjectValuesToText(value, depth) {
+  const source = Array.isArray(value?.values) ? value.values
+    : Array.isArray(value?.magnitudes) ? value.magnitudes
+      : [];
+  return source.map(entry => tradeEntryValueToText(entry, depth + 1)).filter(Boolean);
+}
+
+function renderTradeObjectText(value, depth) {
+  for (const key of ['text', 'string', 'name', 'label', 'line', 'mod', 'descrText', 'description', 'displayText']) {
+    if (value[key] == null || value[key] === value) continue;
+    const template = tradeValueToText(value[key], depth + 1);
+    if (!template) continue;
+
+    const values = tradeObjectValuesToText(value, depth + 1);
+    if (values.length === 0) return template;
+
+    const rendered = template.replace(/\{(\d+)\}/g, (_, idx) => values[Number(idx)] || '');
+    if (value.displayMode === 1) return `${values.join(' ')} ${rendered}`.trim();
+    if (value.displayMode === 3 || rendered !== template) return rendered.trim();
+
+    const missingValues = values.filter(v => v && !rendered.includes(v));
+    return missingValues.length ? `${rendered} ${missingValues.join(' ')}`.trim() : rendered.trim();
+  }
+  return '';
+}
+
+function tradeValueToText(value, depth = 0) {
+  if (value == null || depth > 8) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const looksLikeValueTuple = value.length > 0 && value.length <= 3 &&
+      (value.length === 1 || typeof value[1] === 'number' || typeof value[1] === 'string' || value[1] == null);
+    if (looksLikeValueTuple) return tradeEntryValueToText(value, depth + 1);
+    return value.map(entry => tradeValueToText(entry, depth + 1)).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    const rendered = renderTradeObjectText(value, depth + 1);
+    if (rendered) return rendered;
+    if (Object.prototype.hasOwnProperty.call(value, '0')) return tradeValueToText(value[0], depth + 1);
+    if (value.min != null || value.max != null) {
+      const min = value.min != null ? tradeValueToText(value.min, depth + 1) : '';
+      const max = value.max != null ? tradeValueToText(value.max, depth + 1) : '';
+      return min && max && min !== max ? `${min}~${max}` : (max || min);
+    }
+    for (const key of ['value', 'typeLine', 'baseType']) {
+      if (value[key] != null && value[key] !== value) return tradeValueToText(value[key], depth + 1);
     }
   }
   return '';
 }
 
 function stripTags(text) {
-  return tradeValueToText(text).replace(/<[^>]*>/g, '').trim();
+  return tradeValueToText(text)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(?:div|p|li|span)>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function statTextToPlainLine(text) {
@@ -2571,12 +2621,31 @@ async function handlePobCopy(row, btn) {
   }
 }
 
+function cleanPobText(value) {
+  const text = stripTags(value);
+  if (!text || /\[object Object\]/.test(text)) return '';
+  return text;
+}
+
+function collectPobModTexts(item, prop, extKey) {
+  const direct = Array.isArray(item?.[prop]) ? item[prop] : [];
+  const directTexts = direct.map(cleanPobText).filter(Boolean);
+  if (directTexts.length > 0) return directTexts;
+
+  const extEntries = extKey && Array.isArray(item?.extended?.mods?.[extKey])
+    ? item.extended.mods[extKey]
+    : [];
+  return extEntries.map(cleanPobText).filter(Boolean);
+}
+
 function buildPoBFormat(item) {
   const lines = [];
 
   // 1. 아이템 이름 / 베이스 타입
-  if (item.name) lines.push(stripTags(item.name));
-  lines.push(stripTags(item.baseType || item.typeLine || ''));
+  const itemName = cleanPobText(item.name);
+  const baseName = cleanPobText(item.baseType || item.typeLine || '');
+  if (itemName) lines.push(itemName);
+  if (baseName) lines.push(baseName);
 
   // 2. Unique ID
   if (item.id) lines.push(`Unique ID: ${item.id}`);
@@ -2620,31 +2689,36 @@ function buildPoBFormat(item) {
 
   // 8. Implicits block
   const implicitLines = [];
-  (item.runeMods || []).forEach(m => implicitLines.push(`{enchant}{rune}${stripTags(m)}`));
-  (item.bondedMods || []).forEach(m => implicitLines.push(`{enchant}{rune}${stripTags(m)}`));
-  (item.enchantMods || []).forEach(m => implicitLines.push(`{enchant}${stripTags(m)}`));
-  (item.implicitMods || []).forEach(m => implicitLines.push(stripTags(m)));
+  collectPobModTexts(item, 'runeMods', 'rune').forEach(text => implicitLines.push(`{enchant}{rune}${text}`));
+  collectPobModTexts(item, 'bondedMods', 'bonded').forEach(text => implicitLines.push(`{enchant}{rune}${text}`));
+  collectPobModTexts(item, 'enchantMods', 'enchant').forEach(text => implicitLines.push(`{enchant}${text}`));
+  collectPobModTexts(item, 'implicitMods', 'implicit').forEach(text => implicitLines.push(text));
 
   lines.push(`Implicits: ${implicitLines.length}`);
   implicitLines.forEach(l => lines.push(l));
 
   // 9. Explicit mods
-  const craftedSet = new Set((item.craftedMods || []).map(m => stripTags(m)));
-  const fracturedSet = new Set((item.fracturedMods || []).map(m => stripTags(m)));
-  const desecratedSet = new Set((item.desecratedMods || item.corruptedMods || []).map(m => stripTags(m)));
+  const craftedTexts = collectPobModTexts(item, 'craftedMods', 'crafted');
+  const fracturedTexts = collectPobModTexts(item, 'fracturedMods', 'fractured');
+  let desecratedTexts = collectPobModTexts(item, 'desecratedMods', 'desecrated');
+  if (desecratedTexts.length === 0) desecratedTexts = collectPobModTexts(item, 'corruptedMods', 'corrupted');
+  const explicitTexts = collectPobModTexts(item, 'explicitMods', 'explicit');
 
-  (item.fracturedMods || []).forEach(m => lines.push(`{fractured}${stripTags(m)}`));
+  const craftedSet = new Set(craftedTexts);
+  const fracturedSet = new Set(fracturedTexts);
+  const desecratedSet = new Set(desecratedTexts);
 
-  (item.explicitMods || []).forEach(m => {
-    const text = stripTags(m);
+  fracturedTexts.forEach(text => lines.push(`{fractured}${text}`));
+
+  explicitTexts.forEach(text => {
     if (!craftedSet.has(text) && !fracturedSet.has(text) && !desecratedSet.has(text)) {
       lines.push(text);
     }
   });
 
-  (item.desecratedMods || item.corruptedMods || []).forEach(m => lines.push(`{desecrated}${stripTags(m)}`));
+  desecratedTexts.forEach(text => lines.push(`{desecrated}${text}`));
 
-  (item.craftedMods || []).forEach(m => lines.push(`{crafted}${stripTags(m)}`));
+  craftedTexts.forEach(text => lines.push(`{crafted}${text}`));
 
   return lines.join('\n');
 }
