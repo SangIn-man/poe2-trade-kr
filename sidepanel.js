@@ -1551,8 +1551,31 @@ function removeFilterFromBuildTab(buildId, filterId) {
 const SEARCH_EVAL_KEY = 'searchEvaluationContexts';
 const TRADE_RATE_KEY = 'tradeCurrencyRates';
 
+function tradeValueToText(value, depth = 0) {
+  if (value == null || depth > 5) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length <= 2 && value.length > 0) return tradeValueToText(value[0], depth + 1);
+    return value.map(entry => tradeValueToText(entry, depth + 1)).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    if (Object.prototype.hasOwnProperty.call(value, '0')) return tradeValueToText(value[0], depth + 1);
+    for (const key of ['text', 'string', 'value', 'name', 'typeLine', 'baseType', 'label']) {
+      if (value[key] != null && value[key] !== value) return tradeValueToText(value[key], depth + 1);
+    }
+    if (value.min != null || value.max != null) {
+      const min = value.min != null ? tradeValueToText(value.min, depth + 1) : '';
+      const max = value.max != null ? tradeValueToText(value.max, depth + 1) : '';
+      return min && max ? `${min}~${max}` : (min || max);
+    }
+  }
+  return '';
+}
+
 function stripTradeTags(text) {
-  return String(text || '').replace(/<[^>]*>/g, '').trim();
+  return tradeValueToText(text).replace(/<[^>]*>/g, '').trim();
 }
 
 function parseTradeFirstNumber(text) {
@@ -1581,7 +1604,7 @@ function parseTradePropertyValue(name, rawValue) {
 
 function renderTradePropertyText(prop) {
   const name = stripTradeTags(prop?.name || '');
-  const values = Array.isArray(prop?.values) ? prop.values.map(v => stripTradeTags(v?.[0])).filter(Boolean) : [];
+  const values = Array.isArray(prop?.values) ? prop.values.map(v => stripTradeTags(Array.isArray(v) ? v[0] : v)).filter(Boolean) : [];
   const templated = name.replace(/\{(\d+)\}/g, (_, idx) => values[Number(idx)] || '');
   if (values.length === 0) return templated.trim();
   if (prop?.displayMode === 1) return `${values.join(' ')} ${templated}`.trim();
@@ -1638,7 +1661,7 @@ function buildItemEquipmentValueMap(item) {
     const name = stripTradeTags(prop?.name || '');
     const lineText = renderTradePropertyText(prop);
     const rawValue = Array.isArray(prop?.values)
-      ? prop.values.map(v => stripTradeTags(v?.[0])).filter(Boolean).join(' ')
+      ? prop.values.map(v => stripTradeTags(Array.isArray(v) ? v[0] : v)).filter(Boolean).join(' ')
       : lineText;
 
     const _equipRules = (typeof EQUIPMENT_PROPERTY_RULES !== 'undefined') ? EQUIPMENT_PROPERTY_RULES : [];

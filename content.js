@@ -1397,8 +1397,31 @@ function guessCategoryFromItem(item) {
   return '';
 }
 
+function tradeValueToText(value, depth = 0) {
+  if (value == null || depth > 5) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length <= 2 && value.length > 0) return tradeValueToText(value[0], depth + 1);
+    return value.map(entry => tradeValueToText(entry, depth + 1)).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    if (Object.prototype.hasOwnProperty.call(value, '0')) return tradeValueToText(value[0], depth + 1);
+    for (const key of ['text', 'string', 'value', 'name', 'typeLine', 'baseType', 'label']) {
+      if (value[key] != null && value[key] !== value) return tradeValueToText(value[key], depth + 1);
+    }
+    if (value.min != null || value.max != null) {
+      const min = value.min != null ? tradeValueToText(value.min, depth + 1) : '';
+      const max = value.max != null ? tradeValueToText(value.max, depth + 1) : '';
+      return min && max ? `${min}~${max}` : (min || max);
+    }
+  }
+  return '';
+}
+
 function stripTags(text) {
-  return String(text || '').replace(/<[^>]*>/g, '').trim();
+  return tradeValueToText(text).replace(/<[^>]*>/g, '').trim();
 }
 
 function statTextToPlainLine(text) {
@@ -1440,7 +1463,7 @@ function parsePropertyValue(name, rawValue) {
 
 function renderPropertyText(prop) {
   const name = stripTags(prop?.name || '');
-  const values = Array.isArray(prop?.values) ? prop.values.map(v => stripTags(v?.[0])).filter(Boolean) : [];
+  const values = Array.isArray(prop?.values) ? prop.values.map(v => stripTags(Array.isArray(v) ? v[0] : v)).filter(Boolean) : [];
   const templated = name.replace(/\{(\d+)\}/g, (_, idx) => values[Number(idx)] || '');
   if (values.length === 0) return templated.trim();
   if (prop?.displayMode === 1) return `${values.join(' ')} ${templated}`.trim();
@@ -2292,7 +2315,7 @@ function collectEquipmentFilters(item) {
     const lineText = renderPropertyText(prop);
     if (!name && !lineText) return;
     const rawValue = Array.isArray(prop?.values)
-      ? prop.values.map(v => stripTags(v?.[0])).filter(Boolean).join(' ')
+      ? prop.values.map(v => stripTags(Array.isArray(v) ? v[0] : v)).filter(Boolean).join(' ')
       : lineText;
 
     for (const rule of EQUIPMENT_PROPERTY_RULES) {
@@ -2569,7 +2592,7 @@ function buildPoBFormat(item) {
   const qualityProp = allProps.find(p => /quality/i.test(stripTags(p?.name || '')));
   if (qualityProp) {
     const qval = Array.isArray(qualityProp.values) && qualityProp.values[0]
-      ? stripTags(qualityProp.values[0][0]).replace(/[^0-9]/g, '')
+      ? stripTags(Array.isArray(qualityProp.values[0]) ? qualityProp.values[0][0] : qualityProp.values[0]).replace(/[^0-9]/g, '')
       : '';
     if (qval) lines.push(`Quality: ${qval}`);
   }
@@ -2591,7 +2614,7 @@ function buildPoBFormat(item) {
   if (Array.isArray(item.requirements)) {
     const lvlReq = item.requirements.find(r => /^level$/i.test(stripTags(r?.name || '')));
     if (lvlReq && Array.isArray(lvlReq.values) && lvlReq.values[0]) {
-      lines.push(`LevelReq: ${stripTags(lvlReq.values[0][0])}`);
+      lines.push(`LevelReq: ${stripTags(Array.isArray(lvlReq.values[0]) ? lvlReq.values[0][0] : lvlReq.values[0])}`);
     }
   }
 
