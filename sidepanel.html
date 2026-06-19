@@ -13,8 +13,12 @@
       --green:#60b030; --green-bg:#0d1a08;
       --blue:#5090c0; --blue-bg:#081420;
       --red:#c04040;
+      --panel-bottom-gap:12px;
+      --panel-layout-width:100%;
+      --panel-layout-height:100vh;
+      --ui-zoom:1;
     }
-    html,body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:'Segoe UI','Malgun Gothic',sans-serif; font-size:13px; overflow:hidden; }
+    html,body { width:100%; height:100%; min-width:0; min-height:0; background:var(--bg); color:var(--text); font-family:'Segoe UI','Malgun Gothic',sans-serif; font-size:13px; overflow:hidden; overscroll-behavior:contain; }
     /* body zoom 은 sidepanel.js 에서 uiZoom 값으로 동적 적용 (기본 1.25) */
 
     /* UI 크기(zoom) 조절 컨트롤 */
@@ -24,7 +28,16 @@
     .zoom-value { font-size:11px; color:var(--gold-lt); font-weight:700; min-width:42px; text-align:right; }
     .btn-zoom-reset { background:var(--bg3); border:1px solid var(--border2); color:var(--gold-dim); border-radius:4px; cursor:pointer; font-size:11px; padding:3px 8px; font-family:inherit; flex-shrink:0; transition:all .15s; }
     .btn-zoom-reset:hover { border-color:var(--gold); color:var(--gold-lt); }
-    .layout { display:flex; flex-direction:column; height:100vh; }
+    .layout {
+      display:flex;
+      flex-direction:column;
+      width:var(--panel-layout-width);
+      height:var(--panel-layout-height);
+      max-width:var(--panel-layout-width);
+      max-height:var(--panel-layout-height);
+      min-height:0;
+      overflow:hidden;
+    }
 
     /* Header */
     .header { flex-shrink:0; background:linear-gradient(180deg,#1e1608,#130f06); border-bottom:2px solid var(--gold); padding:10px 12px 8px; }
@@ -50,10 +63,10 @@
     .tab.active { color:var(--gold-lt); border-bottom-color:var(--gold); background:#131108; }
 
     /* Scroll */
-    .scroll-area { flex:1; overflow-y:auto; overflow-x:hidden; }
+    .scroll-area { flex:1; min-height:0; max-height:100%; overflow-y:auto; overflow-x:hidden; scroll-padding-bottom:var(--panel-bottom-gap); overscroll-behavior:contain; }
     .scroll-area::-webkit-scrollbar { width:4px; }
     .scroll-area::-webkit-scrollbar-thumb { background:#3a2a10; border-radius:2px; }
-    .tab-content { padding:10px; display:none; }
+    .tab-content { padding:10px 10px calc(10px + var(--panel-bottom-gap)); display:none; }
     .tab-content.active { display:block; }
 
     /* Filter cards */
@@ -82,8 +95,6 @@
     .btn-search-cur { background:#0d1a10; border:1px solid #2a5020; color:#60c060; padding:5px 7px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:700; transition:all .15s; display:flex; align-items:center; justify-content:center; gap:3px; white-space:nowrap; }
     .btn-search-cur:hover { background:#122018; border-color:#3a7030; }
     .btn-search-cur.loading { opacity:.7; cursor:default; }
-    .btn-open-q { background:var(--blue-bg); border:1px solid #1a3a60; color:var(--blue); padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px; transition:all .15s; }
-    .btn-open-q:hover { background:#0c1e30; }
 
     .card-detail { display:none; border-top:1px solid var(--border); }
     .filter-card.open .card-detail { display:block; }
@@ -162,7 +173,7 @@
     /* Edit modal */
     .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.88); z-index:200; align-items:flex-start; justify-content:center; padding-top:20px; }
     .overlay.show { display:flex; }
-    .modal { background:#131108; border:1px solid var(--gold); border-radius:8px; padding:16px; width:calc(100% - 24px); max-width:340px; max-height:calc(100vh - 40px); overflow-y:auto; }
+    .modal { background:#131108; border:1px solid var(--gold); border-radius:8px; padding:16px; width:calc(100% - 24px); max-width:340px; max-height:calc(100vh - 40px); overflow-y:auto; overscroll-behavior:contain; }
     .modal::-webkit-scrollbar { width:3px; }
     .modal::-webkit-scrollbar-thumb { background:#3a2a10; }
     .modal h2 { color:var(--gold-lt); font-size:14px; margin-bottom:12px; }
@@ -299,14 +310,18 @@
     .ninja-rate-badge:hover { background: rgba(30,70,30,0.6); }
 
     /* Top-level panels */
-    .top-panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .top-panel { display: none; flex-direction: column; flex: 1; min-height: 0; max-height:100%; overflow: hidden; }
     .top-panel.active { display: flex; }
 
     /* Economy panel */
     .ninja-currency-list {
-      padding: 6px;
-      overflow-y: auto;
+      padding: 6px 6px calc(6px + var(--panel-bottom-gap));
       flex: 1;
+      min-height: 0;
+      max-height: 100%;
+      overflow-y: auto;
+      scroll-padding-bottom: var(--panel-bottom-gap);
+      overscroll-behavior: contain;
     }
     .ninja-currency-list::-webkit-scrollbar { width: 4px; }
     .ninja-currency-list::-webkit-scrollbar-thumb { background: #3a2a10; border-radius: 2px; }
@@ -402,6 +417,405 @@
     }
     .ninja-search:focus {
       border-color: #c8a84a;
+    }
+
+    /* Utility panel */
+    .utility-panel {
+      min-height: 0;
+    }
+    .utility-sub-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 6px 8px;
+      border-bottom: 1px solid #3a3020;
+      flex-shrink: 0;
+      background: #11100b;
+    }
+    .utility-sub-tab {
+      flex: 1;
+      padding: 5px 8px;
+      background: #1a1508;
+      border: 1px solid #3a3020;
+      color: #8a7a5a;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      cursor: pointer;
+    }
+    .utility-sub-tab.active {
+      background: #4a3a10;
+      color: #e8c84a;
+      border-color: #c8a84a;
+    }
+    .utility-sub-panel {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 10px calc(10px + var(--panel-bottom-gap));
+      scroll-padding-bottom: var(--panel-bottom-gap);
+      overscroll-behavior: contain;
+    }
+    .utility-sub-panel.active {
+      display: block;
+    }
+    .utility-sub-panel::-webkit-scrollbar { width: 4px; }
+    .utility-sub-panel::-webkit-scrollbar-thumb { background: #3a2a10; border-radius: 2px; }
+    .regex-tool {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .regex-block {
+      background: #100f0a;
+      border: 1px solid #2a2418;
+      border-radius: 5px;
+      padding: 8px;
+    }
+    .regex-block-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: #c8a84a;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .regex-count {
+      color: #6a5a3a;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .regex-preset-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 5px;
+    }
+    .regex-preset-btn,
+    .regex-copy-btn {
+      border: 1px solid #3a3020;
+      background: #1a1508;
+      color: #a09070;
+      border-radius: 4px;
+      padding: 5px 7px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      cursor: pointer;
+    }
+    .regex-preset-btn:hover,
+    .regex-copy-btn:hover {
+      border-color: #c8a84a;
+      color: #e8c84a;
+    }
+    .regex-preset-input {
+      width: 100%;
+      min-width: 0;
+      background: #0b0a07;
+      border: 1px solid #2a2418;
+      color: #c8b88a;
+      border-radius: 4px;
+      padding: 5px 7px;
+      font: 11px 'Segoe UI','Malgun Gothic',sans-serif;
+      outline: none;
+    }
+    .regex-preset-input:focus {
+      border-color: #c8a84a;
+    }
+    .regex-preset-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-top: 7px;
+    }
+    .regex-preset-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      background: #0b0a07;
+      border: 1px solid #1f1a10;
+      border-radius: 4px;
+      padding: 5px;
+    }
+    .regex-preset-load {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border: none;
+      background: transparent;
+      color: #c0ad80;
+      cursor: pointer;
+      font: 11px 'Segoe UI','Malgun Gothic',sans-serif;
+      text-align: left;
+      padding: 2px;
+    }
+    .regex-preset-load:hover {
+      color: #e8c84a;
+    }
+    .regex-preset-delete {
+      flex-shrink: 0;
+      border: 1px solid #3a2020;
+      background: #170d0d;
+      color: #b86a6a;
+      border-radius: 4px;
+      cursor: pointer;
+      font: 10px 'Segoe UI','Malgun Gothic',sans-serif;
+      padding: 3px 7px;
+    }
+    .regex-search {
+      width: 100%;
+      background: #0b0a07;
+      border: 1px solid #2a2418;
+      color: #c8b88a;
+      border-radius: 4px;
+      padding: 6px 7px;
+      font: 11px 'Segoe UI','Malgun Gothic',sans-serif;
+      outline: none;
+      margin-bottom: 6px;
+    }
+    .regex-search:focus {
+      border-color: #c8a84a;
+    }
+    .regex-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .regex-filter-btn {
+      flex: 1;
+      border: 1px solid #2a2418;
+      background: #0b0a07;
+      color: #806f52;
+      border-radius: 4px;
+      padding: 4px 5px;
+      font: 10px 'Segoe UI','Malgun Gothic',sans-serif;
+      cursor: pointer;
+    }
+    .regex-filter-btn.active {
+      color: #e0c878;
+      border-color: #6a4a12;
+      background: #1d1608;
+    }
+    .regex-result-list,
+    .regex-selected-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .regex-result-list {
+      max-height: 250px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .regex-result-list::-webkit-scrollbar { width: 4px; }
+    .regex-result-list::-webkit-scrollbar-thumb { background: #3a2a10; border-radius: 2px; }
+    .regex-result-row,
+    .regex-selected-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      width: 100%;
+      padding: 6px;
+      background: #0b0a07;
+      border: 1px solid #1f1a10;
+      border-radius: 4px;
+      color: #a09070;
+      font-size: 10.5px;
+    }
+    .regex-result-row:hover {
+      border-color: #3a3020;
+    }
+    .regex-result-main,
+    .regex-selected-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .regex-option-title {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      margin-bottom: 2px;
+    }
+    .regex-tag,
+    .regex-state-badge {
+      flex-shrink: 0;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .regex-tag {
+      color: #8fb4d8;
+      border: 1px solid #23384f;
+      background: #08131c;
+    }
+    .regex-state-badge.include {
+      color: #e0c878;
+      border: 1px solid #6a4a12;
+      background: #1d1608;
+    }
+    .regex-state-badge.exclude {
+      color: #ff9a80;
+      border: 1px solid #6a2424;
+      background: #1b0d0d;
+    }
+    .regex-option-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #c0ad80;
+    }
+    .regex-option-pattern {
+      color: #6a5a3a;
+      font-family: Consolas, 'Malgun Gothic', monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .regex-option-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .regex-option-action,
+    .regex-remove-btn {
+      border: 1px solid #2a2418;
+      background: #120f0a;
+      color: #8a7a5a;
+      border-radius: 4px;
+      cursor: pointer;
+      font: 10px 'Segoe UI','Malgun Gothic',sans-serif;
+      padding: 4px 6px;
+      white-space: nowrap;
+    }
+    .regex-option-action.include.active,
+    .regex-option-action.include:hover {
+      color: #e0c878;
+      border-color: #6a4a12;
+      background: #1d1608;
+    }
+    .regex-option-action.exclude.active,
+    .regex-option-action.exclude:hover {
+      color: #ff9a80;
+      border-color: #6a2424;
+      background: #1b0d0d;
+    }
+    .regex-remove-btn {
+      color: #b86a6a;
+      padding: 3px 7px;
+    }
+    .regex-result-empty {
+      color: #6a5a3a;
+      background: #0b0a07;
+      border: 1px dashed #2a2418;
+      border-radius: 4px;
+      padding: 12px 8px;
+      text-align: center;
+      font-size: 11px;
+    }
+    .regex-number-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .regex-mode-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px;
+    }
+    .regex-mode-row label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #a09070;
+      font-size: 11px;
+      background: #0b0a07;
+      border: 1px solid #1f1a10;
+      border-radius: 4px;
+      padding: 5px 6px;
+      cursor: pointer;
+    }
+    .regex-mode-row input {
+      accent-color: #c8a84a;
+    }
+    .regex-number-row {
+      display: grid;
+      grid-template-columns: 1fr 78px;
+      align-items: center;
+      gap: 7px;
+      color: #a09070;
+      font-size: 11px;
+      background: #0b0a07;
+      border: 1px solid #1f1a10;
+      border-radius: 4px;
+      padding: 5px 6px;
+    }
+    .regex-number-row span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .regex-number-input {
+      width: 100%;
+      background: #080807;
+      border: 1px solid #2a2418;
+      color: #d0a860;
+      border-radius: 3px;
+      padding: 3px 5px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: right;
+      outline: none;
+    }
+    .regex-number-input::-webkit-outer-spin-button,
+    .regex-number-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .regex-number-input:focus {
+      border-color: #c8a84a;
+    }
+    .regex-output {
+      width: 100%;
+      min-height: 68px;
+      resize: vertical;
+      background: #070706;
+      border: 1px solid #3a3020;
+      color: #e0c878;
+      border-radius: 4px;
+      padding: 7px;
+      font: 11px/1.45 Consolas, 'Malgun Gothic', monospace;
+      outline: none;
+    }
+    .regex-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .regex-copy-btn {
+      flex-shrink: 0;
+      color: #80c8a0;
+      border-color: #2a4a30;
+      background: #0d1a10;
+    }
+    .regex-len {
+      margin-left: auto;
+      color: #6a5a3a;
+      font-size: 10px;
     }
 
     /* Builds panel */
@@ -528,8 +942,11 @@
     }
     .build-detail {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
-      padding: 10px;
+      padding: 10px 10px calc(10px + var(--panel-bottom-gap));
+      scroll-padding-bottom: var(--panel-bottom-gap);
+      overscroll-behavior: contain;
     }
     .build-detail::-webkit-scrollbar {
       width: 4px;
@@ -832,6 +1249,80 @@
     .builds-inline {
       margin-bottom: 10px;
     }
+    .debug-preview {
+      width: 100%;
+      max-height: 180px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #070706;
+      border: 1px solid #3a3020;
+      border-radius: 5px;
+      color: #c8b88a;
+      font: 10px/1.5 Consolas, 'Malgun Gothic', monospace;
+      padding: 8px;
+      margin: 4px 0 8px;
+    }
+    .fatal-error-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: #0c0b09;
+    }
+    .fatal-error-box {
+      width: 100%;
+      max-width: 420px;
+      background: #131108;
+      border: 1px solid #7a3030;
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.45);
+    }
+    .fatal-error-title {
+      color: #ff9a80;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .fatal-error-desc {
+      color: #9a8060;
+      font-size: 12px;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .fatal-error-text {
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #070706;
+      border: 1px solid #3a3020;
+      border-radius: 5px;
+      color: #c8b88a;
+      font: 10px/1.5 Consolas, 'Malgun Gothic', monospace;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+    .fatal-error-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .fatal-error-actions button {
+      flex: 1;
+      background: #18120a;
+      border: 1px solid #4a3418;
+      color: #d0a860;
+      border-radius: 4px;
+      padding: 7px 5px;
+      cursor: pointer;
+      font: 11px 'Segoe UI','Malgun Gothic',sans-serif;
+    }
+    .fatal-error-actions button:hover {
+      border-color: #c8922a;
+      color: #f0d080;
+    }
     /* Import mode modal */
     .import-modal-overlay {
       display: none;
@@ -877,11 +1368,11 @@
     <button class="btn-go-trade" id="btnGoTrade">🌐 한국 거래소 열기</button>
   </div>
 
-  <!-- Top-level tab bar: TradeQuick / Economy -->
+  <!-- Top-level tab bar: TradeQuick / Economy / Utility -->
   <div class="top-tab-bar">
     <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
     <button class="top-tab-btn" id="top-tab-economy">Economy</button>
-    <button class="top-tab-btn" id="top-tab-expedition">Expedition</button>
+    <button class="top-tab-btn" id="top-tab-utility">Utility</button>
   </div>
 
   <!-- TradeQuick panel (existing content) -->
@@ -917,6 +1408,13 @@
             <input type="range" id="panelWidthSlider" class="zoom-slider" min="300" max="760" step="10" value="460"/>
             <span class="zoom-value" id="panelWidthValue">460px</span>
           </div>
+          <div class="setting-row">
+            <label>다른 페이지 허용</label>
+            <label class="toggle-switch" title="거래소가 아닌 일반 웹페이지에서도 패널을 유지합니다">
+              <input type="checkbox" id="sAllowGlobalSidebar"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
         </div>
         <div class="settings-block">
           <h3>거래소 설정</h3>
@@ -944,8 +1442,11 @@
           <button class="btn-full btn-gold" id="btnExport">📤 필터 내보내기</button>
           <button class="btn-full btn-muted" id="btnImportTrigger">📥 필터 가져오기</button>
           <input type="file" id="fileImport" accept=".json" style="display:none"/>
-          <button class="btn-full btn-muted" id="btnExportDebug">🧾 디버그 로그 TXT 저장</button>
-          <button class="btn-full btn-muted" id="btnClearDebug">🧹 디버그 로그 비우기</button>
+          <button class="btn-full btn-muted" id="btnViewDebug">최근 에러 보기</button>
+          <pre class="debug-preview" id="debugLogPreview" hidden></pre>
+          <button class="btn-full btn-muted" id="btnCopyDebug">에러 로그 복사</button>
+          <button class="btn-full btn-muted" id="btnExportDebug">🧾 에러 로그 TXT 저장</button>
+          <button class="btn-full btn-muted" id="btnClearDebug">🧹 에러 로그 비우기</button>
           <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
         </div>
         <div class="notice">
@@ -980,22 +1481,107 @@
     </div>
   </div>
 
-  <!-- Expedition panel -->
-  <div class="top-panel" id="top-panel-expedition" style="padding:10px;overflow-y:auto;">
-    <div style="margin-bottom:8px;">
-      <input type="text" id="expedition-search" placeholder="소문 또는 지역명 검색..." style="width:100%;box-sizing:border-box;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;">
+  <!-- Utility panel -->
+  <div class="top-panel utility-panel" id="top-panel-utility">
+    <div class="utility-sub-tabs">
+      <button class="utility-sub-tab active" data-utility-tab="expedition">Expedition</button>
+      <button class="utility-sub-tab" data-utility-tab="regex">정규식(미완성)</button>
     </div>
-    <table id="expedition-table" style="width:100%;border-collapse:collapse;font-size:11px;">
-      <thead>
-        <tr style="background:#2a2a2a;color:#aaa;">
-          <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:70px;">분류</th>
-          <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:130px;">섬의 소문</th>
-          <th style="padding:5px 6px;border:1px solid #333;text-align:left;">지역 및 특징</th>
-        </tr>
-      </thead>
-      <tbody id="expedition-tbody">
-      </tbody>
-    </table>
+
+    <div class="utility-sub-panel active" id="utility-panel-expedition">
+      <div style="margin-bottom:8px;">
+        <input type="text" id="expedition-search" placeholder="소문 또는 지역명 검색..." style="width:100%;box-sizing:border-box;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;">
+      </div>
+      <table id="expedition-table" style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead>
+          <tr style="background:#2a2a2a;color:#aaa;">
+            <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:70px;">분류</th>
+            <th style="padding:5px 6px;border:1px solid #333;text-align:left;width:130px;">섬의 소문</th>
+            <th style="padding:5px 6px;border:1px solid #333;text-align:left;">지역 및 특징</th>
+          </tr>
+        </thead>
+        <tbody id="expedition-tbody">
+        </tbody>
+      </table>
+    </div>
+
+    <div class="utility-sub-panel" id="utility-panel-regex">
+      <div class="regex-tool" id="regex-generator">
+        <div class="regex-block">
+          <div class="regex-block-title">
+            <span>사용자 프리셋</span>
+            <span class="regex-count" id="regex-preset-count">0개</span>
+          </div>
+          <div class="regex-preset-row">
+            <input type="text" class="regex-preset-input" id="regex-preset-name" placeholder="프리셋 이름" autocomplete="off">
+            <button class="regex-preset-btn" id="regex-save-preset">저장</button>
+          </div>
+          <div class="regex-preset-list" id="regex-user-preset-list"></div>
+        </div>
+
+        <div class="regex-block">
+          <div class="regex-block-title"><span>생성 결과</span></div>
+          <textarea class="regex-output" id="regex-output" readonly></textarea>
+          <div class="regex-actions">
+            <button class="regex-copy-btn" id="regex-copy">복사</button>
+            <button class="regex-preset-btn" id="regex-reset">초기화</button>
+            <span class="regex-len" id="regex-length">0자</span>
+          </div>
+        </div>
+
+        <div class="regex-block">
+          <div class="regex-block-title"><span>선택 옵션 조합</span></div>
+          <div class="regex-mode-row">
+            <label><input type="radio" name="regex-mode" value="or" checked> 묶어서 적용(OR)</label>
+            <label><input type="radio" name="regex-mode" value="and"> 모두 적용(AND·따옴표)</label>
+          </div>
+        </div>
+
+        <div class="regex-block">
+          <div class="regex-block-title">
+            <span>수치 조건</span>
+            <span class="regex-count">이상</span>
+          </div>
+          <div class="regex-number-grid">
+            <label class="regex-number-row">
+              <span>아이템 수량</span>
+              <input type="text" class="regex-number-input" data-regex-min="quantity" inputmode="numeric" pattern="[0-9]*" placeholder="예: 100">
+            </label>
+            <label class="regex-number-row">
+              <span>아이템 희귀도</span>
+              <input type="text" class="regex-number-input" data-regex-min="rarity" inputmode="numeric" pattern="[0-9]*" placeholder="예: 100">
+            </label>
+            <label class="regex-number-row">
+              <span>무리 규모</span>
+              <input type="text" class="regex-number-input" data-regex-min="packSize" inputmode="numeric" pattern="[0-9]*" placeholder="예: 50">
+            </label>
+          </div>
+        </div>
+
+        <div class="regex-block">
+          <div class="regex-block-title">
+            <span>옵션 검색</span>
+            <span class="regex-count" id="regex-option-count">0개</span>
+          </div>
+          <input type="text" class="regex-search" id="regex-option-search" placeholder="예: 플라스크, 최대 저항, 언데드 무리" autocomplete="off">
+          <div class="regex-filter-row">
+            <button class="regex-filter-btn active" data-regex-filter="all">전체</button>
+            <button class="regex-filter-btn" data-regex-filter="prefix">접두어</button>
+            <button class="regex-filter-btn" data-regex-filter="suffix">접미어</button>
+            <button class="regex-filter-btn" data-regex-filter="selected">선택됨</button>
+          </div>
+          <div class="regex-result-list" id="regex-option-list"></div>
+        </div>
+
+        <div class="regex-block">
+          <div class="regex-block-title">
+            <span>선택된 조건</span>
+            <span class="regex-count" id="regex-selected-option-count">0개</span>
+          </div>
+          <div class="regex-selected-list" id="regex-selected-list"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

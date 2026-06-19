@@ -542,7 +542,7 @@ const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Al
 let filtersByLeague = {};
 let buildsByLeague = {};
 let buildUiByLeague = {};
-let settings = { league: DEFAULT_LEAGUE, resultCount: 10 };
+let settings = { league: DEFAULT_LEAGUE, resultCount: 10, allowGlobalSidebar: false };
 let editingId = null;
 
 // UI 줌(zoom) — 브라우저(Whale/Chrome)별 배율 차이를 사용자가 직접 보정
@@ -554,7 +554,22 @@ const clampZoom = (z) => {
   if (!isFinite(n)) return DEFAULT_UI_ZOOM;
   return Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, n));
 };
-const applyZoom = (z) => { document.body.style.zoom = String(clampZoom(z)); };
+
+function syncSidepanelViewportVars(z) {
+  const zoom = clampZoom(z != null ? z : document.body?.style?.zoom);
+  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const root = document.documentElement;
+  root.style.setProperty('--ui-zoom', String(zoom));
+  root.style.setProperty('--panel-layout-width', `${Math.max(1, Math.floor(viewportWidth / zoom))}px`);
+  root.style.setProperty('--panel-layout-height', `${Math.max(320, Math.floor(viewportHeight / zoom))}px`);
+}
+
+const applyZoom = (z) => {
+  const zoom = clampZoom(z);
+  document.body.style.zoom = String(zoom);
+  syncSidepanelViewportVars(zoom);
+};
 const syncZoomControls = (z) => {
   const val = clampZoom(z);
   const slider = document.getElementById('uiZoomSlider');
@@ -580,6 +595,88 @@ const syncPanelWidthControls = (w) => {
   if (slider) slider.value = String(val);
   if (label) label.textContent = `${val}px`;
 };
+
+const SIDEBAR_WHEEL_MESSAGE = 'POE2TQ_SIDEBAR_WHEEL';
+let sidepanelWheelProxyBound = false;
+
+function normalizeWheelDelta(delta, deltaMode) {
+  const n = Number(delta);
+  if (!isFinite(n)) return 0;
+  if (deltaMode === 1) return n * 16;
+  if (deltaMode === 2) return n * Math.max(window.innerHeight || 0, 1);
+  return n;
+}
+
+function isVisibleElement(el) {
+  return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+}
+
+function isScrollableY(el) {
+  if (!(el instanceof Element) || !isVisibleElement(el)) return false;
+  const style = window.getComputedStyle(el);
+  if (!/(auto|scroll|overlay)/.test(style.overflowY)) return false;
+  return el.scrollHeight > el.clientHeight + 1;
+}
+
+function canScrollY(el, deltaY) {
+  if (!isScrollableY(el) || !deltaY) return false;
+  const max = el.scrollHeight - el.clientHeight;
+  if (max <= 1) return false;
+  return deltaY < 0 ? el.scrollTop > 0 : el.scrollTop < max - 1;
+}
+
+function findFallbackWheelTarget(deltaY) {
+  const selectors = [
+    '.overlay.show .modal',
+    '.import-modal-overlay.active .import-modal-box',
+    '.top-panel.active .utility-sub-panel.active',
+    '.top-panel.active .ninja-currency-list',
+    '.top-panel.active .build-detail',
+    '.top-panel.active .scroll-area',
+    '.scroll-area'
+  ];
+  const candidates = selectors
+    .map(selector => document.querySelector(selector))
+    .filter(el => isScrollableY(el));
+  return candidates.find(el => canScrollY(el, deltaY)) || candidates[0] || null;
+}
+
+function findWheelTarget(start, deltaY) {
+  let el = start instanceof Element ? start : null;
+  while (el && el !== document.documentElement) {
+    if (canScrollY(el, deltaY)) return el;
+    el = el.parentElement;
+  }
+  return findFallbackWheelTarget(deltaY);
+}
+
+function scrollWheelTarget(target, deltaY) {
+  if (!target || !deltaY) return;
+  const max = Math.max(0, target.scrollHeight - target.clientHeight);
+  target.scrollTop = Math.max(0, Math.min(max, target.scrollTop + deltaY));
+}
+
+function bindSidepanelWheelProxy() {
+  if (sidepanelWheelProxyBound) return;
+  sidepanelWheelProxyBound = true;
+
+  document.addEventListener('wheel', e => {
+    if (e.ctrlKey || e.defaultPrevented) return;
+    const deltaY = normalizeWheelDelta(e.deltaY, e.deltaMode);
+    if (!deltaY) return;
+    e.preventDefault();
+    e.stopPropagation();
+    scrollWheelTarget(findWheelTarget(e.target, deltaY), deltaY);
+  }, { passive: false });
+
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (!data || data.type !== SIDEBAR_WHEEL_MESSAGE) return;
+    const deltaY = normalizeWheelDelta(data.deltaY, data.deltaMode);
+    if (!deltaY) return;
+    scrollWheelTarget(findWheelTarget(document.activeElement || document.body, deltaY), deltaY);
+  });
+}
 let buildSectionCollapsed = true;
 let jewelSubFilter = 'all';
 
@@ -868,6 +965,189 @@ function appendSidepanelDebugLog(entry) {
   chrome.runtime.sendMessage({ type: 'APPEND_DEBUG_LOG', entry }).catch(() => {});
 }
 
+function serializeDebugError(error) {
+  if (!error) return { message: '' };
+  if (typeof error === 'string') return { message: error };
+  return {
+    name: error.name || '',
+    message: error.message || String(error),
+    stack: error.stack || ''
+  };
+}
+
+function getSidepanelDebugContext() {
+  let version = '';
+  try {
+    version = chrome.runtime.getManifest().version || '';
+  } catch (_) {}
+  return {
+    extensionVersion: version,
+    url: location.href,
+    readyState: document.readyState,
+    userAgent: navigator.userAgent
+  };
+}
+
+function formatDebugLogEntry(entry, idx) {
+  return [
+    `===== LOG ${idx + 1} =====`,
+    `loggedAt: ${entry.loggedAt || ''}`,
+    `kind: ${entry.kind || ''}`,
+    JSON.stringify(entry, null, 2),
+    ''
+  ].join('\n');
+}
+
+async function getDebugLogText(extraText = '') {
+  const res = await chrome.runtime.sendMessage({ type: 'GET_DEBUG_LOGS' }).catch(() => null);
+  const logs = Array.isArray(res?.logs) ? res.logs : [];
+  const sections = logs.map(formatDebugLogEntry);
+  const context = getSidepanelDebugContext();
+  const header = [
+    '===== ENV =====',
+    `exportedAt: ${new Date().toISOString()}`,
+    `extensionVersion: ${context.extensionVersion}`,
+    `url: ${context.url}`,
+    `readyState: ${context.readyState}`,
+    `userAgent: ${context.userAgent}`
+  ].join('\n');
+  const body = sections.length ? sections.join('\n') : 'No debug logs.';
+  return [extraText, header, body].filter(Boolean).join('\n\n');
+}
+
+async function getErrorLogText(extraText = '') {
+  const res = await chrome.runtime.sendMessage({ type: 'GET_ERROR_LOGS' }).catch(() => null);
+  const logs = Array.isArray(res?.logs) ? res.logs : [];
+  const sections = logs.map(formatDebugLogEntry);
+  const context = getSidepanelDebugContext();
+  const header = [
+    '===== ENV =====',
+    `exportedAt: ${new Date().toISOString()}`,
+    `extensionVersion: ${context.extensionVersion}`,
+    `url: ${context.url}`,
+    `readyState: ${context.readyState}`,
+    `userAgent: ${context.userAgent}`
+  ].join('\n');
+  const body = sections.length ? sections.join('\n') : 'No error logs.';
+  return [extraText, header, body].filter(Boolean).join('\n\n');
+}
+
+function fallbackCopyText(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+}
+
+function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+  }
+  fallbackCopyText(text);
+  return Promise.resolve();
+}
+
+function getInitErrorText(error) {
+  const serialized = serializeDebugError(error);
+  const context = getSidepanelDebugContext();
+  return [
+    'PoE2 Trade Quick 사이드패널 초기화 오류',
+    `version: ${context.extensionVersion}`,
+    `url: ${context.url}`,
+    `readyState: ${context.readyState}`,
+    `message: ${serialized.message || ''}`,
+    serialized.stack ? `stack:\n${serialized.stack}` : ''
+  ].filter(Boolean).join('\n');
+}
+
+async function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: filename
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function showErrorPreview() {
+  const box = document.getElementById('debugLogPreview');
+  if (!box) return;
+  const res = await chrome.runtime.sendMessage({ type: 'GET_ERROR_LOGS' }).catch(() => null);
+  const logs = Array.isArray(res?.logs) ? res.logs : [];
+  if (!logs.length) {
+    box.hidden = false;
+    box.textContent = '저장된 에러 로그가 없습니다.';
+    return;
+  }
+  const recentLogs = logs.slice(-8);
+  const firstNumber = logs.length - recentLogs.length + 1;
+  const recent = recentLogs.map((entry, idx) => {
+    const errorMessage = entry.error?.message ? `\nerror: ${entry.error.message}` : '';
+    const phase = entry.phase ? `\nphase: ${entry.phase}` : '';
+    return [
+      `#${firstNumber + idx} ${entry.loggedAt || ''}`,
+      `kind: ${entry.kind || ''}${phase}${errorMessage}`
+    ].join('\n');
+  });
+  box.hidden = false;
+  box.textContent = recent.join('\n\n');
+}
+
+function handleSidepanelInitError(error) {
+  const serialized = serializeDebugError(error);
+  const errorText = getInitErrorText(error);
+  appendSidepanelDebugLog({
+    kind: 'sidepanel-init-error',
+    error: serialized,
+    context: getSidepanelDebugContext()
+  });
+
+  document.body.innerHTML = `
+    <div class="fatal-error-page">
+      <div class="fatal-error-box">
+        <div class="fatal-error-title">PoE2 Trade Quick 초기화 오류</div>
+        <div class="fatal-error-desc">사이드바를 불러오는 중 오류가 발생했습니다. 아래 로그를 복사해서 전달해 주세요.</div>
+        <pre class="fatal-error-text">${esc(errorText)}</pre>
+        <div class="fatal-error-actions">
+          <button type="button" id="fatalCopy">전체 로그 복사</button>
+          <button type="button" id="fatalDownload">TXT 저장</button>
+          <button type="button" id="fatalReload">다시 시도</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('fatalCopy')?.addEventListener('click', async e => {
+    const text = await getErrorLogText(errorText);
+    await copyTextToClipboard(text);
+    e.currentTarget.textContent = '복사됨';
+  });
+  document.getElementById('fatalDownload')?.addEventListener('click', async () => {
+    const text = await getErrorLogText(errorText);
+    await downloadTextFile(`poe2-error-log-${Date.now()}.txt`, text);
+  });
+  document.getElementById('fatalReload')?.addEventListener('click', () => location.reload());
+}
+
+window.addEventListener('error', event => {
+  appendSidepanelDebugLog({
+    kind: 'sidepanel-runtime-error',
+    error: serializeDebugError(event.error || event.message),
+    context: getSidepanelDebugContext()
+  });
+});
+
+window.addEventListener('unhandledrejection', event => {
+  appendSidepanelDebugLog({
+    kind: 'sidepanel-unhandled-rejection',
+    error: serializeDebugError(event.reason),
+    context: getSidepanelDebugContext()
+  });
+});
+
 function summarizeTradeQueryForDebug(query) {
   const filters = query?.filters || {};
   const summarizeFilterObject = obj => {
@@ -975,7 +1255,11 @@ function normalizeSavedFilter(filter) {
   return filter;
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  initSidepanelApp().catch(handleSidepanelInitError);
+});
+
+async function initSidepanelApp() {
   // UI 줌 먼저 적용 (초기 렌더 깜빡임 최소화)
   const zoomStore = await chrome.storage.local.get(['uiZoom', SIDEBAR_UI_KEY]);
   const initialZoom = clampZoom(zoomStore.uiZoom != null ? zoomStore.uiZoom : DEFAULT_UI_ZOOM);
@@ -985,6 +1269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 패널 너비 슬라이더 초기 동기화 (sidebarUI.width, 없으면 기본 460)
   const initialWidth = clampPanelWidth(zoomStore[SIDEBAR_UI_KEY]?.width ?? DEFAULT_PANEL_WIDTH);
   syncPanelWidthControls(initialWidth);
+  window.addEventListener('resize', () => syncSidepanelViewportVars());
 
   await loadData();
   render();
@@ -993,6 +1278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindModal();
   bindSettings();
   bindImportExport();
+  bindSidepanelWheelProxy();
   chrome.storage.onChanged.addListener((changes) => {
     let needsRender = false;
     if (changes.filtersByLeague) {
@@ -1011,6 +1297,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       settings = { ...settings, ...(changes.settings.newValue || {}) };
       document.getElementById('leagueBadge').textContent = settings.league;
       document.getElementById('sLeague').value = settings.league;
+      document.getElementById('sCount').value = settings.resultCount;
+      const allowGlobalSidebar = document.getElementById('sAllowGlobalSidebar');
+      if (allowGlobalSidebar) allowGlobalSidebar.checked = !!settings.allowGlobalSidebar;
       needsRender = true;
     }
     if (changes.uiZoom) {
@@ -1029,8 +1318,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Top-tab buttons (replaced inline onclick to comply with MV3 CSP)
   document.getElementById('top-tab-trade').addEventListener('click', () => switchTopTab('trade'));
   document.getElementById('top-tab-economy').addEventListener('click', () => switchTopTab('economy'));
-  document.getElementById('top-tab-expedition').addEventListener('click', () => switchTopTab('expedition'));
+  document.getElementById('top-tab-utility').addEventListener('click', () => switchTopTab('utility'));
   document.getElementById('expedition-search').addEventListener('input', e => renderExpedition(e.target.value));
+  document.querySelectorAll('[data-utility-tab]').forEach(btn => {
+    btn.addEventListener('click', () => switchUtilityTab(btn.dataset.utilityTab));
+  });
+  bindRegexGenerator();
   document.getElementById('ninja-rate-badge').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('ninja-refresh-btn').addEventListener('click', () => loadNinjaRates());
 
@@ -1045,7 +1338,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 환율 배지 초기 로드 (백그라운드)
   setTimeout(() => loadNinjaRates(), 1000);
-});
+}
 
 async function loadData() {
   const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings']);
@@ -1099,6 +1392,8 @@ async function loadData() {
   await chrome.storage.local.set({ filtersByLeague, buildsByLeague, buildUiByLeague, settings });
   document.getElementById('sLeague').value = settings.league;
   document.getElementById('sCount').value = settings.resultCount;
+  const allowGlobalSidebar = document.getElementById('sAllowGlobalSidebar');
+  if (allowGlobalSidebar) allowGlobalSidebar.checked = !!settings.allowGlobalSidebar;
   document.getElementById('leagueBadge').textContent = settings.league;
 }
 
@@ -2044,7 +2339,6 @@ function makeCard(f) {
     <div class="card-quick">
       <button class="btn-search-q"   data-id="${f.id}">🔍 새창</button>
       <button class="btn-search-cur" data-id="${f.id}">🔗 현재창</button>
-      <button class="btn-open-q"     data-id="${f.id}">🌐 KR거래소</button>
       ${allBuildsForMove.length > 0 ? `<select class="build-move-select" data-move-filter="${f.id}" title="빌드/탭으로 이동">${moveOptions}</select>` : ''}
     </div>
 
@@ -2118,7 +2412,6 @@ function makeCard(f) {
   });
   wrap.querySelector('.btn-search-q').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, true); });
   wrap.querySelector('.btn-search-cur').addEventListener('click', e => { e.stopPropagation(); if(!wrap.classList.contains('open')) wrap.classList.add('open'); doSearch(f.id, false); });
-  wrap.querySelector('.btn-open-q').addEventListener('click', e => { e.stopPropagation(); openKR(f.id); });
   wrap.querySelector('.btn-delete-small').addEventListener('click', e => { e.stopPropagation(); delFilter(f.id); });
   const moveSelect = wrap.querySelector('[data-move-filter]');
   if (moveSelect) {
@@ -2580,10 +2873,6 @@ async function hydrateTradeQueryTemplate(filter) {
   return true;
 }
 
-function openKR(id) {
-  chrome.tabs.create({ url:`${KR_TRADE_BASE}/${encodeURIComponent(settings.league)}` });
-}
-
 function delFilter(id) {
   if (!confirm('이 필터를 삭제할까요?')) return;
   setCurrentFilters(getCurrentFilters().filter(x => String(x.id) !== String(id)));
@@ -2782,6 +3071,14 @@ function bindSettings() {
   leagueInput.addEventListener('change', e => onLeagueChange(e.target.value));
   leagueInput.addEventListener('blur',   e => onLeagueChange(e.target.value));
   document.getElementById('sCount').addEventListener('change', e => { settings.resultCount=parseInt(e.target.value); persist(); });
+  const allowGlobalSidebar = document.getElementById('sAllowGlobalSidebar');
+  if (allowGlobalSidebar) {
+    allowGlobalSidebar.checked = !!settings.allowGlobalSidebar;
+    allowGlobalSidebar.addEventListener('change', e => {
+      settings.allowGlobalSidebar = !!e.target.checked;
+      persist();
+    });
+  }
 
   // 패널 너비 슬라이더 — sidebarUI.width 만 갱신 (open/side 등 기존 값 보존)
   const widthSlider = document.getElementById('panelWidthSlider');
@@ -2834,11 +3131,18 @@ function bindImportExport() {
   });
 
   document.getElementById('btnImportTrigger').addEventListener('click',()=>document.getElementById('fileImport').click());
-  document.getElementById('btnExportDebug').addEventListener('click', exportDebugLogs);
+  document.getElementById('btnViewDebug').addEventListener('click', showErrorPreview);
+  document.getElementById('btnCopyDebug').addEventListener('click', e => copyErrorLogs(e.currentTarget));
+  document.getElementById('btnExportDebug').addEventListener('click', exportErrorLogs);
   document.getElementById('btnClearDebug').addEventListener('click', async () => {
-    if (!confirm('디버그 로그를 모두 비울까요?')) return;
-    await chrome.runtime.sendMessage({ type: 'CLEAR_DEBUG_LOGS' }).catch(() => null);
-    alert('✅ 디버그 로그를 비웠습니다.');
+    if (!confirm('에러 로그를 모두 비울까요?')) return;
+    await chrome.runtime.sendMessage({ type: 'CLEAR_ERROR_LOGS' }).catch(() => null);
+    const preview = document.getElementById('debugLogPreview');
+    if (preview) {
+      preview.hidden = false;
+      preview.textContent = '에러 로그를 비웠습니다.';
+    }
+    alert('✅ 에러 로그를 비웠습니다.');
   });
 
   document.getElementById('fileImport').addEventListener('change', e => {
@@ -2924,26 +3228,24 @@ function bindImportExport() {
   });
 }
 
-async function exportDebugLogs() {
-  const res = await chrome.runtime.sendMessage({ type: 'GET_DEBUG_LOGS' }).catch(() => null);
-  const logs = res?.logs || [];
-  const sections = logs.map((entry, idx) => {
-    return [
-      `===== LOG ${idx + 1} =====`,
-      `loggedAt: ${entry.loggedAt || ''}`,
-      `kind: ${entry.kind || ''}`,
-      JSON.stringify(entry, null, 2),
-      ''
-    ].join('\n');
-  });
-  const text = sections.length ? sections.join('\n') : 'No debug logs.';
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const a = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(blob),
-    download: `poe2-debug-log-${Date.now()}.txt`
-  });
-  a.click();
-  URL.revokeObjectURL(a.href);
+async function exportErrorLogs() {
+  const text = await getErrorLogText();
+  await downloadTextFile(`poe2-error-log-${Date.now()}.txt`, text);
+}
+
+async function copyErrorLogs(button) {
+  const text = await getErrorLogText();
+  await copyTextToClipboard(text);
+  const preview = document.getElementById('debugLogPreview');
+  if (preview) {
+    preview.hidden = false;
+    preview.textContent = '에러 로그를 클립보드에 복사했습니다.\n댓글이나 메시지에 그대로 붙여넣으면 됩니다.';
+  }
+  if (button) {
+    const prev = button.textContent;
+    button.textContent = '복사됨';
+    setTimeout(() => { button.textContent = prev; }, 1000);
+  }
 }
 
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -2980,6 +3282,103 @@ const NINJA_CATEGORIES = [
 
 let currentNinjaCategory = 'Currency';
 let currentExRate = null;  // 1div = N ex (Currency 탭 로드 시 갱신)
+let currentUtilityTab = 'expedition';
+let regexOptionFilter = 'all';
+let regexUserPresets = [];
+const regexOptionSelections = new Map();
+const REGEX_PRESET_STORAGE_KEY = 'waystoneRegexPresets';
+
+const WAYSTONE_REGEX_GROUPS = [
+  {
+    id: 'prefix',
+    title: '접두어',
+    items: [
+      { label: '지역에 언데드 무리 (6-13)개 추가 등장', pattern: '언데드.*무리' },
+      { label: '지역에 야수 무리 (6-13)개 추가 등장', pattern: '야수.*무리' },
+      { label: '지역에 에조미어 몬스터 무리 (6-13)개 추가 등장', pattern: '에조미어.*무리' },
+      { label: '지역에 파리둔 몬스터 무리 (6-13)개 추가 등장', pattern: '파리둔.*무리' },
+      { label: '지역에 바알 몬스터 무리 (6-13)개 추가 등장', pattern: '바알.*무리' },
+      { label: '지역에 철 수호병 무리 (6-13)개 추가 등장', pattern: '철.*수호병.*무리' },
+      { label: '지역에 역병 걸린 몬스터 무리 (6-13)개 추가 등장', pattern: '역병.*무리' },
+      { label: '지역에 초월한 몬스터 무리 (6-13)개 추가 등장', pattern: '초월.*무리' },
+      { label: '지역에 가시나무 몬스터 무리 (6-13)개 추가 등장', pattern: '가시나무.*무리' },
+      { label: '몬스터가 피해의 (15-30)%를 추가 화염 피해로 줌', pattern: '추가.*화염', danger: true },
+      { label: '몬스터가 피해의 (15-30)%를 추가 냉기 피해로 줌', pattern: '추가.*냉기', danger: true },
+      { label: '몬스터가 피해의 (15-30)%를 추가 번개 피해로 줌', pattern: '추가.*번개', danger: true },
+      { label: '몬스터 피해 (15-30)% 증가', pattern: '몬스터.*피해.*증가', danger: true },
+      { label: '몬스터의 생명력 (20-49)% 증폭', pattern: '생명력.*증폭', danger: true },
+      { label: '몬스터가 장갑을 두른 몬스터', pattern: '장갑.*두른', danger: true },
+      { label: '몬스터가 회피하는 몬스터', pattern: '회피.*몬스터', danger: true },
+      { label: '몬스터가 최대 생명력의 20%를 추가 에너지 보호막 최대치로 획득', pattern: '에너지.*보호막', danger: true },
+      { label: '몬스터의 정확도 (15-45)% 증가', pattern: '정확도.*증가', danger: true },
+      { label: '몬스터가 피해의 (15-30)%를 추가 카오스 피해로 줌', pattern: '추가.*카오스', danger: true },
+      { label: '지역이 쇠약화 저주에 걸림', pattern: '쇠약화', danger: true },
+      { label: '지역이 시간의 사슬 저주에 걸림', pattern: '시간.*사슬', danger: true },
+      { label: '지역이 원소 약화 저주에 걸림', pattern: '원소.*약화', danger: true },
+      { label: '지역에 점화 지대 존재', pattern: '점화.*지대', danger: true },
+      { label: '지역에 얼음 지대 존재', pattern: '얼음.*지대', danger: true },
+      { label: '지역에 감전 지대 존재', pattern: '감전.*지대', danger: true },
+      { label: '몬스터에게 적용되는 저주 효과 (20-50)% 감폭', pattern: '저주.*효과.*감폭', danger: true },
+      { label: '몬스터가 명중 시 (10-25)%의 확률로 권능, 격분, 인내 충전 강탈', pattern: '충전.*강탈|권능.*격분.*인내', danger: true },
+      { label: '심연 몬스터가 주는 경험치 (50-100)% 증가', pattern: '심연.*경험치' },
+      { label: '심연에 추가 구덩이 (2-3)개 존재', pattern: '심연.*추가.*구덩이.*[23]' },
+      { label: '지역 내 심연에서 생성되는 몬스터 (50-100)% 증가', pattern: '심연.*생성.*몬스터.*증가' },
+      { label: '심연에 추가 구덩이 (14-18)개 존재 지역이 심연으로 뒤덮임', pattern: '심연.*추가.*구덩이.*1[4-8]|심연.*뒤덮임' },
+      { label: '심연이 심연 보스로 이어짐', pattern: '심연.*보스' },
+      { label: '지역 내 부화기 여왕 1마리 추가 등장', pattern: '부화기.*여왕' },
+      { label: '심연 구덩이/균열에서 마법 등급 이상 몬스터 생성', pattern: '심연.*마법.*등급|심연.*균열.*마법' },
+      { label: '심연이 심연 지하로 이어짐', pattern: '심연.*지하' },
+      { label: '닫은 구덩이 수에 따라 심연 몬스터 난이도와 보상 증가', pattern: '닫은.*구덩이|난이도.*보상' },
+      { label: '지역 내 심연 구덩이에서 항상 보상 제공', pattern: '항상.*보상' },
+      { label: '지역 내 자연 생성 희귀 몬스터에게 추가 심연 속성 1개 부여', pattern: '희귀.*몬스터.*심연.*속성' }
+    ]
+  },
+  {
+    id: 'suffix',
+    title: '접미어',
+    items: [
+      { label: '희귀 몬스터가 속성 부여 1개 추가 보유', pattern: '희귀.*몬스터.*속성.*추가|속성.*부여.*추가', danger: true },
+      { label: '몬스터의 이동/공격/시전 속도 (10-25)% 증가', pattern: '이동.*속도|공격.*속도|시전.*속도', danger: true },
+      { label: '몬스터의 치명타 명중 확률 증가 및 치명타 피해 보너스', pattern: '치명타.*명중|치명타.*피해', danger: true },
+      { label: '몬스터의 원소 저항 +(20-40)%', pattern: '원소.*저항', danger: true },
+      { label: '몬스터가 명중 시 중독 유발', pattern: '중독', danger: true },
+      { label: '몬스터가 명중 시 출혈 유발', pattern: '출혈', danger: true },
+      { label: '몬스터의 상태 이상/기절 한계치 증가', pattern: '상태.*이상.*한계치|기절.*한계치', danger: true },
+      { label: '몬스터가 준 물리 피해와 동일한 방어구 파괴', pattern: '방어구.*파괴', danger: true },
+      { label: '몬스터의 기절 축적 증가', pattern: '기절.*축적', danger: true },
+      { label: '몬스터의 동결/인화성/감전 축적 증가', pattern: '동결.*축적|인화성|감전.*확률', danger: true },
+      { label: '몬스터가 투사체 (2-3)개 추가 발사', pattern: '투사체.*추가', danger: true },
+      { label: '몬스터의 효과 범위 50% 증가', pattern: '효과.*범위', danger: true },
+      { label: '몬스터 피해가 원소 저항 관통', pattern: '저항.*관통', danger: true },
+      { label: '플레이어 저항 최대치 (-12--4)%', pattern: '플레이어.*저항.*최대치|저항.*최대치', danger: true },
+      { label: '플레이어의 플라스크 충전량 감소', pattern: '플라스크.*충전', danger: true },
+      { label: '플레이어의 생명력 및 에너지 보호막 회복 속도 감폭', pattern: '회복.*속도.*감폭', danger: true },
+      { label: '플레이어의 재사용 대기시간 회복 속도 감폭', pattern: '재사용.*대기시간.*회복', danger: true },
+      { label: '몬스터가 치명타 명중으로 받는 추가 피해 감소', pattern: '치명타.*추가.*피해.*감소', danger: true },
+      { label: '희귀 몬스터가 처치한 몬스터의 영혼 포식/강탈', pattern: '영혼.*포식|포식한.*영혼', danger: true },
+      { label: '플레이어와 소환수가 10초마다 3초 동안 피해를 주지 않음', pattern: '피해를.*주지.*않음', danger: true },
+      { label: '스킬 사용 횟수당 플레이어 이동 및 스킬 속도 감폭', pattern: '스킬.*사용.*횟수|이동.*스킬.*속도.*감폭', danger: true },
+      { label: '몬스터가 명중 시 탐욕스러운 덩굴 유발', pattern: '탐욕스러운.*덩굴', danger: true },
+      { label: '희귀/고유 몬스터 처치 후 죽음의 징표 획득', pattern: '죽음의.*징표', danger: true },
+      { label: '지역에 마나 착취 지대 존재', pattern: '마나.*착취.*지대', danger: true },
+      { label: '자연 생성 몬스터 무리가 영혼의 결합 소속', pattern: '영혼의.*결합', danger: true },
+      { label: '자연 생성 희귀 몬스터가 지도 보스의 영혼의 결합 소속', pattern: '지도.*보스.*영혼의.*결합', danger: true }
+    ]
+  }
+];
+
+const WAYSTONE_REGEX_NUMERIC_STATS = {
+  quantity: { label: '아이템 수량', prefix: '템.수량.*', includeHundreds: true },
+  rarity: { label: '아이템 희귀도', prefix: '귀도.*', includeHundreds: true },
+  packSize: { label: '무리 규모', prefix: '^무.*', includeHundreds: false }
+};
+
+const WAYSTONE_REGEX_ITEMS = new Map();
+WAYSTONE_REGEX_GROUPS.forEach(group => {
+  group.items.forEach((item, index) => {
+    WAYSTONE_REGEX_ITEMS.set(`${group.id}:${index}`, { ...item, groupId: group.id, groupTitle: group.title });
+  });
+});
 
 function renderNinjaCategoryTabs() {
   const container = document.getElementById('ninja-category-tabs');
@@ -2998,6 +3397,613 @@ function renderNinjaCategoryTabs() {
     });
     container.appendChild(btn);
   });
+}
+
+function normalizeRegexSearchText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[(){}\[\]%,.+\-–~:/|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getRegexSearchTokens(text) {
+  return normalizeRegexSearchText(text).split(' ').filter(Boolean);
+}
+
+function getRegexOptionSearchText(item) {
+  return normalizeRegexSearchText([
+    item.label,
+    item.pattern,
+    item.groupTitle,
+    item.danger ? '위험 danger' : ''
+  ].filter(Boolean).join(' '));
+}
+
+function getRegexOptionState(id) {
+  return regexOptionSelections.get(id) || 'none';
+}
+
+function getAllRegexOptions() {
+  return Array.from(WAYSTONE_REGEX_ITEMS.entries()).map(([id, item]) => ({ id, ...item }));
+}
+
+function getFilteredRegexOptions() {
+  const query = document.getElementById('regex-option-search')?.value || '';
+  const tokens = getRegexSearchTokens(query);
+  const options = getAllRegexOptions().filter(item => {
+    const state = getRegexOptionState(item.id);
+    if (regexOptionFilter !== 'all' && regexOptionFilter !== 'selected' && item.groupId !== regexOptionFilter) return false;
+    if (regexOptionFilter === 'selected' && state === 'none') return false;
+    if (!tokens.length) return true;
+    const haystack = getRegexOptionSearchText(item);
+    return tokens.every(token => haystack.includes(token));
+  });
+  return options;
+}
+
+function renderRegexOptions() {
+  const container = document.getElementById('regex-option-list');
+  if (!container) return;
+  document.querySelectorAll('[data-regex-filter]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.regexFilter === regexOptionFilter);
+  });
+
+  const options = getFilteredRegexOptions();
+  const countEl = document.getElementById('regex-option-count');
+  if (countEl) countEl.textContent = `${options.length}개`;
+
+  if (!options.length) {
+    container.innerHTML = '<div class="regex-result-empty">검색 결과가 없습니다.</div>';
+  } else {
+    container.innerHTML = options.map(item => renderRegexOptionRow(item)).join('');
+  }
+
+  renderSelectedRegexOptions();
+  bindRegexOptionResultEvents();
+}
+
+function renderRegexOptionRow(item) {
+  const state = getRegexOptionState(item.id);
+  return `<div class="regex-result-row" data-regex-row="${esc(item.id)}">
+    <div class="regex-result-main">
+      <div class="regex-option-title">
+        <span class="regex-tag">${esc(item.groupTitle)}</span>
+        <span class="regex-option-label" title="${esc(item.label)}">${esc(item.label)}</span>
+      </div>
+      <div class="regex-option-pattern">${esc(item.pattern)}</div>
+    </div>
+    <div class="regex-option-actions">
+      <button type="button" class="regex-option-action include${state === 'include' ? ' active' : ''}" data-regex-set="${esc(item.id)}" data-state="include">포함</button>
+      <button type="button" class="regex-option-action exclude${state === 'exclude' ? ' active' : ''}" data-regex-set="${esc(item.id)}" data-state="exclude">제외</button>
+    </div>
+  </div>`;
+}
+
+function renderSelectedRegexOptions() {
+  const container = document.getElementById('regex-selected-list');
+  if (!container) return;
+  const selected = getAllRegexOptions().filter(item => getRegexOptionState(item.id) !== 'none');
+  const countEl = document.getElementById('regex-selected-option-count');
+  if (countEl) countEl.textContent = `${selected.length}개`;
+  if (!selected.length) {
+    container.innerHTML = '<div class="regex-result-empty">선택된 옵션이 없습니다.</div>';
+    return;
+  }
+  container.innerHTML = selected.map(item => {
+    const state = getRegexOptionState(item.id);
+    return `<div class="regex-selected-row">
+      <span class="regex-state-badge ${state}">${state === 'include' ? '포함' : '제외'}</span>
+      <div class="regex-selected-main">
+        <div class="regex-option-title">
+          <span class="regex-tag">${esc(item.groupTitle)}</span>
+          <span class="regex-option-label" title="${esc(item.label)}">${esc(item.label)}</span>
+        </div>
+        <div class="regex-option-pattern">${esc(state === 'exclude' ? negateRegexPiece(item.pattern) : item.pattern)}</div>
+      </div>
+      <button type="button" class="regex-remove-btn" data-regex-remove="${esc(item.id)}">x</button>
+    </div>`;
+  }).join('');
+}
+
+function bindRegexOptionResultEvents() {
+  document.querySelectorAll('[data-regex-set]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const current = getRegexOptionState(btn.dataset.regexSet);
+      setRegexOptionState(btn.dataset.regexSet, current === btn.dataset.state ? 'none' : btn.dataset.state);
+    });
+  });
+  document.querySelectorAll('[data-regex-remove]').forEach(btn => {
+    btn.addEventListener('click', () => setRegexOptionState(btn.dataset.regexRemove, 'none'));
+  });
+}
+
+function escapeRegexLiteral(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wrapRegexPiece(pattern) {
+  const text = String(pattern || '').trim();
+  if (!text) return '';
+  return /[|()]/.test(text) ? `(${text})` : text;
+}
+
+function splitTopLevelRegexAlternatives(pattern) {
+  const text = String(pattern || '').trim();
+  if (!text) return [];
+  const parts = [];
+  let current = '';
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let escaped = false;
+  for (const ch of text) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '[') bracketDepth += 1;
+    else if (ch === ']' && bracketDepth > 0) bracketDepth -= 1;
+    else if (ch === '(' && bracketDepth === 0) parenDepth += 1;
+    else if (ch === ')' && bracketDepth === 0 && parenDepth > 0) parenDepth -= 1;
+    if (ch === '|' && parenDepth === 0 && bracketDepth === 0) {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+function uniqueRegexPieces(pieces) {
+  const out = [];
+  const seen = new Set();
+  pieces.forEach(piece => {
+    const text = String(piece || '').trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    out.push(text);
+  });
+  return out;
+}
+
+function stripRegexNegation(pattern) {
+  const text = String(pattern || '').trim();
+  return text.startsWith('!') ? text.slice(1).trim() : text;
+}
+
+function splitRegexPieceAlternatives(pattern) {
+  const text = stripRegexNegation(pattern);
+  if (!text) return [];
+  return splitTopLevelRegexAlternatives(text);
+}
+
+function getRegexFactorPrefix(pattern) {
+  const text = String(pattern || '').trim();
+  const idx = text.lastIndexOf('.*');
+  if (idx < 0) return '';
+  return text.slice(0, idx + 2);
+}
+
+function compactRegexAlternatives(alternatives) {
+  const ordered = uniqueRegexPieces(alternatives.map(stripRegexNegation));
+  const groups = new Map();
+  const passthrough = [];
+
+  ordered.forEach(piece => {
+    const prefix = getRegexFactorPrefix(piece);
+    const rest = prefix ? piece.slice(prefix.length) : '';
+    if (!prefix || !rest || rest.includes('|')) {
+      passthrough.push(piece);
+      return;
+    }
+    if (!groups.has(prefix)) groups.set(prefix, []);
+    groups.get(prefix).push(rest);
+  });
+
+  const compressed = [];
+  ordered.forEach(piece => {
+    const prefix = getRegexFactorPrefix(piece);
+    const rest = prefix ? piece.slice(prefix.length) : '';
+    const group = groups.get(prefix);
+    if (!prefix || !rest || !group) {
+      if (passthrough.includes(piece)) compressed.push(piece);
+      return;
+    }
+    if (group._used) return;
+    group._used = true;
+    compressed.push(group.length > 1 ? `${prefix}(${uniqueRegexPieces(group).join('|')})` : piece);
+  });
+
+  return uniqueRegexPieces(compressed);
+}
+
+function compactRegexPiece(pattern) {
+  return compactRegexAlternatives(splitRegexPieceAlternatives(pattern)).join('|');
+}
+
+function normalizePositiveRegexPiece(pattern) {
+  const text = compactRegexPiece(pattern);
+  if (!text) return '';
+  const alternatives = splitTopLevelRegexAlternatives(text);
+  if (alternatives.length > 1 && !/^\(.+\)$/.test(text)) return `(${text})`;
+  return text;
+}
+
+function formatRegexAndPiece(pattern) {
+  const text = compactRegexPiece(pattern);
+  if (!text) return '';
+  return `"${text.replace(/"/g, '')}"`;
+}
+
+function negateRegexPiece(pattern) {
+  return buildNegatedRegexTerm([pattern]);
+}
+
+function getNegatedRegexPieces(pattern) {
+  const term = buildNegatedRegexTerm([pattern]);
+  return term ? [term] : [];
+}
+
+function buildPercentAtLeastRegex(value, options = {}) {
+  const min = Math.max(0, Math.floor(Number(value)));
+  const includeHundreds = options.includeHundreds !== false;
+  if (!isFinite(min) || min <= 0) return '';
+  if (min < 10) {
+    const parts = [`[${min}-9]`, '[1-9].'];
+    if (includeHundreds) parts.push('1..');
+    return `(${parts.join('|')})%`;
+  }
+  if (min < 100) {
+    const tens = Math.floor(min / 10);
+    const ones = min % 10;
+    const parts = [];
+    if (ones === 0) parts.push(`[${tens}-9].`);
+    else {
+      parts.push(`${tens}[${ones}-9]`);
+      if (tens < 9) parts.push(`[${tens + 1}-9].`);
+    }
+    if (includeHundreds) parts.push('1..');
+    return parts.length === 1 ? `${parts[0]}%` : `(${parts.join('|')})%`;
+  }
+  if (!includeHundreds) return '';
+  if (min < 1000) {
+    const hundreds = Math.floor(min / 100);
+    const rest = min % 100;
+    const tens = Math.floor(rest / 10);
+    const ones = rest % 10;
+    const parts = [];
+    if (rest === 0) {
+      parts.push(`${hundreds}..`);
+    } else {
+      parts.push(`${hundreds}${tens}[${ones}-9]`);
+      if (tens < 9) parts.push(`${hundreds}[${tens + 1}-9].`);
+    }
+    if (hundreds < 9) parts.push(`[${hundreds + 1}-9]..`);
+    return `(${parts.join('|')})%`;
+  }
+  const digits = String(min).length;
+  return `[1-9]${'.'.repeat(Math.max(0, digits - 1))}%`;
+}
+
+function buildNumericStatRegex(stat, minValue) {
+  const numberPattern = buildPercentAtLeastRegex(minValue, stat);
+  if (!stat?.prefix || !numberPattern) return '';
+  return `${stat.prefix}${numberPattern}`;
+}
+
+function getSelectedRegexOptionGroups() {
+  const include = [];
+  const exclude = [];
+  WAYSTONE_REGEX_ITEMS.forEach((item, id) => {
+    if (!item?.pattern) return;
+    const state = getRegexOptionState(id);
+    if (state === 'include') include.push(item.pattern);
+    if (state === 'exclude') exclude.push(item.pattern);
+  });
+  const clean = pieces => Array.from(new Set(pieces.map(piece => String(piece || '').trim()).filter(Boolean)));
+  return { include: clean(include), exclude: clean(exclude) };
+}
+
+function getSelectedRegexOptionPieces() {
+  const groups = getSelectedRegexOptionGroups();
+  const excludeTerm = combineNegatedRegexOrPieces(groups.exclude);
+  return [
+    ...groups.include.map(normalizePositiveRegexPiece),
+    excludeTerm
+  ].filter(Boolean);
+}
+
+function getSelectedRegexNumericPieces() {
+  const selected = [];
+  document.querySelectorAll('[data-regex-min]').forEach(input => {
+    const stat = WAYSTONE_REGEX_NUMERIC_STATS[input.dataset.regexMin];
+    const pattern = buildNumericStatRegex(stat, input.value);
+    if (pattern) selected.push(pattern);
+  });
+  return Array.from(new Set(selected.map(piece => String(piece || '').trim()).filter(Boolean)));
+}
+
+function getSelectedRegexPieces() {
+  return Array.from(new Set([
+    ...getSelectedRegexOptionPieces(),
+    ...getSelectedRegexNumericPieces()
+  ].map(piece => String(piece || '').trim()).filter(Boolean)));
+}
+
+function combineRegexOrPieces(pieces) {
+  const clean = compactRegexAlternatives(
+    pieces.flatMap(piece => splitRegexPieceAlternatives(piece))
+  );
+  if (!clean.length) return '';
+  if (clean.length === 1) return clean[0];
+  return clean.join('|');
+}
+
+function combineNegatedRegexOrPieces(pieces) {
+  return buildNegatedRegexTerm(pieces);
+}
+
+function buildNegatedRegexTerm(pieces) {
+  const alternatives = uniqueRegexPieces(
+    pieces.flatMap(piece => splitRegexPieceAlternatives(piece))
+  );
+  if (!alternatives.length) return '';
+  return `!${compactRegexAlternatives(alternatives).join('|')}`;
+}
+
+function formatRegexAndTerms(pieces) {
+  const clean = pieces.map(piece => String(piece || '').trim()).filter(Boolean);
+  if (!clean.length) return '';
+  return clean.join(' ');
+}
+
+function buildWaystoneRegex() {
+  const numericPieces = getSelectedRegexNumericPieces();
+  const optionGroups = getSelectedRegexOptionGroups();
+  const mode = document.querySelector('input[name="regex-mode"]:checked')?.value || 'or';
+  const includePieces = [
+    ...numericPieces,
+    ...optionGroups.include
+  ];
+  const requiredPieces = [];
+  const excludeTerm = combineNegatedRegexOrPieces(optionGroups.exclude);
+
+  if (mode === 'or') {
+    const includeOr = combineRegexOrPieces(includePieces);
+    if (includeOr) requiredPieces.push(includeOr);
+    if (excludeTerm) requiredPieces.push(excludeTerm);
+  } else {
+    requiredPieces.push(...includePieces.map(formatRegexAndPiece).filter(Boolean));
+    if (excludeTerm) requiredPieces.push(excludeTerm);
+  }
+
+  return formatRegexAndTerms(requiredPieces);
+}
+
+function updateRegexGenerator() {
+  const output = document.getElementById('regex-output');
+  const lengthEl = document.getElementById('regex-length');
+  const countEl = document.getElementById('regex-selected-count');
+  if (!output) return;
+  const regex = buildWaystoneRegex();
+  output.value = regex;
+  if (lengthEl) lengthEl.textContent = `${regex.length}자`;
+  if (countEl) countEl.textContent = `${getSelectedRegexPieces().length}개 선택`;
+}
+
+function resetRegexGenerator() {
+  regexOptionSelections.clear();
+  const mode = document.querySelector('input[name="regex-mode"][value="or"]');
+  if (mode) mode.checked = true;
+  document.querySelectorAll('[data-regex-min]').forEach(input => { input.value = ''; });
+  const search = document.getElementById('regex-option-search');
+  if (search) search.value = '';
+  regexOptionFilter = 'all';
+  renderRegexOptions();
+  updateRegexGenerator();
+}
+
+function getRegexNumberState() {
+  const numbers = {};
+  document.querySelectorAll('[data-regex-min]').forEach(input => {
+    numbers[input.dataset.regexMin] = input.value || '';
+  });
+  return numbers;
+}
+
+function getRegexSelectionState() {
+  return Array.from(regexOptionSelections.entries())
+    .filter(([, state]) => state === 'include' || state === 'exclude')
+    .map(([id, state]) => ({ id, state }));
+}
+
+function getRegexGeneratorState() {
+  return {
+    mode: document.querySelector('input[name="regex-mode"]:checked')?.value || 'or',
+    numbers: getRegexNumberState(),
+    selections: getRegexSelectionState()
+  };
+}
+
+function applyRegexGeneratorState(state) {
+  regexOptionSelections.clear();
+  const mode = document.querySelector(`input[name="regex-mode"][value="${state?.mode === 'and' ? 'and' : 'or'}"]`);
+  if (mode) mode.checked = true;
+  document.querySelectorAll('[data-regex-min]').forEach(input => {
+    input.value = state?.numbers?.[input.dataset.regexMin] || '';
+  });
+  (state?.selections || []).forEach(entry => {
+    if (WAYSTONE_REGEX_ITEMS.has(entry.id) && (entry.state === 'include' || entry.state === 'exclude')) {
+      regexOptionSelections.set(entry.id, entry.state);
+    }
+  });
+  renderRegexOptions();
+  updateRegexGenerator();
+}
+
+function makeRegexPresetId() {
+  return `regex_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+async function loadRegexUserPresets() {
+  const result = await chrome.storage.local.get(REGEX_PRESET_STORAGE_KEY).catch(() => ({}));
+  regexUserPresets = Array.isArray(result[REGEX_PRESET_STORAGE_KEY]) ? result[REGEX_PRESET_STORAGE_KEY] : [];
+  renderRegexUserPresets();
+}
+
+async function persistRegexUserPresets() {
+  await chrome.storage.local.set({ [REGEX_PRESET_STORAGE_KEY]: regexUserPresets });
+}
+
+function renderRegexUserPresets() {
+  const list = document.getElementById('regex-user-preset-list');
+  const count = document.getElementById('regex-preset-count');
+  if (count) count.textContent = `${regexUserPresets.length}개`;
+  if (!list) return;
+  if (!regexUserPresets.length) {
+    list.innerHTML = '<div class="regex-result-empty">저장된 프리셋이 없습니다.</div>';
+    return;
+  }
+  list.innerHTML = regexUserPresets.map(preset => `<div class="regex-preset-item">
+    <button type="button" class="regex-preset-load" data-regex-load-preset="${esc(preset.id)}" title="${esc(preset.name)}">${esc(preset.name)}</button>
+    <button type="button" class="regex-preset-delete" data-regex-delete-preset="${esc(preset.id)}">삭제</button>
+  </div>`).join('');
+  list.querySelectorAll('[data-regex-load-preset]').forEach(btn => {
+    btn.addEventListener('click', () => loadRegexPreset(btn.dataset.regexLoadPreset));
+  });
+  list.querySelectorAll('[data-regex-delete-preset]').forEach(btn => {
+    btn.addEventListener('click', () => deleteRegexPreset(btn.dataset.regexDeletePreset));
+  });
+}
+
+async function saveCurrentRegexPreset() {
+  const input = document.getElementById('regex-preset-name');
+  const name = (input?.value || '').trim();
+  if (!name) {
+    alert('프리셋 이름을 입력해 주세요.');
+    input?.focus();
+    return;
+  }
+  const state = getRegexGeneratorState();
+  const regex = buildWaystoneRegex();
+  const existing = regexUserPresets.find(preset => preset.name === name);
+  if (existing) {
+    existing.state = state;
+    existing.regex = regex;
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    regexUserPresets.push({
+      id: makeRegexPresetId(),
+      name,
+      state,
+      regex,
+      savedAt: new Date().toISOString()
+    });
+  }
+  await persistRegexUserPresets();
+  if (input) input.value = '';
+  renderRegexUserPresets();
+}
+
+function loadRegexPreset(id) {
+  const preset = regexUserPresets.find(item => item.id === id);
+  if (!preset) return;
+  applyRegexGeneratorState(preset.state || {});
+}
+
+async function deleteRegexPreset(id) {
+  const preset = regexUserPresets.find(item => item.id === id);
+  if (!preset) return;
+  if (!confirm(`"${preset.name}" 프리셋을 삭제할까요?`)) return;
+  regexUserPresets = regexUserPresets.filter(item => item.id !== id);
+  await persistRegexUserPresets();
+  renderRegexUserPresets();
+}
+
+function setRegexOptionState(id, state, rerender = true) {
+  const next = state === 'include' || state === 'exclude' ? state : 'none';
+  if (next === 'none') regexOptionSelections.delete(id);
+  else regexOptionSelections.set(id, next);
+  if (rerender) {
+    renderRegexOptions();
+    updateRegexGenerator();
+  }
+}
+
+function copyRegexOutput() {
+  const output = document.getElementById('regex-output');
+  const text = output?.value || '';
+  if (!text) return;
+  const markCopied = () => {
+    const btn = document.getElementById('regex-copy');
+    if (!btn) return;
+    const prev = btn.textContent;
+    btn.textContent = '복사됨';
+    setTimeout(() => { btn.textContent = prev; }, 900);
+  };
+  const fallbackCopy = () => {
+    output.focus();
+    output.select();
+    document.execCommand('copy');
+    markCopied();
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(markCopied).catch(fallbackCopy);
+    return;
+  }
+  fallbackCopy();
+}
+
+function bindRegexGenerator() {
+  renderRegexOptions();
+  document.getElementById('regex-option-search')?.addEventListener('input', () => {
+    renderRegexOptions();
+    updateRegexGenerator();
+  });
+  document.querySelectorAll('[data-regex-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      regexOptionFilter = btn.dataset.regexFilter || 'all';
+      renderRegexOptions();
+    });
+  });
+  document.querySelectorAll('[data-regex-min]').forEach(input => {
+    input.addEventListener('input', updateRegexGenerator);
+  });
+  document.querySelectorAll('input[name="regex-mode"]').forEach(input => {
+    input.addEventListener('change', updateRegexGenerator);
+  });
+  document.getElementById('regex-save-preset')?.addEventListener('click', saveCurrentRegexPreset);
+  document.getElementById('regex-preset-name')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveCurrentRegexPreset();
+  });
+  document.getElementById('regex-reset')?.addEventListener('click', resetRegexGenerator);
+  document.getElementById('regex-copy')?.addEventListener('click', copyRegexOutput);
+  loadRegexUserPresets();
+  updateRegexGenerator();
+}
+
+function switchUtilityTab(tabName = 'expedition') {
+  const next = tabName === 'regex' ? 'regex' : 'expedition';
+  currentUtilityTab = next;
+  document.querySelectorAll('[data-utility-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.utilityTab === next);
+  });
+  document.querySelectorAll('.utility-sub-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `utility-panel-${next}`);
+  });
+  if (next === 'expedition') {
+    renderExpedition(document.getElementById('expedition-search')?.value || '');
+  } else {
+    updateRegexGenerator();
+  }
 }
 
 function renderExpedition(query) {
@@ -3042,7 +4048,7 @@ function switchTopTab(tabName) {
   document.getElementById(`top-panel-${tabName}`).classList.add('active');
   document.getElementById(`top-tab-${tabName}`).classList.add('active');
   if (tabName === 'economy') { renderNinjaCategoryTabs(); loadNinjaRates(); }
-  if (tabName === 'expedition') { renderExpedition(); }
+  if (tabName === 'utility') { switchUtilityTab(currentUtilityTab); }
 }
 
 const ninjaCacheMap = {};   // key: `${league}::${itemType}` → { data, fetchedAt }

@@ -3,7 +3,7 @@
 // ─── 거래소 사이트 판별 ───────────────────────────────
 // content.js 는 <all_urls> 에 주입되므로, 거래소 전용 로직(⭐ 버튼,
 // MutationObserver, 매물 평가 등)은 거래소 호스트에서만 실행한다.
-const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location.hostname);
+const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|poe\.game\.daum\.net|pathofexile\.com)/i.test(location.hostname);
 const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v2';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
@@ -28,38 +28,42 @@ let cachedEvalContextPromise = null;
 let cachedTradeRates = null;
 
 if (IS_TRADE_SITE) {
-  const observer = new MutationObserver(mutations => {
-    if (isOwnExtensionMutation(mutations)) return;
-    scanItems();
-    scheduleManualStatSearchEnhance();
-    injectCurrentSearchSaveButton();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  setTimeout(() => {
-    scanItems();
-    scheduleManualStatSearchEnhance();
-    injectCurrentSearchSaveButton();
-  }, 1000);
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (changes[TRADE_RATE_KEY]) {
-      cachedTradeRates = changes[TRADE_RATE_KEY].newValue || null;
-      scheduleEvaluation();
-    }
-    if (changes[SEARCH_EVAL_KEY]) {
-      cachedEvalContext = null;           // 캐시 무효화
-      cachedEvalContextPromise = null;    // 진행 중인 프로미스도 무효화
-      document.querySelectorAll('.row[data-id]').forEach(row => {
-        applySearchEvaluation(row).catch(() => {});
-      });
-      scheduleEvaluation();
-    }
-  });
+  try {
+    const observer = new MutationObserver(mutations => {
+      if (isOwnExtensionMutation(mutations)) return;
+      scanItems();
+      scheduleManualStatSearchEnhance();
+      injectCurrentSearchSaveButton();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => {
+      scanItems();
+      scheduleManualStatSearchEnhance();
+      injectCurrentSearchSaveButton();
+    }, 1000);
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (changes[TRADE_RATE_KEY]) {
+        cachedTradeRates = changes[TRADE_RATE_KEY].newValue || null;
+        scheduleEvaluation();
+      }
+      if (changes[SEARCH_EVAL_KEY]) {
+        cachedEvalContext = null;           // 캐시 무효화
+        cachedEvalContextPromise = null;    // 진행 중인 프로미스도 무효화
+        document.querySelectorAll('.row[data-id]').forEach(row => {
+          applySearchEvaluation(row).catch(() => {});
+        });
+        scheduleEvaluation();
+      }
+    });
 
-  storageGet([TRADE_RATE_KEY]).then(result => {
-    cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
-    scheduleEvaluation();
-  }).catch(() => {});
+    storageGet([TRADE_RATE_KEY]).then(result => {
+      cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
+      scheduleEvaluation();
+    }).catch(err => reportContentScriptError('trade-rate-load', err, false));
+  } catch (err) {
+    reportContentScriptError('content-bootstrap', err, true);
+  }
 }
 
 // ─── DOM-based search evaluation ──────────────────────
@@ -2752,11 +2756,140 @@ function simpleHash(str) {
   return Math.abs(h).toString(36);
 }
 
+function serializeContentError(error) {
+  if (!error) return { message: '' };
+  if (typeof error === 'string') return { message: error };
+  return {
+    name: error.name || '',
+    message: error.message || String(error),
+    stack: error.stack || ''
+  };
+}
+
+function getContentDebugContext() {
+  let version = '';
+  try {
+    version = chrome.runtime.getManifest().version || '';
+  } catch (_) {}
+  return {
+    extensionVersion: version,
+    url: location.href,
+    host: location.hostname,
+    readyState: document.readyState,
+    userAgent: navigator.userAgent
+  };
+}
+
+function formatContentErrorText(phase, error) {
+  const serialized = serializeContentError(error);
+  const context = getContentDebugContext();
+  return [
+    'PoE2 Trade Quick 오류',
+    `phase: ${phase}`,
+    `version: ${context.extensionVersion}`,
+    `url: ${context.url}`,
+    `readyState: ${context.readyState}`,
+    `message: ${serialized.message || ''}`,
+    serialized.stack ? `stack:\n${serialized.stack}` : ''
+  ].filter(Boolean).join('\n');
+}
+
+function appendContentDebugLog(entry) {
+  try {
+    chrome.runtime.sendMessage({ type: 'APPEND_DEBUG_LOG', entry }).catch(() => {});
+  } catch (_) {}
+}
+
+function copyDebugText(text) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopyDebugText(text));
+    return;
+  }
+  fallbackCopyDebugText(text);
+}
+
+function fallbackCopyDebugText(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  } catch (_) {}
+}
+
+function showContentInitError(phase, error) {
+  if (document.getElementById('poe2tq-content-error')) return;
+  const mount = document.body || document.documentElement;
+  if (!mount) return;
+
+  const box = document.createElement('div');
+  box.id = 'poe2tq-content-error';
+  box.style.cssText = [
+    'position:fixed',
+    'right:12px',
+    'top:12px',
+    'z-index:2147483647',
+    'width:280px',
+    'background:#130d0d',
+    'border:1px solid #7a3030',
+    'box-shadow:0 8px 24px rgba(0,0,0,.45)',
+    'border-radius:6px',
+    'padding:10px',
+    'color:#e0c0a0',
+    'font:12px/1.5 Segoe UI, Malgun Gothic, sans-serif'
+  ].join(';');
+
+  const title = document.createElement('div');
+  title.textContent = 'PoE2 Trade Quick 초기화 오류';
+  title.style.cssText = 'font-weight:700;color:#ff9a80;margin-bottom:5px;';
+
+  const message = document.createElement('div');
+  message.textContent = serializeContentError(error).message || phase;
+  message.style.cssText = 'word-break:break-word;margin-bottom:8px;';
+
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:6px;';
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.textContent = '오류 복사';
+  copy.style.cssText = 'flex:1;background:#2a180f;border:1px solid #8a6030;color:#f0d080;border-radius:4px;padding:5px;cursor:pointer;font:inherit;';
+  copy.addEventListener('click', () => {
+    copyDebugText(formatContentErrorText(phase, error));
+    copy.textContent = '복사됨';
+    setTimeout(() => { copy.textContent = '오류 복사'; }, 1000);
+  });
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = '닫기';
+  close.style.cssText = 'background:#201818;border:1px solid #4a3030;color:#b09080;border-radius:4px;padding:5px 8px;cursor:pointer;font:inherit;';
+  close.addEventListener('click', () => box.remove());
+
+  actions.append(copy, close);
+  box.append(title, message, actions);
+  mount.appendChild(box);
+}
+
+function reportContentScriptError(phase, error, visible) {
+  appendContentDebugLog({
+    kind: 'content-error',
+    phase,
+    error: serializeContentError(error),
+    context: getContentDebugContext()
+  });
+  if (visible) showContentInitError(phase, error);
+}
+
 // ─── in-page iframe 사이드바 ──────────────────────────────
 // 네이티브 chrome.sidePanel 대신 거래소 페이지에 우리가 제어하는
 // iframe 사이드바를 주입한다. 거래소 탭에서만 자연히 보이고,
 // 다른 탭으로 가면 페이지의 일부이므로 함께 사라진다.
 const SIDEBAR_HOST_ID = 'poe2-qs-sidebar-host';
+let sidebarController = null;
 
 function initSidebar() {
   const HOST_ID = SIDEBAR_HOST_ID;
@@ -2765,9 +2898,11 @@ function initSidebar() {
   const MAX_WIDTH = 760;
   const DEFAULT_WIDTH = 460;
   const HANDLE_WIDTH = 32;
+  const BOTTOM_SAFE_GAP = 10;
+  const WHEEL_MESSAGE = 'POE2TQ_SIDEBAR_WHEEL';
 
   // 중복 주입 방지 (재호출해도 안전)
-  if (document.getElementById(HOST_ID)) return;
+  if (document.getElementById(HOST_ID)) return sidebarController;
 
   const clampWidth = (w) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w));
 
@@ -2784,13 +2919,21 @@ function initSidebar() {
     :host { all: initial; }
     .wrap {
       --w: ${DEFAULT_WIDTH}px;
+      --tab-zoom: 1;
+      --zoom-correction: 1;
+      --sidebar-height: calc(100vh - ${BOTTOM_SAFE_GAP}px);
       position: relative;
-      height: 100vh;
+      height: var(--sidebar-height);
       font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+      transform: scale(var(--zoom-correction));
+      transform-origin: top right;
+    }
+    .wrap.side-left {
+      transform-origin: top left;
     }
     .panel {
       position: relative;
-      height: 100vh;
+      height: 100%;
       width: var(--w);
       background: #1a1a1a;
       transition: width 0.18s ease;
@@ -2936,6 +3079,64 @@ function initSidebar() {
   shadow.appendChild(wrap);
 
   let state = { open: true, width: DEFAULT_WIDTH, side: 'right' };
+  let stateTouched = false;
+  let currentTabZoom = 1;
+  let zoomSyncTimer = null;
+
+  function clampTabZoom(zoom) {
+    const n = Number(zoom);
+    if (!isFinite(n) || n <= 0) return 1;
+    return Math.max(0.25, Math.min(5, n));
+  }
+
+  function syncSidebarHeight() {
+    const viewportHeight = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 0);
+    const height = Math.max(320, (viewportHeight - BOTTOM_SAFE_GAP) * currentTabZoom);
+    wrap.style.setProperty('--sidebar-height', `${height}px`);
+  }
+
+  function applyTabZoomCorrection(zoom) {
+    currentTabZoom = clampTabZoom(zoom);
+    wrap.style.setProperty('--tab-zoom', String(currentTabZoom));
+    wrap.style.setProperty('--zoom-correction', String(1 / currentTabZoom));
+    syncSidebarHeight();
+  }
+
+  function requestTabZoomCorrection() {
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_TAB_ZOOM' }, response => {
+        if (chrome.runtime.lastError || !response?.ok) return;
+        applyTabZoomCorrection(response.zoom);
+      });
+    } catch (_) {
+      /* 컨텍스트 무효화 등은 무시 */
+    }
+  }
+
+  function scheduleTabZoomSync() {
+    clearTimeout(zoomSyncTimer);
+    zoomSyncTimer = setTimeout(requestTabZoomCorrection, 120);
+  }
+
+  function handleWindowResize() {
+    syncSidebarHeight();
+    scheduleTabZoomSync();
+  }
+
+  function forwardWheelToIframe(e) {
+    if (!state.open || e.ctrlKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      iframe.contentWindow?.postMessage({
+        type: WHEEL_MESSAGE,
+        deltaY: e.deltaY,
+        deltaMode: e.deltaMode
+      }, '*');
+    } catch (_) {
+      /* iframe 준비 전 wheel 은 무시 */
+    }
+  }
 
   function applyState() {
     const isLeft = state.side === 'left';
@@ -2963,6 +3164,7 @@ function initSidebar() {
   }
 
   function setOpen(open) {
+    stateTouched = true;
     state = { ...state, open };
     applyState();
     saveState();
@@ -2975,6 +3177,7 @@ function initSidebar() {
   function setSide(side) {
     const next = side === 'left' ? 'left' : 'right';
     // open/width는 유지하고 side만 변경
+    stateTouched = true;
     state = { ...state, side: next };
     applyState();
     saveState();
@@ -2983,6 +3186,13 @@ function initSidebar() {
   function toggleSide() {
     setSide(state.side === 'left' ? 'right' : 'left');
   }
+
+  sidebarController = {
+    toggle,
+    open: () => setOpen(true),
+    close: () => setOpen(false),
+    applyTabZoomCorrection
+  };
 
   // 초기 상태 로드
   try {
@@ -2993,11 +3203,12 @@ function initSidebar() {
       }
       const saved = r && r[STORAGE_KEY];
       if (saved && typeof saved === 'object') {
-        state = {
+        const savedState = {
           open: typeof saved.open === 'boolean' ? saved.open : true,
           width: clampWidth(Number(saved.width) || DEFAULT_WIDTH),
           side: saved.side === 'left' ? 'left' : 'right'
         };
+        state = stateTouched ? { ...savedState, open: state.open } : savedState;
       }
       applyState();
     });
@@ -3024,7 +3235,8 @@ function initSidebar() {
     // 왼쪽 패널: 오른쪽 가장자리 드래그 → clientX
     const raw =
       state.side === 'left' ? e.clientX : window.innerWidth - e.clientX;
-    const next = clampWidth(raw);
+    const next = clampWidth(raw * currentTabZoom);
+    stateTouched = true;
     state = { ...state, width: next };
     wrap.style.setProperty('--w', `${next}px`);
   }
@@ -3048,12 +3260,10 @@ function initSidebar() {
     document.addEventListener('mouseup', onMouseUp);
   });
 
-  // background에서 오는 토글 메시지 수신
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === 'TOGGLE_SIDEBAR') {
-      toggle();
-    }
-  });
+  wrap.addEventListener('wheel', forwardWheelToIframe, { passive: false, capture: true });
+  window.addEventListener('resize', handleWindowResize);
+  syncSidebarHeight();
+  requestTabZoomCorrection();
 
   // 설정 패널의 너비 슬라이더에서 width 가 바뀌면 즉시 --w 적용.
   // 자기가 방금 드래그로 저장한 값과 같으면 무시(무한루프/튐 방지).
@@ -3072,8 +3282,55 @@ function initSidebar() {
   }
 }
 
+function removeSidebar() {
+  const host = document.getElementById(SIDEBAR_HOST_ID);
+  if (host) host.remove();
+}
+
+function isGlobalSidebarEnabled(settings) {
+  return !!(settings && settings.allowGlobalSidebar);
+}
+
+function handleSidebarMessage(msg) {
+  if (!msg) return;
+  if (msg.type === 'TAB_ZOOM_CHANGED') {
+    sidebarController?.applyTabZoomCorrection?.(msg.zoomFactor);
+    return;
+  }
+  if (msg.type !== 'TOGGLE_SIDEBAR' && msg.type !== 'OPEN_SIDEBAR') return;
+  try {
+    const controller = initSidebar();
+    if (msg.type === 'OPEN_SIDEBAR') controller?.open?.();
+    else controller?.toggle?.();
+  } catch (err) {
+    reportContentScriptError('sidebar-message', err, true);
+  }
+}
+
+async function syncSidebarAvailability() {
+  try {
+    if (IS_TRADE_SITE) {
+      initSidebar();
+      return;
+    }
+    const result = await storageGet(['settings']);
+    if (isGlobalSidebarEnabled(result?.settings)) initSidebar();
+    else removeSidebar();
+  } catch (err) {
+    reportContentScriptError('sidebar-availability', err, IS_TRADE_SITE);
+  }
+}
+
 // ─── 사이드바 주입 조건 결정 ──────────────────────────
-// 거래소 사이트에서만 주입한다.
-if (IS_TRADE_SITE) {
-  initSidebar();
+// 거래소 사이트에서는 항상 주입하고, 일반 페이지에서는 설정에서 허용한 경우에만 주입한다.
+try {
+  chrome.runtime.onMessage.addListener(handleSidebarMessage);
+  syncSidebarAvailability();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.settings || IS_TRADE_SITE) return;
+    if (isGlobalSidebarEnabled(changes.settings.newValue)) initSidebar();
+    else removeSidebar();
+  });
+} catch (err) {
+  reportContentScriptError('sidebar-init', err, true);
 }
