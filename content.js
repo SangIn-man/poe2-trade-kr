@@ -798,66 +798,6 @@ function injectCurrentSearchSaveButton() {
 }
 
 // ─── 키워드 검색 토글 버튼 ────────────────────────────
-const HISTORY_BUTTON_SELECTOR = 'a, button, input[type="submit"], input[type="button"], [role="button"], [role="link"], [role="menuitem"], [role="tab"], div, span, li';
-
-function isClickableLike(el) {
-  return el.matches('a, button, input[type="submit"], input[type="button"], [role="button"], [role="link"], [role="menuitem"], [role="tab"]');
-}
-
-function elementDepth(el) {
-  let depth = 0;
-  for (let p = el.parentElement; p; p = p.parentElement) depth++;
-  return depth;
-}
-
-// History 버튼은 <button>/<a> 가 아니라 우측 상단 네비게이션의 div/span 일 수
-// 있어 태그를 한정하지 않고 넓게 훑은 뒤, 점수로 가장 정확한 항목을 고른다.
-function scoreTradeHistoryButton(el) {
-  if (!el || isOwnExtensionNode(el) || !isVisibleElement(el)) return -1;
-  if (el.closest('.row[data-id]')) return -1;
-
-  const text = normalizeSpace(`${el.textContent || ''} ${el.value || ''}`).toLowerCase();
-  if (!text) return -1;
-  const attrs = [
-    el.id,
-    typeof el.className === 'string' ? el.className : '',
-    el.getAttribute('aria-label'),
-    el.getAttribute('title'),
-    el.getAttribute('data-testid'),
-    el.getAttribute('href')
-  ].join(' ').toLowerCase();
-  const combined = `${text} ${attrs}`;
-  if (!/(history|히스토리|기록)/i.test(combined)) return -1;
-
-  let score = 0;
-  if (/^(history|히스토리|기록)$/i.test(text)) score += 80;                    // 정확히 "History" 인 항목 우대
-  else if (/(^|\s)(history|히스토리|기록)(\s|$)/i.test(text)) score += 40;      // History 가 별도 단어로 포함
-  else score += 12;                                                            // 더 큰 컨테이너(텍스트 뭉침)
-  if (/(history)/i.test(attrs)) score += 25;
-  if (isClickableLike(el)) score += 20;
-  const rect = el.getBoundingClientRect();
-  if (rect.top < window.innerHeight * 0.5) score += 8;                         // 상단 영역
-  return score;
-}
-
-function findTradeHistoryButton() {
-  let best = null;
-  let bestScore = -1;
-  let bestDepth = Infinity;
-  document.querySelectorAll(HISTORY_BUTTON_SELECTOR).forEach(el => {
-    const score = scoreTradeHistoryButton(el);
-    if (score <= 0) return;
-    const depth = elementDepth(el);
-    // 동점이면 더 바깥쪽(부모) 요소를 택해 토글이 항목 안에 끼지 않게 한다.
-    if (score > bestScore || (score === bestScore && depth < bestDepth)) {
-      best = el;
-      bestScore = score;
-      bestDepth = depth;
-    }
-  });
-  return bestScore > 0 ? best : null;
-}
-
 function updateKeywordSearchToggleLabel(btn) {
   if (!btn) return;
   btn.classList.toggle('poe2tq-keyword-toggle-on', keywordSearchEnabled);
@@ -868,13 +808,7 @@ function updateKeywordSearchToggleLabel(btn) {
     : '키워드 검색 OFF — 클릭하면 키워드 검색 드롭다운 활성화';
 }
 
-// History 가 nav-tabs 의 <li><a><span> 구조라, 토글도 형제 <li> 로 감싸
-// 같은 탭 바 흐름에 들어가게 한다. 반환값은 래퍼 <li>.
 function createKeywordSearchToggle() {
-  const li = document.createElement('li');
-  li.className = 'poe2tq-keyword-toggle-item';
-  li.setAttribute('role', 'presentation');
-
   const btn = document.createElement('button');
   btn.id = KEYWORD_SEARCH_TOGGLE_ID;
   btn.type = 'button';
@@ -886,9 +820,7 @@ function createKeywordSearchToggle() {
     chrome.storage.local.set({ [KEYWORD_SEARCH_ENABLED_KEY]: next });
   });
   updateKeywordSearchToggleLabel(btn);
-
-  li.appendChild(btn);
-  return li;
+  return btn;
 }
 
 // in-memory 상태와 UI/드롭다운을 동기화한다(저장은 호출 측에서).
@@ -903,33 +835,24 @@ function applyKeywordSearchEnabled(value) {
   }
 }
 
+// '+ 현재 검색조건 저장' 버튼과 동일하게, 검색 버튼 옆에 토글을 박는다.
 function injectKeywordSearchToggle() {
-  const existingBtn = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
-  // 이미 DOM 에 배치돼 있으면 라벨만 갱신하고 비싼 전체 스캔을 건너뛴다.
-  if (existingBtn && existingBtn.isConnected) {
-    updateKeywordSearchToggleLabel(existingBtn);
+  let btn = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
+  if (!btn) btn = createKeywordSearchToggle();
+  updateKeywordSearchToggleLabel(btn);
+
+  const searchButton = findTradeSearchActionButton();
+  if (searchButton && searchButton.parentElement) {
+    btn.classList.remove('poe2tq-keyword-toggle-floating');
+    if (searchButton.previousElementSibling !== btn) {
+      searchButton.parentElement.insertBefore(btn, searchButton);  // 검색 버튼 왼쪽
+    }
     return;
   }
 
-  const historyEl = findTradeHistoryButton();
-  if (!historyEl) return;
-  // History 는 <li><a><span> 구조 → 형제로 넣기 위해 가장 가까운 <li> 를 기준으로.
-  const anchor = historyEl.closest('li') || historyEl;
-  const parent = anchor.parentElement;
-  if (!parent) return;
-
-  const wrapper = existingBtn ? existingBtn.closest('.poe2tq-keyword-toggle-item') : createKeywordSearchToggle();
-  if (!wrapper) return;
-  updateKeywordSearchToggleLabel(wrapper.querySelector(`#${KEYWORD_SEARCH_TOGGLE_ID}`));
-
-  // 일단 History 앞에 넣고, 화면상 History 보다 왼쪽이 아니면 반대쪽으로 옮긴다.
-  // (nav-tabs 가 float:right 등으로 좌우가 뒤집힌 레이아웃일 수 있어 측정으로 보정)
-  parent.insertBefore(wrapper, anchor);
-  const wRect = wrapper.getBoundingClientRect();
-  const aRect = anchor.getBoundingClientRect();
-  if (wRect.left >= aRect.left) {
-    parent.insertBefore(wrapper, anchor.nextSibling);
-  }
+  // 검색 버튼을 못 찾으면 화면 하단에 떠 있는 형태로 폴백
+  btn.classList.add('poe2tq-keyword-toggle-floating');
+  if (btn.parentElement !== document.body) document.body.appendChild(btn);
 }
 
 async function handleSaveCurrentTradeSearch(event) {
