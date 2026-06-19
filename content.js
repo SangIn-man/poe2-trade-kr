@@ -4,14 +4,15 @@
 // content.js 는 <all_urls> 에 주입되므로, 거래소 전용 로직(⭐ 버튼,
 // MutationObserver, 매물 평가 등)은 거래소 호스트에서만 실행한다.
 const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|pathofexile\.com)/i.test(location.hostname);
-const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v1';
+const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v2';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
-const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit', 'enchant']);
+const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit', 'enchant', 'skill']);
 const MANUAL_STAT_SEARCH_GROUP_LABELS = {
   explicit: '비고정',
   implicit: '고정',
-  enchant: '인챈트'
+  enchant: '인챈트',
+  skill: '스킬'
 };
 const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 const QUERY_SAVE_BUTTON_INLINE_CLASS = 'poe2tq-save-query-inline';
@@ -1238,6 +1239,7 @@ async function handleStar(btn, row) {
           implicitMods: result.item?.implicitMods || [],
           craftedMods: result.item?.craftedMods || [],
           enchantMods: result.item?.enchantMods || [],
+          skillMods: result.item?.skillMods || [],
           runeMods: result.item?.runeMods || [],
           fracturedMods: result.item?.fracturedMods || [],
           bondedMods: result.item?.bondedMods || [],
@@ -1801,6 +1803,7 @@ function scoreManualStatEntry(entry, tokens, compactQuery) {
   if (compactQuery && entry.compact.includes(compactQuery)) score += 10;
   if (entry.groupId === 'explicit') score += 4;
   if (entry.groupId === 'enchant') score += 3;
+  if (entry.groupId === 'skill') score += 3;
   if (entry.groupId === 'implicit') score += 2;
   score -= Math.min(entry.text.length, 120) / 12;
   return score;
@@ -1884,7 +1887,7 @@ function isManualStatContext(input) {
     return false;
   }
 
-  const statHint = /(?:^|[\s_.-])(stats?|mods?|affix|pseudo|explicit|implicit|enchant|rune)(?:$|[\s_.-])|stat[_ .-]?filters?|filter[_ .-]?stats?|속성|스탯|능력치|비고정|고정|인챈트/i;
+  const statHint = /(?:^|[\s_.-])(stats?|mods?|affix|pseudo|explicit|implicit|enchant|skill|rune)(?:$|[\s_.-])|stat[_ .-]?filters?|filter[_ .-]?stats?|속성|스탯|능력치|비고정|고정|인챈트|스킬/i;
   const nonStatHint = /(type[_ -]?filters?|item[_ -]?filters?|item type|base type|equipment[_ -]?filters?|weapon[_ -]?filters?|armou?r[_ -]?filters?|misc[_ -]?filters?|trade[_ -]?filters?|socket|sockets|requirement|requirements|rarity|category|league|account|price|sale|아이템 필터|아이템 유형|아이템 종류|아이템 분류|분류|장비 필터|무기 필터|방어구 필터|기타 필터|거래 필터|소켓|요구|희귀도|가격|판매|리그|계정|이름)/i;
   const contexts = getManualStatAncestorContexts(input);
   let nearestStatDepth = Infinity;
@@ -2474,6 +2477,7 @@ async function buildFilterFromApi(item, listing) {
     { key: 'implicit', prop: 'implicitMods' },
     { key: 'crafted', prop: 'craftedMods' },
     { key: 'enchant', prop: 'enchantMods' },
+    { key: 'skill', prop: 'skillMods' },
     { key: 'rune', prop: 'runeMods' },
     { key: 'fractured', prop: 'fracturedMods' },
     { key: 'desecrated', prop: 'desecratedMods' },

@@ -525,10 +525,10 @@ const ITEM_NAMES_KO = {
   "Warding Rune of Symbiosis": "공생의 수호하는 룬"
 };
 
-const CATEGORY_PREFIXES = ['explicit','implicit','desecrated','enchant','fractured','crafted','rune'];
+const CATEGORY_PREFIXES = ['explicit','implicit','desecrated','enchant','skill','fractured','crafted','rune'];
 const CATEGORY_LABELS = {
   explicit: '비고정', implicit: '고정', desecrated: '훼손',
-  enchant: '인챈트', fractured: '분열됨', crafted: '제작', rune: '룬'
+  enchant: '인챈트', skill: '스킬', fractured: '분열됨', crafted: '제작', rune: '룬'
 };
 
 const KR_TRADE_BASE = 'https://poe.kakaogames.com/trade2/search/poe2';
@@ -1249,6 +1249,7 @@ function getFilterValueMeta(filter) {
       fractured: 0.9,
       crafted: 0.82,
       enchant: 0.8,
+      skill: 0.78,
       rune: 0.72,
       desecrated: 0.7
     }[prefix] || 0.88;
@@ -1745,6 +1746,7 @@ function buildItemStatValueMap(item) {
     { key: 'implicit', prop: 'implicitMods' },
     { key: 'crafted', prop: 'craftedMods' },
     { key: 'enchant', prop: 'enchantMods' },
+    { key: 'skill', prop: 'skillMods' },
     { key: 'rune', prop: 'runeMods' },
     { key: 'fractured', prop: 'fracturedMods' },
     { key: 'desecrated', prop: 'desecratedMods' },
