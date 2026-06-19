@@ -113,15 +113,15 @@
   opacity: 0.7;
 }
 
-/* 키워드 검색 토글 (검색 버튼 왼쪽) */
+/* 키워드 검색 토글 ('능력치 필터' 헤더 옆) */
 #poe2tq-keyword-search-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  margin-right: 7px;
+  margin: 0 8px;
   vertical-align: middle;
-  padding: 6px 10px;
+  padding: 4px 9px;
   border: 1px solid #4a4a4a;
   border-radius: 4px;
   background: #161616;

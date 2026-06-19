@@ -835,22 +835,51 @@ function applyKeywordSearchEnabled(value) {
   }
 }
 
-// '+ 현재 검색조건 저장' 버튼과 동일하게, 검색 버튼 옆에 토글을 박는다.
+// '능력치 필터' 그룹 헤더 라벨을 찾는다. 텍스트가 정확히 '능력치 필터' 인
+// 가장 안쪽 요소만 잡아 '+ 능력치 필터 추가' / '능력치 그룹 추가' 와 구분한다.
+function findStatFilterHeaderLabel() {
+  const target = '능력치 필터';
+  let best = null;
+  let bestDepth = -1;
+  document.querySelectorAll('span, div, label, strong, b, p, h1, h2, h3, h4, h5, h6').forEach(el => {
+    if (isOwnExtensionNode(el) || !isVisibleElement(el)) return;
+    if (el.closest('.row[data-id]')) return;
+    if (normalizeSpace(el.textContent || '') !== target) return;
+    let depth = 0;
+    for (let p = el.parentElement; p; p = p.parentElement) depth++;
+    if (depth > bestDepth) {
+      best = el;
+      bestDepth = depth;
+    }
+  });
+  return best;
+}
+
+// 토글은 '능력치 필터' 헤더 옆에 두는 걸 1순위로, 못 찾으면 검색 버튼 옆,
+// 그래도 없으면 화면 하단 고정으로 폴백한다.
 function injectKeywordSearchToggle() {
   let btn = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
   if (!btn) btn = createKeywordSearchToggle();
   updateKeywordSearchToggleLabel(btn);
 
-  const searchButton = findTradeSearchActionButton();
-  if (searchButton && searchButton.parentElement) {
+  const header = findStatFilterHeaderLabel();
+  if (header && header.parentElement) {
     btn.classList.remove('poe2tq-keyword-toggle-floating');
-    if (searchButton.previousElementSibling !== btn) {
-      searchButton.parentElement.insertBefore(btn, searchButton);  // 검색 버튼 왼쪽
+    if (header.nextElementSibling !== btn) {
+      header.parentElement.insertBefore(btn, header.nextSibling);  // '능력치 필터' 라벨 바로 오른쪽
     }
     return;
   }
 
-  // 검색 버튼을 못 찾으면 화면 하단에 떠 있는 형태로 폴백
+  const searchButton = findTradeSearchActionButton();
+  if (searchButton && searchButton.parentElement) {
+    btn.classList.remove('poe2tq-keyword-toggle-floating');
+    if (searchButton.previousElementSibling !== btn) {
+      searchButton.parentElement.insertBefore(btn, searchButton);
+    }
+    return;
+  }
+
   btn.classList.add('poe2tq-keyword-toggle-floating');
   if (btn.parentElement !== document.body) document.body.appendChild(btn);
 }
