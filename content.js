@@ -868,7 +868,13 @@ function updateKeywordSearchToggleLabel(btn) {
     : '키워드 검색 OFF — 클릭하면 키워드 검색 드롭다운 활성화';
 }
 
+// History 가 nav-tabs 의 <li><a><span> 구조라, 토글도 형제 <li> 로 감싸
+// 같은 탭 바 흐름에 들어가게 한다. 반환값은 래퍼 <li>.
 function createKeywordSearchToggle() {
+  const li = document.createElement('li');
+  li.className = 'poe2tq-keyword-toggle-item';
+  li.setAttribute('role', 'presentation');
+
   const btn = document.createElement('button');
   btn.id = KEYWORD_SEARCH_TOGGLE_ID;
   btn.type = 'button';
@@ -880,7 +886,9 @@ function createKeywordSearchToggle() {
     chrome.storage.local.set({ [KEYWORD_SEARCH_ENABLED_KEY]: next });
   });
   updateKeywordSearchToggleLabel(btn);
-  return btn;
+
+  li.appendChild(btn);
+  return li;
 }
 
 // in-memory 상태와 UI/드롭다운을 동기화한다(저장은 호출 측에서).
@@ -896,17 +904,32 @@ function applyKeywordSearchEnabled(value) {
 }
 
 function injectKeywordSearchToggle() {
-  let existing = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
+  const existingBtn = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
   // 이미 DOM 에 배치돼 있으면 라벨만 갱신하고 비싼 전체 스캔을 건너뛴다.
-  if (existing && existing.isConnected && existing.parentElement) {
-    updateKeywordSearchToggleLabel(existing);
+  if (existingBtn && existingBtn.isConnected) {
+    updateKeywordSearchToggleLabel(existingBtn);
     return;
   }
-  const historyBtn = findTradeHistoryButton();
-  if (!historyBtn || !historyBtn.parentElement) return;
-  if (!existing) existing = createKeywordSearchToggle();
-  updateKeywordSearchToggleLabel(existing);
-  historyBtn.parentElement.insertBefore(existing, historyBtn);
+
+  const historyEl = findTradeHistoryButton();
+  if (!historyEl) return;
+  // History 는 <li><a><span> 구조 → 형제로 넣기 위해 가장 가까운 <li> 를 기준으로.
+  const anchor = historyEl.closest('li') || historyEl;
+  const parent = anchor.parentElement;
+  if (!parent) return;
+
+  const wrapper = existingBtn ? existingBtn.closest('.poe2tq-keyword-toggle-item') : createKeywordSearchToggle();
+  if (!wrapper) return;
+  updateKeywordSearchToggleLabel(wrapper.querySelector(`#${KEYWORD_SEARCH_TOGGLE_ID}`));
+
+  // 일단 History 앞에 넣고, 화면상 History 보다 왼쪽이 아니면 반대쪽으로 옮긴다.
+  // (nav-tabs 가 float:right 등으로 좌우가 뒤집힌 레이아웃일 수 있어 측정으로 보정)
+  parent.insertBefore(wrapper, anchor);
+  const wRect = wrapper.getBoundingClientRect();
+  const aRect = anchor.getBoundingClientRect();
+  if (wRect.left >= aRect.left) {
+    parent.insertBefore(wrapper, anchor.nextSibling);
+  }
 }
 
 async function handleSaveCurrentTradeSearch(event) {

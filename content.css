@@ -114,6 +114,15 @@
 }
 
 /* 키워드 검색 토글 (History 버튼 왼쪽) */
+.poe2tq-keyword-toggle-item {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  float: right;
+  margin: 0;
+  padding: 0 4px;
+}
+
 #poe2tq-keyword-search-toggle {
   display: inline-flex;
   align-items: center;
