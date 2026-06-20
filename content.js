@@ -815,6 +815,7 @@ function createKeywordSearchToggle() {
   btn.setAttribute('role', 'switch');
   btn.addEventListener('click', event => {
     event.preventDefault();
+    event.stopPropagation();
     const next = !keywordSearchEnabled;
     applyKeywordSearchEnabled(next);
     chrome.storage.local.set({ [KEYWORD_SEARCH_ENABLED_KEY]: next });

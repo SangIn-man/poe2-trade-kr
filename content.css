@@ -114,22 +114,29 @@
 }
 
 /* 키워드 검색 토글 ('능력치 필터' 헤더 옆) */
+/* filter-title 이 block(div) 이라 토글이 다음 줄로 밀리는 문제 →
+   내 토글 바로 앞의 제목만 인라인블록으로 만들어 같은 줄에 둔다. (다른 그룹 영향 없음) */
+.filter-title:has(+ #poe2tq-keyword-search-toggle) {
+  display: inline-block;
+  width: auto;
+  vertical-align: middle;
+}
+
 #poe2tq-keyword-search-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  margin: 0 8px;
+  margin: 0 6px;
   vertical-align: middle;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border: 1px solid #4a4a4a;
   border-radius: 4px;
   background: #161616;
   color: #9a9a9a;
-  font: 700 12px/1.2 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font: 700 11px/1.2 'Segoe UI', 'Malgun Gothic', sans-serif;
   cursor: pointer;
   white-space: nowrap;
-  vertical-align: middle;
   box-shadow: none;
   transition: color .12s ease, border-color .12s ease, background .12s ease;
 }
