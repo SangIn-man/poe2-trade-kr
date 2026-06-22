@@ -1382,6 +1382,7 @@
     <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
     <button class="top-tab-btn" id="top-tab-economy">Economy</button>
     <button class="top-tab-btn" id="top-tab-utility">Utility</button>
+    <button class="top-tab-btn" id="top-tab-admin" hidden>Admin</button>
   </div>
 
   <!-- TradeQuick panel (existing content) -->
@@ -1458,17 +1459,63 @@
           <button class="btn-full btn-muted" id="btnClearDebug">🧹 에러 로그 비우기</button>
           <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
         </div>
+        <div class="settings-block">
+          <h3>관리자</h3>
+          <div class="setting-row">
+            <label>관리자 키</label>
+            <input type="password" id="adminKeyInput" placeholder="관리자 키 입력" autocomplete="off"/>
+          </div>
+          <button class="btn-full btn-gold" id="btnUnlockAdmin">관리자 활성화</button>
+          <button class="btn-full btn-muted" id="btnLockAdmin">관리자 해제</button>
+          <div class="notice" id="adminAccessStatus">관리자 탭이 비활성화되어 있습니다.</div>
+        </div>
         <div class="notice">
           🇰🇷 <strong>poe.kakaogames.com</strong> 한국 거래소를 사용합니다.<br/>
           거래소에서 아이템을 검색 후 <strong>⭐ 즐겨찾기</strong> 버튼을 클릭하면<br/>
           자동으로 필터가 저장됩니다.<br/>
           <a href="https://poe.kakaogames.com/trade2/search/poe2/Runes of Aldur" target="_blank">거래소 직접 방문 →</a>
         </div>
+        <div class="notice" style="margin-top:8px;">
+          <strong style="color:var(--gold-lt);">📋 릴리즈 노트</strong><br/>
+          <br/>
+          <strong style="color:var(--gold);">v1.3.0</strong> <span style="color:var(--text-dim);font-size:10px;">2026-06-22</span><br/>
+          • 패시브 트리 탭 리뉴얼: <strong>노드 검색</strong> / <strong>빌드 비교</strong> 서브탭 분리<br/>
+          • 빌드 비교 기능 추가: POB XML 파일 2개 업로드 → 서로 다른 패시브 노드 추출<br/>
+          • Notable 노드: 한국어 이름/스탯 + Notable 뱃지 표시<br/>
+          • 일반 노드: tree.json 기반 영문 이름/스탯 표시<br/>
+          • 패시브 데이터 소스: passive-tree-ko-csv-matched.json (874개 Notable 노드 한국어 번역)<br/>
+          <br/>
+          <strong style="color:var(--gold);">v1.2.5</strong> <span style="color:var(--text-dim);font-size:10px;">2025</span><br/>
+          • 유틸리티 탭에 패시브 성유 서브탭 추가<br/>
+          • 관리자 잠금 기능 추가<br/>
+          <br/>
+          <strong style="color:var(--gold);">v1.2.4</strong><br/>
+          • 거래소 키워드 검색 토글 추가<br/>
+          • 키워드 토글을 '능력치 필터' 헤더 옆으로 이동<br/>
+          <br/>
+          <strong style="color:var(--gold);">v1.2.3</strong><br/>
+          • 저장된 필터 드래그 정렬 지원<br/>
+        </div>
         <div class="notice notice-disclaimer">
           ⚠️ 이 확장 프로그램은 Grinding Gear Games(GGG) 및 poe.ninja와<br/>
           무관한 <strong>비공식 커뮤니티 도구</strong>입니다.<br/>
           <br/>
           📊 시세 데이터 제공: <a href="https://poe.ninja" target="_blank">poe.ninja</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="top-panel" id="top-panel-admin">
+    <div class="economy-header">
+      <span>Admin</span>
+      <span id="adminDeviceBadge" class="ninja-updated"></span>
+    </div>
+    <div class="scroll-area">
+      <div class="tab-content active">
+        <div class="settings-block">
+          <h3>관리자 전용</h3>
+          <div class="notice" id="adminPanelStatus">관리자 키가 등록된 PC에서만 표시됩니다.</div>
         </div>
       </div>
     </div>
@@ -1494,6 +1541,7 @@
   <div class="top-panel utility-panel" id="top-panel-utility">
     <div class="utility-sub-tabs">
       <button class="utility-sub-tab active" data-utility-tab="expedition">Expedition</button>
+      <button class="utility-sub-tab" data-utility-tab="passive">패시브 트리</button>
       <button class="utility-sub-tab" data-utility-tab="regex">정규식(미완성)</button>
     </div>
 
@@ -1512,6 +1560,43 @@
         <tbody id="expedition-tbody">
         </tbody>
       </table>
+    </div>
+
+    <div class="utility-sub-panel" id="utility-panel-passive">
+      <div style="display:flex;gap:0;border-bottom:1px solid #2a2a2a;">
+        <button class="passive-mode-btn active" data-passive-mode="search" style="flex:1;padding:7px 0;background:none;border:none;border-bottom:2px solid #c8a84a;color:#c8a84a;font-size:11px;cursor:pointer;">노드 검색</button>
+        <button class="passive-mode-btn" data-passive-mode="compare" style="flex:1;padding:7px 0;background:none;border:none;border-bottom:2px solid transparent;color:#888;font-size:11px;cursor:pointer;">빌드 비교</button>
+      </div>
+      <div id="passive-mode-search">
+        <div style="padding:8px 8px 4px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+            <input type="text" id="passive-search" placeholder="이름 또는 능력 검색..." style="flex:1;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;box-sizing:border-box;">
+            <button id="passive-lang-toggle" title="한/영 전환" style="padding:4px 8px;background:#2a2a2a;border:1px solid #555;border-radius:4px;color:#ccc;font-size:11px;cursor:pointer;white-space:nowrap;">한/영</button>
+          </div>
+          <div id="passive-count" style="font-size:11px;color:#666;margin-bottom:6px;"></div>
+        </div>
+        <div id="passive-list" style="padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <div id="passive-mode-compare" style="display:none;">
+        <div style="padding:8px;display:flex;flex-direction:column;gap:8px;">
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:4px;">빌드 1 XML</div>
+            <label style="display:block;padding:7px 10px;background:#1a1a1a;border:1px dashed #444;border-radius:4px;cursor:pointer;font-size:11px;color:#aaa;text-align:center;">
+              <span id="passive-xml-1-name">파일 선택...</span>
+              <input type="file" id="passive-xml-1" accept=".xml" style="display:none;">
+            </label>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:4px;">빌드 2 XML</div>
+            <label style="display:block;padding:7px 10px;background:#1a1a1a;border:1px dashed #444;border-radius:4px;cursor:pointer;font-size:11px;color:#aaa;text-align:center;">
+              <span id="passive-xml-2-name">파일 선택...</span>
+              <input type="file" id="passive-xml-2" accept=".xml" style="display:none;">
+            </label>
+          </div>
+          <button id="passive-compare-btn" style="padding:7px;background:#2a2010;border:1px solid #5a3e10;border-radius:4px;color:#c8a84a;font-size:12px;cursor:pointer;font-weight:600;">비교하기</button>
+        </div>
+        <div id="passive-compare-result" style="padding:0 8px 8px;"></div>
+      </div>
     </div>
 
     <div class="utility-sub-panel" id="utility-panel-regex">

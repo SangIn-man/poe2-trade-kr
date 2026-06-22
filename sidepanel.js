@@ -538,11 +538,23 @@ const DEFAULT_LEAGUE = 'Runes of Aldur';
 const DEFAULT_BUILD_NAME = '기본 빌드';
 const KNOWN_LEAGUES = ['Runes of Aldur', 'HC Runes of Aldur', 'Standard', 'Hardcore'];
 const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Aldur': 'HC Runes of Aldur' };
+const ADMIN_ACCESS_KEY = 'adminAccess';
+const ADMIN_KEY_HASHES = {
+  work: {
+    label: '회사 PC',
+    hash: '39e9769ad4adfa48b46a313d1c1739c13c17e773adda72b5f648de68fee95e69'
+  },
+  home: {
+    label: '집 PC',
+    hash: '7ef8d527dd31729fcd8b6da6dd90e4703a41d5659f6746cef445fd3cceb290e4'
+  }
+};
 
 let filtersByLeague = {};
 let buildsByLeague = {};
 let buildUiByLeague = {};
 let settings = { league: DEFAULT_LEAGUE, resultCount: 10, allowGlobalSidebar: false };
+let adminAccess = { enabled: false, keyId: '' };
 let editingId = null;
 
 // UI 줌(zoom) — 브라우저(Whale/Chrome)별 배율 차이를 사용자가 직접 보정
@@ -1255,6 +1267,112 @@ function normalizeSavedFilter(filter) {
   return filter;
 }
 
+function normalizeAdminAccess(value) {
+  const keyId = String(value?.keyId || '');
+  return {
+    enabled: value?.enabled === true && Object.prototype.hasOwnProperty.call(ADMIN_KEY_HASHES, keyId),
+    keyId,
+    unlockedAt: value?.unlockedAt || ''
+  };
+}
+
+function getAdminDeviceLabel(keyId = adminAccess.keyId) {
+  return ADMIN_KEY_HASHES[keyId]?.label || '알 수 없음';
+}
+
+async function sha256Hex(text) {
+  const data = new TextEncoder().encode(String(text || ''));
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function findAdminKeyMatch(input) {
+  const hash = await sha256Hex(String(input || '').trim());
+  return Object.entries(ADMIN_KEY_HASHES).find(([, item]) => item.hash === hash)?.[0] || '';
+}
+
+function isAdminEnabled() {
+  return adminAccess.enabled === true && !!ADMIN_KEY_HASHES[adminAccess.keyId];
+}
+
+function updateAdminAccessUi() {
+  const enabled = isAdminEnabled();
+  const tab = document.getElementById('top-tab-admin');
+  const panel = document.getElementById('top-panel-admin');
+  const status = document.getElementById('adminAccessStatus');
+  const badge = document.getElementById('adminDeviceBadge');
+  const panelStatus = document.getElementById('adminPanelStatus');
+  const lockButton = document.getElementById('btnLockAdmin');
+
+  if (tab) tab.hidden = !enabled;
+  if (!enabled && panel?.classList.contains('active')) switchTopTab('trade');
+  if (status) {
+    status.textContent = enabled
+      ? `관리자 탭 활성화됨: ${getAdminDeviceLabel()}`
+      : '관리자 탭이 비활성화되어 있습니다.';
+  }
+  if (badge) badge.textContent = enabled ? getAdminDeviceLabel() : '';
+  if (panelStatus) {
+    panelStatus.textContent = enabled
+      ? `${getAdminDeviceLabel()} 키로 활성화된 관리자 영역입니다.`
+      : '관리자 키가 등록된 PC에서만 표시됩니다.';
+  }
+  if (lockButton) lockButton.disabled = !enabled;
+}
+
+async function unlockAdminAccess() {
+  const input = document.getElementById('adminKeyInput');
+  const key = input?.value || '';
+  const matchedKeyId = await findAdminKeyMatch(key);
+  if (!matchedKeyId) {
+    alert('관리자 키가 올바르지 않습니다.');
+    input?.focus();
+    return;
+  }
+
+  adminAccess = {
+    enabled: true,
+    keyId: matchedKeyId,
+    unlockedAt: new Date().toISOString()
+  };
+  await chrome.storage.local.set({ [ADMIN_ACCESS_KEY]: adminAccess });
+  if (input) input.value = '';
+  updateAdminAccessUi();
+  switchTopTab('admin');
+}
+
+async function lockAdminAccess() {
+  adminAccess = { enabled: false, keyId: '' };
+  await chrome.storage.local.remove(ADMIN_ACCESS_KEY);
+  updateAdminAccessUi();
+}
+
+function bindAdminAccessControls() {
+  const input = document.getElementById('adminKeyInput');
+  document.getElementById('btnUnlockAdmin')?.addEventListener('click', () => {
+    unlockAdminAccess().catch(err => {
+      appendSidepanelDebugLog({ kind: 'admin-unlock-error', error: serializeDebugError(err) });
+      alert('관리자 활성화 중 오류가 발생했습니다.');
+    });
+  });
+  document.getElementById('btnLockAdmin')?.addEventListener('click', () => {
+    lockAdminAccess().catch(err => {
+      appendSidepanelDebugLog({ kind: 'admin-lock-error', error: serializeDebugError(err) });
+      alert('관리자 해제 중 오류가 발생했습니다.');
+    });
+  });
+  input?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      unlockAdminAccess().catch(err => {
+        appendSidepanelDebugLog({ kind: 'admin-unlock-error', error: serializeDebugError(err) });
+        alert('관리자 활성화 중 오류가 발생했습니다.');
+      });
+    }
+  });
+  updateAdminAccessUi();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initSidepanelApp().catch(handleSidepanelInitError);
 });
@@ -1277,6 +1395,7 @@ async function initSidepanelApp() {
   bindHeader();
   bindModal();
   bindSettings();
+  bindAdminAccessControls();
   bindImportExport();
   bindSidepanelWheelProxy();
   chrome.storage.onChanged.addListener((changes) => {
@@ -1302,6 +1421,10 @@ async function initSidepanelApp() {
       if (allowGlobalSidebar) allowGlobalSidebar.checked = !!settings.allowGlobalSidebar;
       needsRender = true;
     }
+    if (changes[ADMIN_ACCESS_KEY]) {
+      adminAccess = normalizeAdminAccess(changes[ADMIN_ACCESS_KEY].newValue);
+      updateAdminAccessUi();
+    }
     if (changes.uiZoom) {
       const z = clampZoom(changes.uiZoom.newValue != null ? changes.uiZoom.newValue : DEFAULT_UI_ZOOM);
       applyZoom(z);
@@ -1319,6 +1442,7 @@ async function initSidepanelApp() {
   document.getElementById('top-tab-trade').addEventListener('click', () => switchTopTab('trade'));
   document.getElementById('top-tab-economy').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('top-tab-utility').addEventListener('click', () => switchTopTab('utility'));
+  document.getElementById('top-tab-admin').addEventListener('click', () => switchTopTab('admin'));
   document.getElementById('expedition-search').addEventListener('input', e => renderExpedition(e.target.value));
   document.querySelectorAll('[data-utility-tab]').forEach(btn => {
     btn.addEventListener('click', () => switchUtilityTab(btn.dataset.utilityTab));
@@ -1341,8 +1465,9 @@ async function initSidepanelApp() {
 }
 
 async function loadData() {
-  const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings']);
+  const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings', ADMIN_ACCESS_KEY]);
   if (r.settings) settings = { ...settings, ...r.settings };
+  adminAccess = normalizeAdminAccess(r[ADMIN_ACCESS_KEY]);
   filtersByLeague = r.filtersByLeague || {};
   buildsByLeague = r.buildsByLeague || {};
   buildUiByLeague = r.buildUiByLeague || {};
@@ -3471,6 +3596,11 @@ const NINJA_CATEGORIES = [
 let currentNinjaCategory = 'Currency';
 let currentExRate = null;  // 1div = N ex (Currency 탭 로드 시 갱신)
 let currentUtilityTab = 'expedition';
+let passiveTreeData = null;   // passive-tree-ko-filled.json nodes
+let passiveLiquids = {};      // { "Contempt": "경멸", ... }
+let passiveLang = 'ko';       // 'ko' | 'en'
+let passiveMode = 'search';   // 'search' | 'compare'
+let passiveFullTreeData = null; // tree.json nodes (모든 노드 영문 이름+스탯)
 let regexOptionFilter = 'all';
 let regexUserPresets = [];
 const regexOptionSelections = new Map();
@@ -4179,7 +4309,8 @@ function bindRegexGenerator() {
 }
 
 function switchUtilityTab(tabName = 'expedition') {
-  const next = tabName === 'regex' ? 'regex' : 'expedition';
+  const validTabs = ['expedition', 'passive', 'regex'];
+  const next = validTabs.includes(tabName) ? tabName : 'expedition';
   currentUtilityTab = next;
   document.querySelectorAll('[data-utility-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.utilityTab === next);
@@ -4189,8 +4320,209 @@ function switchUtilityTab(tabName = 'expedition') {
   });
   if (next === 'expedition') {
     renderExpedition(document.getElementById('expedition-search')?.value || '');
+  } else if (next === 'passive') {
+    loadAndRenderPassive(document.getElementById('passive-search')?.value || '');
   } else {
     updateRegexGenerator();
+  }
+}
+
+async function loadAndRenderPassive(query) {
+  if (!passiveTreeData) {
+    const countEl = document.getElementById('passive-count');
+    if (countEl) countEl.textContent = '로딩 중...';
+    try {
+      const url = chrome.runtime.getURL('data/passive-tree-ko-csv-matched.json');
+      const res = await fetch(url);
+      const json = await res.json();
+      passiveTreeData = json.nodes || {};
+      passiveLiquids = json.liquids || {};
+    } catch (e) {
+      const countEl = document.getElementById('passive-count');
+      if (countEl) countEl.textContent = '데이터 로드 실패';
+      return;
+    }
+    bindPassiveControls();
+  }
+  renderPassive(query);
+}
+
+function bindPassiveControls() {
+  const searchEl = document.getElementById('passive-search');
+  if (searchEl && !searchEl.dataset.bound) {
+    searchEl.dataset.bound = '1';
+    searchEl.addEventListener('input', e => renderPassive(e.target.value));
+  }
+  const toggleBtn = document.getElementById('passive-lang-toggle');
+  if (toggleBtn && !toggleBtn.dataset.bound) {
+    toggleBtn.dataset.bound = '1';
+    toggleBtn.addEventListener('click', () => {
+      passiveLang = passiveLang === 'ko' ? 'en' : 'ko';
+      toggleBtn.textContent = passiveLang === 'ko' ? '한/영' : '영/한';
+      renderPassive(document.getElementById('passive-search')?.value || '');
+    });
+  }
+  document.querySelectorAll('.passive-mode-btn').forEach(btn => {
+    if (btn.dataset.bound) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      passiveMode = btn.dataset.passiveMode;
+      document.querySelectorAll('.passive-mode-btn').forEach(b => {
+        const active = b === btn;
+        b.style.borderBottomColor = active ? '#c8a84a' : 'transparent';
+        b.style.color = active ? '#c8a84a' : '#888';
+      });
+      document.getElementById('passive-mode-search').style.display = passiveMode === 'search' ? '' : 'none';
+      document.getElementById('passive-mode-compare').style.display = passiveMode === 'compare' ? '' : 'none';
+    });
+  });
+  ['passive-xml-1', 'passive-xml-2'].forEach(id => {
+    const fileEl = document.getElementById(id);
+    const nameEl = document.getElementById(id + '-name');
+    if (fileEl && !fileEl.dataset.bound) {
+      fileEl.dataset.bound = '1';
+      fileEl.addEventListener('change', () => {
+        if (nameEl) nameEl.textContent = fileEl.files[0]?.name || '파일 선택...';
+      });
+    }
+  });
+  const compareBtn = document.getElementById('passive-compare-btn');
+  if (compareBtn && !compareBtn.dataset.bound) {
+    compareBtn.dataset.bound = '1';
+    compareBtn.addEventListener('click', runPassiveCompare);
+  }
+}
+
+function renderPassive(query) {
+  const listEl = document.getElementById('passive-list');
+  const countEl = document.getElementById('passive-count');
+  if (!listEl || !passiveTreeData) return;
+
+  const q = (query || '').trim().toLowerCase();
+  const nodes = Object.values(passiveTreeData);
+
+  const filtered = q
+    ? nodes.filter(n => {
+        const name = passiveLang === 'ko' ? (n.koName || n.enName) : (n.enName || n.koName);
+        const altName = passiveLang === 'ko' ? (n.enName || '') : (n.koName || '');
+        const stats = passiveLang === 'ko'
+          ? (n.koStats || n.enStats || []).join(' ')
+          : (n.enStats || n.koStats || []).join(' ');
+        const recipe = (n.recipe || []).join(' ').toLowerCase();
+        return name.toLowerCase().includes(q)
+          || altName.toLowerCase().includes(q)
+          || stats.toLowerCase().includes(q)
+          || recipe.includes(q);
+      })
+    : nodes;
+
+  if (countEl) countEl.textContent = `${filtered.length}개 / 전체 ${nodes.length}개`;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div style="color:#666;text-align:center;padding:16px;font-size:12px;">검색 결과 없음</div>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(n => {
+    const name = passiveLang === 'ko' ? (n.koName || n.enName || '') : (n.enName || n.koName || '');
+    const altName = passiveLang === 'ko' ? (n.enName || '') : (n.koName || '');
+    const stats = passiveLang === 'ko'
+      ? (n.koStats || n.enStats || [])
+      : (n.enStats || n.koStats || []);
+    const recipe = n.recipe || [];
+    const recipeHtml = recipe.length
+      ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:3px;">${
+          recipe.map(r => {
+            const koName = passiveLiquids[r] || r;
+            return `<span style="background:#1e1a0e;border:1px solid #5a3e10;border-radius:3px;padding:1px 5px;font-size:10px;color:#c8a84a;" title="${esc(r)}">${esc(koName)}</span>`;
+          }).join('')
+        }</div>`
+      : '';
+    const statsHtml = stats.length
+      ? `<ul style="margin:4px 0 0 14px;padding:0;list-style:disc;">${
+          stats.map(s => `<li style="color:#b0c0b0;font-size:11px;line-height:1.5;">${esc(s)}</li>`).join('')
+        }</ul>`
+      : '';
+    return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:7px 9px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
+        <span style="color:#e8c84a;font-weight:600;font-size:12px;">${esc(name)}</span>
+        ${altName ? `<span style="color:#666;font-size:10px;flex-shrink:0;">${esc(altName)}</span>` : ''}
+      </div>
+      ${statsHtml}
+      ${recipeHtml}
+    </div>`;
+  }).join('');
+}
+
+async function runPassiveCompare() {
+  const file1 = document.getElementById('passive-xml-1')?.files[0];
+  const file2 = document.getElementById('passive-xml-2')?.files[0];
+  const resultEl = document.getElementById('passive-compare-result');
+  if (!resultEl) return;
+  if (!file1 || !file2) {
+    resultEl.innerHTML = '<div style="color:#888;text-align:center;padding:12px;font-size:12px;">XML 파일 2개를 모두 선택해주세요.</div>';
+    return;
+  }
+  resultEl.innerHTML = '<div style="color:#888;text-align:center;padding:12px;font-size:12px;">비교 중...</div>';
+  try {
+    if (!passiveFullTreeData) {
+      const url = chrome.runtime.getURL('data/tree.json');
+      const res = await fetch(url);
+      const json = await res.json();
+      passiveFullTreeData = json.nodes || {};
+    }
+    const [text1, text2] = await Promise.all([file1.text(), file2.text()]);
+    const parseNodes = xml => {
+      const match = xml.match(/<Spec[^>]*\bnodes="([^"]+)"/);
+      return match ? new Set(match[1].split(',').map(s => s.trim()).filter(Boolean)) : new Set();
+    };
+    const set1 = parseNodes(text1);
+    const set2 = parseNodes(text2);
+    const only1 = [...set1].filter(id => !set2.has(id));
+    const only2 = [...set2].filter(id => !set1.has(id));
+    const renderNodeCard = id => {
+      const notable = passiveTreeData?.[id];
+      const full = passiveFullTreeData?.[id];
+      if (!notable && !full) {
+        return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:5px 9px;"><span style="color:#555;font-size:11px;">알 수 없는 노드 (ID: ${esc(id)})</span></div>`;
+      }
+      const isKo = passiveLang === 'ko';
+      let name, stats, recipe;
+      if (notable) {
+        name = isKo ? (notable.koName || notable.enName || '') : (notable.enName || notable.koName || '');
+        stats = isKo ? (notable.koStats || notable.enStats || []) : (notable.enStats || notable.koStats || []);
+        recipe = notable.recipe || [];
+      } else {
+        name = full.name || '';
+        stats = full.stats || [];
+        recipe = [];
+      }
+      const recipeHtml = recipe.length
+        ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">${recipe.map(r => {
+            const ko = passiveLiquids[r] || r;
+            return `<span style="background:#1e1a0e;border:1px solid #5a3e10;border-radius:3px;padding:1px 5px;font-size:10px;color:#c8a84a;" title="${esc(r)}">${esc(ko)}</span>`;
+          }).join('')}</div>` : '';
+      const statsHtml = stats.length
+        ? `<ul style="margin:3px 0 0 14px;padding:0;list-style:disc;">${stats.map(s => `<li style="color:#b0c0b0;font-size:11px;line-height:1.4;">${esc(s)}</li>`).join('')}</ul>` : '';
+      const badgeHtml = notable
+        ? `<span style="font-size:9px;color:#c8a84a;border:1px solid #5a3e10;border-radius:2px;padding:0 3px;margin-left:5px;vertical-align:middle;">Notable</span>`
+        : '';
+      return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:6px 9px;">
+        <div style="color:#e8c84a;font-weight:600;font-size:12px;">${esc(name)}${badgeHtml}</div>
+        ${statsHtml}${recipeHtml}
+      </div>`;
+    };
+    const renderSection = (ids, filename, color) =>
+      `<div style="margin-bottom:10px;">
+        <div style="font-size:11px;color:${color};margin-bottom:5px;font-weight:600;">📄 ${esc(filename)} 에만 있는 노드 (${ids.length}개)</div>
+        ${ids.length ? `<div style="display:flex;flex-direction:column;gap:4px;">${ids.map(renderNodeCard).join('')}</div>` : '<div style="color:#555;font-size:11px;">없음</div>'}
+      </div>`;
+    resultEl.innerHTML = `<div style="padding:0 0 8px;">
+      ${renderSection(only1, file1.name, '#e8c84a')}
+      ${renderSection(only2, file2.name, '#6ab0ff')}
+    </div>`;
+  } catch (e) {
+    resultEl.innerHTML = '<div style="color:#c04040;text-align:center;padding:12px;font-size:12px;">파일 분석 실패. XML 형식을 확인해주세요.</div>';
   }
 }
 
@@ -4231,6 +4563,9 @@ function renderExpedition(query) {
 }
 
 function switchTopTab(tabName) {
+  if (tabName === 'admin' && !isAdminEnabled()) {
+    tabName = 'trade';
+  }
   document.querySelectorAll('.top-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.top-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`top-panel-${tabName}`).classList.add('active');
