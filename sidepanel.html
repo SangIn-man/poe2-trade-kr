@@ -1520,7 +1520,7 @@
   <div class="top-panel utility-panel" id="top-panel-utility">
     <div class="utility-sub-tabs">
       <button class="utility-sub-tab active" data-utility-tab="expedition">Expedition</button>
-      <button class="utility-sub-tab" data-utility-tab="passive">패시브 성유</button>
+      <button class="utility-sub-tab" data-utility-tab="passive">패시브 트리</button>
       <button class="utility-sub-tab" data-utility-tab="regex">정규식(미완성)</button>
     </div>
 
@@ -1542,14 +1542,40 @@
     </div>
 
     <div class="utility-sub-panel" id="utility-panel-passive">
-      <div style="padding:8px 8px 4px;">
-        <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-          <input type="text" id="passive-search" placeholder="이름 또는 능력 검색..." style="flex:1;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;box-sizing:border-box;">
-          <button id="passive-lang-toggle" title="한/영 전환" style="padding:4px 8px;background:#2a2a2a;border:1px solid #555;border-radius:4px;color:#ccc;font-size:11px;cursor:pointer;white-space:nowrap;">한/영</button>
-        </div>
-        <div id="passive-count" style="font-size:11px;color:#666;margin-bottom:6px;">로딩 중...</div>
+      <div style="display:flex;gap:0;border-bottom:1px solid #2a2a2a;">
+        <button class="passive-mode-btn active" data-passive-mode="search" style="flex:1;padding:7px 0;background:none;border:none;border-bottom:2px solid #c8a84a;color:#c8a84a;font-size:11px;cursor:pointer;">노드 검색</button>
+        <button class="passive-mode-btn" data-passive-mode="compare" style="flex:1;padding:7px 0;background:none;border:none;border-bottom:2px solid transparent;color:#888;font-size:11px;cursor:pointer;">빌드 비교</button>
       </div>
-      <div id="passive-list" style="padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;"></div>
+      <div id="passive-mode-search">
+        <div style="padding:8px 8px 4px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+            <input type="text" id="passive-search" placeholder="이름 또는 능력 검색..." style="flex:1;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;box-sizing:border-box;">
+            <button id="passive-lang-toggle" title="한/영 전환" style="padding:4px 8px;background:#2a2a2a;border:1px solid #555;border-radius:4px;color:#ccc;font-size:11px;cursor:pointer;white-space:nowrap;">한/영</button>
+          </div>
+          <div id="passive-count" style="font-size:11px;color:#666;margin-bottom:6px;"></div>
+        </div>
+        <div id="passive-list" style="padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <div id="passive-mode-compare" style="display:none;">
+        <div style="padding:8px;display:flex;flex-direction:column;gap:8px;">
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:4px;">빌드 1 XML</div>
+            <label style="display:block;padding:7px 10px;background:#1a1a1a;border:1px dashed #444;border-radius:4px;cursor:pointer;font-size:11px;color:#aaa;text-align:center;">
+              <span id="passive-xml-1-name">파일 선택...</span>
+              <input type="file" id="passive-xml-1" accept=".xml" style="display:none;">
+            </label>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:4px;">빌드 2 XML</div>
+            <label style="display:block;padding:7px 10px;background:#1a1a1a;border:1px dashed #444;border-radius:4px;cursor:pointer;font-size:11px;color:#aaa;text-align:center;">
+              <span id="passive-xml-2-name">파일 선택...</span>
+              <input type="file" id="passive-xml-2" accept=".xml" style="display:none;">
+            </label>
+          </div>
+          <button id="passive-compare-btn" style="padding:7px;background:#2a2010;border:1px solid #5a3e10;border-radius:4px;color:#c8a84a;font-size:12px;cursor:pointer;font-weight:600;">비교하기</button>
+        </div>
+        <div id="passive-compare-result" style="padding:0 8px 8px;"></div>
+      </div>
     </div>
 
     <div class="utility-sub-panel" id="utility-panel-regex">

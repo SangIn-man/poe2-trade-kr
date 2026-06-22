@@ -3599,6 +3599,7 @@ let currentUtilityTab = 'expedition';
 let passiveTreeData = null;   // passive-tree-ko-filled.json nodes
 let passiveLiquids = {};      // { "Contempt": "경멸", ... }
 let passiveLang = 'ko';       // 'ko' | 'en'
+let passiveMode = 'search';   // 'search' | 'compare'
 let regexOptionFilter = 'all';
 let regexUserPresets = [];
 const regexOptionSelections = new Map();
@@ -4330,7 +4331,7 @@ async function loadAndRenderPassive(query) {
     const countEl = document.getElementById('passive-count');
     if (countEl) countEl.textContent = '로딩 중...';
     try {
-      const url = chrome.runtime.getURL('data/passive-tree-ko-filled.json');
+      const url = chrome.runtime.getURL('data/passive-tree-ko-csv-matched.json');
       const res = await fetch(url);
       const json = await res.json();
       passiveTreeData = json.nodes || {};
@@ -4359,6 +4360,35 @@ function bindPassiveControls() {
       toggleBtn.textContent = passiveLang === 'ko' ? '한/영' : '영/한';
       renderPassive(document.getElementById('passive-search')?.value || '');
     });
+  }
+  document.querySelectorAll('.passive-mode-btn').forEach(btn => {
+    if (btn.dataset.bound) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      passiveMode = btn.dataset.passiveMode;
+      document.querySelectorAll('.passive-mode-btn').forEach(b => {
+        const active = b === btn;
+        b.style.borderBottomColor = active ? '#c8a84a' : 'transparent';
+        b.style.color = active ? '#c8a84a' : '#888';
+      });
+      document.getElementById('passive-mode-search').style.display = passiveMode === 'search' ? '' : 'none';
+      document.getElementById('passive-mode-compare').style.display = passiveMode === 'compare' ? '' : 'none';
+    });
+  });
+  ['passive-xml-1', 'passive-xml-2'].forEach(id => {
+    const fileEl = document.getElementById(id);
+    const nameEl = document.getElementById(id + '-name');
+    if (fileEl && !fileEl.dataset.bound) {
+      fileEl.dataset.bound = '1';
+      fileEl.addEventListener('change', () => {
+        if (nameEl) nameEl.textContent = fileEl.files[0]?.name || '파일 선택...';
+      });
+    }
+  });
+  const compareBtn = document.getElementById('passive-compare-btn');
+  if (compareBtn && !compareBtn.dataset.bound) {
+    compareBtn.dataset.bound = '1';
+    compareBtn.addEventListener('click', runPassiveCompare);
   }
 }
 
@@ -4421,6 +4451,59 @@ function renderPassive(query) {
       ${recipeHtml}
     </div>`;
   }).join('');
+}
+
+async function runPassiveCompare() {
+  const file1 = document.getElementById('passive-xml-1')?.files[0];
+  const file2 = document.getElementById('passive-xml-2')?.files[0];
+  const resultEl = document.getElementById('passive-compare-result');
+  if (!resultEl) return;
+  if (!file1 || !file2) {
+    resultEl.innerHTML = '<div style="color:#888;text-align:center;padding:12px;font-size:12px;">XML 파일 2개를 모두 선택해주세요.</div>';
+    return;
+  }
+  resultEl.innerHTML = '<div style="color:#888;text-align:center;padding:12px;font-size:12px;">비교 중...</div>';
+  try {
+    const [text1, text2] = await Promise.all([file1.text(), file2.text()]);
+    const parseNodes = xml => {
+      const match = xml.match(/<Spec[^>]*\bnodes="([^"]+)"/);
+      return match ? new Set(match[1].split(',').map(s => s.trim()).filter(Boolean)) : new Set();
+    };
+    const set1 = parseNodes(text1);
+    const set2 = parseNodes(text2);
+    const only1 = [...set1].filter(id => !set2.has(id));
+    const only2 = [...set2].filter(id => !set1.has(id));
+    const renderNodeCard = id => {
+      const n = passiveTreeData?.[id];
+      if (!n) return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:5px 9px;"><span style="color:#555;font-size:11px;">알 수 없는 노드 (ID: ${esc(id)})</span></div>`;
+      const name = passiveLang === 'ko' ? (n.koName || n.enName || '') : (n.enName || n.koName || '');
+      const stats = passiveLang === 'ko' ? (n.koStats || n.enStats || []) : (n.enStats || n.koStats || []);
+      const recipe = n.recipe || [];
+      const recipeHtml = recipe.length
+        ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">${recipe.map(r => {
+            const ko = passiveLiquids[r] || r;
+            return `<span style="background:#1e1a0e;border:1px solid #5a3e10;border-radius:3px;padding:1px 5px;font-size:10px;color:#c8a84a;" title="${esc(r)}">${esc(ko)}</span>`;
+          }).join('')}</div>` : '';
+      const statsHtml = stats.length
+        ? `<ul style="margin:3px 0 0 14px;padding:0;list-style:disc;">${stats.map(s => `<li style="color:#b0c0b0;font-size:11px;line-height:1.4;">${esc(s)}</li>`).join('')}</ul>` : '';
+      return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:6px 9px;">
+        <div style="color:#e8c84a;font-weight:600;font-size:12px;">${esc(name)}</div>
+        ${statsHtml}${recipeHtml}
+      </div>`;
+    };
+    const renderSection = (ids, filename, color) =>
+      `<div style="margin-bottom:10px;">
+        <div style="font-size:11px;color:${color};margin-bottom:5px;font-weight:600;">📄 ${esc(filename)} 에만 있는 노드 (${ids.length}개)</div>
+        ${ids.length ? `<div style="display:flex;flex-direction:column;gap:4px;">${ids.map(renderNodeCard).join('')}</div>` : '<div style="color:#555;font-size:11px;">없음</div>'}
+      </div>`;
+    resultEl.innerHTML = `<div style="padding:0 0 8px;">
+      ${renderSection(only1, file1.name, '#e8c84a')}
+      ${renderSection(only2, file2.name, '#6ab0ff')}
+      <div style="font-size:10px;color:#555;text-align:center;padding-top:4px;">Notable 노드만 이름 표시 (일반 노드는 ID만 표시)</div>
+    </div>`;
+  } catch (e) {
+    resultEl.innerHTML = '<div style="color:#c04040;text-align:center;padding:12px;font-size:12px;">파일 분석 실패. XML 형식을 확인해주세요.</div>';
+  }
 }
 
 function renderExpedition(query) {
