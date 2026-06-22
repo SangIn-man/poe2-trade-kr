@@ -6,25 +6,14 @@
 const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|poe\.game\.daum\.net|pathofexile\.com)/i.test(location.hostname);
 const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v2';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
-const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
-const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit', 'enchant', 'skill']);
-const MANUAL_STAT_SEARCH_GROUP_LABELS = {
-  explicit: '비고정',
-  implicit: '고정',
-  enchant: '인챈트',
-  skill: '스킬'
-};
 const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 const QUERY_SAVE_BUTTON_INLINE_CLASS = 'poe2tq-save-query-inline';
 const QUERY_SAVE_BUTTON_FLOATING_CLASS = 'poe2tq-save-query-floating';
 
-// ─── 키워드 검색 토글 ─────────────────────────────────
-// 거래소 UI의 History 버튼 왼쪽에 토글 버튼을 주입한다.
-// ON 일 때만 커스텀 키워드 검색 드롭다운(manual stat)을 노출하고,
-// OFF 일 때는 거래소 기본 UI를 그대로 사용한다. (기본값: OFF)
-const KEYWORD_SEARCH_TOGGLE_ID = 'poe2tq-keyword-search-toggle';
-const KEYWORD_SEARCH_ENABLED_KEY = 'keywordSearchEnabled';
-let keywordSearchEnabled = false;
+// ─── 능력치 검색 입력 보정 ─────────────────────────────
+// 거래소의 내장 키워드 검색을 그대로 쓰기 위해 능력치 검색 입력값 앞에
+// "~" 접두사를 자동으로 유지한다.
+const MANUAL_STAT_KEYWORD_PREFIX = '~';
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
@@ -42,14 +31,12 @@ if (IS_TRADE_SITE) {
       scanItems();
       scheduleManualStatSearchEnhance();
       injectCurrentSearchSaveButton();
-      injectKeywordSearchToggle();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     setTimeout(() => {
       scanItems();
       scheduleManualStatSearchEnhance();
       injectCurrentSearchSaveButton();
-      injectKeywordSearchToggle();
     }, 1000);
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
@@ -65,20 +52,12 @@ if (IS_TRADE_SITE) {
         });
         scheduleEvaluation();
       }
-      if (changes[KEYWORD_SEARCH_ENABLED_KEY]) {
-        applyKeywordSearchEnabled(changes[KEYWORD_SEARCH_ENABLED_KEY].newValue === true);
-      }
     });
 
     storageGet([TRADE_RATE_KEY]).then(result => {
       cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
       scheduleEvaluation();
     }).catch(err => reportContentScriptError('trade-rate-load', err, false));
-
-    storageGet([KEYWORD_SEARCH_ENABLED_KEY]).then(result => {
-      keywordSearchEnabled = result?.[KEYWORD_SEARCH_ENABLED_KEY] === true;
-      injectKeywordSearchToggle();
-    }).catch(() => {});
   } catch (err) {
     reportContentScriptError('content-bootstrap', err, true);
   }
@@ -797,94 +776,6 @@ function injectCurrentSearchSaveButton() {
   placeCurrentSearchSaveButton(existing);
 }
 
-// ─── 키워드 검색 토글 버튼 ────────────────────────────
-function updateKeywordSearchToggleLabel(btn) {
-  if (!btn) return;
-  btn.classList.toggle('poe2tq-keyword-toggle-on', keywordSearchEnabled);
-  btn.setAttribute('aria-checked', keywordSearchEnabled ? 'true' : 'false');
-  btn.textContent = keywordSearchEnabled ? '🔍 키워드 ON' : '🔍 키워드 OFF';
-  btn.title = keywordSearchEnabled
-    ? '키워드 검색 ON — 클릭하면 거래소 기본 검색으로 전환'
-    : '키워드 검색 OFF — 클릭하면 키워드 검색 드롭다운 활성화';
-}
-
-function createKeywordSearchToggle() {
-  const btn = document.createElement('button');
-  btn.id = KEYWORD_SEARCH_TOGGLE_ID;
-  btn.type = 'button';
-  btn.setAttribute('role', 'switch');
-  btn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    const next = !keywordSearchEnabled;
-    applyKeywordSearchEnabled(next);
-    chrome.storage.local.set({ [KEYWORD_SEARCH_ENABLED_KEY]: next });
-  });
-  updateKeywordSearchToggleLabel(btn);
-  return btn;
-}
-
-// in-memory 상태와 UI/드롭다운을 동기화한다(저장은 호출 측에서).
-function applyKeywordSearchEnabled(value) {
-  keywordSearchEnabled = value === true;
-  updateKeywordSearchToggleLabel(document.getElementById(KEYWORD_SEARCH_TOGGLE_ID));
-  if (keywordSearchEnabled) {
-    scheduleManualStatSearchEnhance();
-  } else {
-    // OFF 로 전환되면 열려 있던 커스텀 드롭다운을 닫고 거래소 기본 UI를 복원
-    manualStatStates.forEach(state => hideManualStatDropdown(state));
-  }
-}
-
-// '능력치 필터' 그룹 헤더 라벨을 찾는다. 텍스트가 정확히 '능력치 필터' 인
-// 가장 안쪽 요소만 잡아 '+ 능력치 필터 추가' / '능력치 그룹 추가' 와 구분한다.
-function findStatFilterHeaderLabel() {
-  const target = '능력치 필터';
-  let best = null;
-  let bestDepth = -1;
-  document.querySelectorAll('span, div, label, strong, b, p, h1, h2, h3, h4, h5, h6').forEach(el => {
-    if (isOwnExtensionNode(el) || !isVisibleElement(el)) return;
-    if (el.closest('.row[data-id]')) return;
-    if (normalizeSpace(el.textContent || '') !== target) return;
-    let depth = 0;
-    for (let p = el.parentElement; p; p = p.parentElement) depth++;
-    if (depth > bestDepth) {
-      best = el;
-      bestDepth = depth;
-    }
-  });
-  return best;
-}
-
-// 토글은 '능력치 필터' 헤더 옆에 두는 걸 1순위로, 못 찾으면 검색 버튼 옆,
-// 그래도 없으면 화면 하단 고정으로 폴백한다.
-function injectKeywordSearchToggle() {
-  let btn = document.getElementById(KEYWORD_SEARCH_TOGGLE_ID);
-  if (!btn) btn = createKeywordSearchToggle();
-  updateKeywordSearchToggleLabel(btn);
-
-  const header = findStatFilterHeaderLabel();
-  if (header && header.parentElement) {
-    btn.classList.remove('poe2tq-keyword-toggle-floating');
-    if (header.nextElementSibling !== btn) {
-      header.parentElement.insertBefore(btn, header.nextSibling);  // '능력치 필터' 라벨 바로 오른쪽
-    }
-    return;
-  }
-
-  const searchButton = findTradeSearchActionButton();
-  if (searchButton && searchButton.parentElement) {
-    btn.classList.remove('poe2tq-keyword-toggle-floating');
-    if (searchButton.previousElementSibling !== btn) {
-      searchButton.parentElement.insertBefore(btn, searchButton);
-    }
-    return;
-  }
-
-  btn.classList.add('poe2tq-keyword-toggle-floating');
-  if (btn.parentElement !== document.body) document.body.appendChild(btn);
-}
-
 async function handleSaveCurrentTradeSearch(event) {
   const btn = event.currentTarget;
   btn.disabled = true;
@@ -967,8 +858,8 @@ function isVisibleElement(el) {
 
 function isOwnExtensionNode(node) {
   if (!(node instanceof Element)) return false;
-  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, #poe2tq-keyword-search-toggle, .poe2tq-native-stat-wrapper')
-    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, #poe2tq-keyword-search-toggle, .poe2tq-native-stat-wrapper');
+  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter')
+    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter');
 }
 
 function isOwnExtensionMutation(mutations) {
@@ -1695,8 +1586,6 @@ let cachedTradeStatMap = null;
 let cachedTradeStatMapPromise = null;
 let cachedTradeStatsPayload = null;
 let cachedTradeStatsPayloadPromise = null;
-let cachedManualStatEntries = null;
-let cachedManualStatEntriesPromise = null;
 
 function normalizeStatText(text) {
   return statTextToPlainLine(text)
@@ -1835,107 +1724,7 @@ function resolveTradeStatId(label, category, fallbackId) {
   return matches[0].id || '';
 }
 
-function normalizeManualStatSearchText(text) {
-  return statTextToPlainLine(text)
-    .replace(/[+#%~(),./\\[\]{}:;'"!?<>|=*_`-]+/g, ' ')
-    .replace(/\d+(?:\.\d+)?/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function tokenizeManualStatSearch(text) {
-  return normalizeManualStatSearchText(text)
-    .split(' ')
-    .map(token => token.trim())
-    .filter(token => token && (token.length > 1 || !MANUAL_STAT_SEARCH_STOP_WORDS.has(token)));
-}
-
-function flattenManualStatEntries(parsed) {
-  const entries = [];
-  (parsed?.result || []).forEach(group => {
-    if (MANUAL_STAT_SEARCH_GROUPS && !MANUAL_STAT_SEARCH_GROUPS.has(group?.id)) return;
-    (group.entries || []).forEach(entry => {
-      if (!entry?.id || !entry?.text) return;
-      const text = statTextToPlainLine(entry.text);
-      const normalized = normalizeManualStatSearchText(text);
-      const tokens = tokenizeManualStatSearch(text);
-      if (!normalized || !tokens.length) return;
-      entries.push({
-        id: entry.id,
-        text,
-        rawText: entry.text,
-        type: entry.type || group.id || '',
-        groupId: group.id || '',
-        groupLabel: MANUAL_STAT_SEARCH_GROUP_LABELS[group.id] || group.label || group.id || '',
-        normalized,
-        compact: normalized.replace(/\s+/g, ''),
-        tokens
-      });
-    });
-  });
-  return entries;
-}
-
-async function ensureManualStatEntries() {
-  if (cachedManualStatEntries) return cachedManualStatEntries;
-  if (cachedManualStatEntriesPromise) return cachedManualStatEntriesPromise;
-
-  cachedManualStatEntriesPromise = (async () => {
-    try {
-      const parsed = await ensureTradeStatsPayload();
-      cachedManualStatEntries = flattenManualStatEntries(parsed);
-      return cachedManualStatEntries;
-    } catch {
-      cachedManualStatEntries = [];
-      return cachedManualStatEntries;
-    }
-  })();
-
-  try {
-    return await cachedManualStatEntriesPromise;
-  } finally {
-    cachedManualStatEntriesPromise = null;
-  }
-}
-
-function scoreManualStatEntry(entry, tokens, compactQuery) {
-  let score = 0;
-  for (const token of tokens) {
-    const compactToken = token.replace(/\s+/g, '');
-    const pos = entry.normalized.indexOf(token);
-    const compactPos = entry.compact.indexOf(compactToken);
-    if (pos === -1 && compactPos === -1) return -1;
-    score += pos === 0 || compactPos === 0 ? 24 : 12;
-    score += Math.max(0, 10 - Math.min(pos === -1 ? compactPos : pos, 10));
-  }
-  if (entry.normalized.includes(tokens.join(' '))) score += 18;
-  if (compactQuery && entry.compact.includes(compactQuery)) score += 10;
-  if (entry.groupId === 'explicit') score += 4;
-  if (entry.groupId === 'enchant') score += 3;
-  if (entry.groupId === 'skill') score += 3;
-  if (entry.groupId === 'implicit') score += 2;
-  score -= Math.min(entry.text.length, 120) / 12;
-  return score;
-}
-
-function findManualStatMatches(query, entries) {
-  const tokens = tokenizeManualStatSearch(query);
-  if (!tokens.length) return [];
-  const compactQuery = tokens.join('');
-  const matches = [];
-  (entries || []).forEach(entry => {
-    const score = scoreManualStatEntry(entry, tokens, compactQuery);
-    if (score >= 0) matches.push({ entry, score });
-  });
-  return matches
-    .sort((a, b) => b.score - a.score || a.entry.text.length - b.entry.text.length)
-    .slice(0, 12)
-    .map(match => match.entry);
-}
-
 const manualStatInputState = new WeakMap();
-const manualStatStates = new Set();
 let manualStatEnhanceTimer = null;
 
 function scheduleManualStatSearchEnhance() {
@@ -2024,6 +1813,68 @@ function isLikelyManualStatInput(input) {
   return isManualStatContext(input);
 }
 
+function setNativeInputValue(input, value) {
+  const proto = Object.getPrototypeOf(input);
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (descriptor?.set) descriptor.set.call(input, value);
+  else input.value = value;
+}
+
+function buildManualStatKeywordValue(value, fillEmpty = false) {
+  const raw = String(value || '');
+  const trimmedLeft = raw.trimStart();
+  if (!trimmedLeft) return fillEmpty ? MANUAL_STAT_KEYWORD_PREFIX : '';
+
+  const withoutPrefix = trimmedLeft.replace(/^~+/, '');
+  if (!withoutPrefix) return MANUAL_STAT_KEYWORD_PREFIX;
+  return `${MANUAL_STAT_KEYWORD_PREFIX}${withoutPrefix}`;
+}
+
+function syncManualStatKeywordValue(input, state, nextValue, dispatchInput = false) {
+  const prevValue = String(input.value || '');
+  if (prevValue === nextValue) return;
+
+  const selectionStart = typeof input.selectionStart === 'number' ? input.selectionStart : null;
+  const selectionEnd = typeof input.selectionEnd === 'number' ? input.selectionEnd : null;
+  const addedPrefix = nextValue.startsWith(MANUAL_STAT_KEYWORD_PREFIX) && !prevValue.trimStart().startsWith(MANUAL_STAT_KEYWORD_PREFIX);
+
+  state.syncing = true;
+  try {
+    setNativeInputValue(input, nextValue);
+
+    if (document.activeElement === input && selectionStart != null && selectionEnd != null && typeof input.setSelectionRange === 'function') {
+      const delta = addedPrefix ? MANUAL_STAT_KEYWORD_PREFIX.length : 0;
+      const nextStart = Math.min(nextValue.length, selectionStart + delta);
+      const nextEnd = Math.min(nextValue.length, selectionEnd + delta);
+      input.setSelectionRange(nextStart, nextEnd);
+    }
+
+    if (dispatchInput) {
+      try {
+        input.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertReplacementText',
+          data: nextValue
+        }));
+      } catch {
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  } finally {
+    state.syncing = false;
+  }
+}
+
+function ensureManualStatKeywordPrefix(input, state, options = {}) {
+  const { fillEmpty = false, dispatchInput = false } = options;
+  const raw = String(input.value || '');
+  const nextValue = buildManualStatKeywordValue(raw, fillEmpty);
+  if (nextValue === raw) return;
+  if (!nextValue && !fillEmpty) return;
+  syncManualStatKeywordValue(input, state, nextValue, dispatchInput && !!raw);
+}
+
 function enhanceManualStatSearchInputs() {
   try {
     document.querySelectorAll('input, textarea').forEach(input => {
@@ -2034,399 +1885,19 @@ function enhanceManualStatSearchInputs() {
 }
 
 function bindManualStatSearchInput(input) {
-  const state = {
-    input,
-    filterTimer: null,
-    selecting: false,
-    matches: [],
-    selectedIndex: 0,
-    activeQuery: '',
-    dropdown: null,
-    hiddenNativeDropdowns: []
-  };
+  const state = { syncing: false };
   manualStatInputState.set(input, state);
-  manualStatStates.add(state);
 
-  input.addEventListener('input', () => scheduleManualStatNativeFilter(state));
-  input.addEventListener('focus', () => scheduleManualStatNativeFilter(state));
-  input.addEventListener('keydown', event => handleManualStatKeydown(event, state), true);
-  input.addEventListener('blur', () => {
-    clearTimeout(state.filterTimer);
-    setTimeout(() => hideManualStatDropdown(state), 120);
+  ensureManualStatKeywordPrefix(input, state, { fillEmpty: true });
+  input.addEventListener('focus', () => ensureManualStatKeywordPrefix(input, state, { fillEmpty: true }));
+  input.addEventListener('input', event => {
+    if (state.syncing || event.isComposing) return;
+    ensureManualStatKeywordPrefix(input, state, { dispatchInput: true });
   });
-}
-
-function scheduleManualStatNativeFilter(state) {
-  if (state.selecting) return;
-  if (!keywordSearchEnabled) return;
-  clearTimeout(state.filterTimer);
-  state.filterTimer = setTimeout(() => applyManualStatNativeFilter(state), 220);
-}
-
-async function applyManualStatNativeFilter(state) {
-  if (state.selecting) return;
-  if (!keywordSearchEnabled) {
-    hideManualStatDropdown(state);
-    return;
-  }
-  if (!isLikelyManualStatInput(state.input)) {
-    hideManualStatDropdown(state);
-    return;
-  }
-  const query = state.input.value || '';
-  const normalizedQuery = normalizeManualStatSearchText(query);
-  const queryTokens = tokenizeManualStatSearch(query);
-  if (normalizedQuery.length < 2 || !queryTokens.length) {
-    hideManualStatDropdown(state);
-    return;
-  }
-
-  const entries = await ensureManualStatEntries();
-  if (document.activeElement !== state.input) return;
-
-  if (state.dropdown && state.activeQuery === normalizedQuery) {
-    positionManualStatDropdown(state, state.dropdown);
-    return;
-  }
-
-  state.matches = findManualStatMatches(query, entries);
-  state.selectedIndex = 0;
-  state.activeQuery = normalizedQuery;
-  if (!state.matches.length) {
-    hideManualStatDropdown(state);
-    return;
-  }
-
-  renderManualStatDropdown(state);
-}
-
-function getManualStatRoot(input) {
-  return input.closest('.multiselect, [class*="multiselect"], [class*="select"]')
-    || input.parentElement
-    || document.body;
-}
-
-function hideNativeManualStatDropdowns(state) {
-  restoreNativeManualStatDropdowns(state);
-  state.hiddenNativeDropdowns = [];
-  const nativeDropdown = findVisibleNativeManualStatDropdown(state.input);
-  if (!nativeDropdown) return;
-  state.hiddenNativeDropdowns.push({
-    el: nativeDropdown,
-    display: nativeDropdown.style.display,
-    visibility: nativeDropdown.style.visibility,
-    pointerEvents: nativeDropdown.style.pointerEvents
+  input.addEventListener('compositionend', () => {
+    if (state.syncing) return;
+    ensureManualStatKeywordPrefix(input, state, { dispatchInput: true });
   });
-  nativeDropdown.style.display = 'none';
-  nativeDropdown.style.visibility = 'hidden';
-  nativeDropdown.style.pointerEvents = 'none';
-}
-
-function restoreNativeManualStatDropdowns(state) {
-  state.hiddenNativeDropdowns.forEach(item => {
-    if (!item?.el) return;
-    item.el.style.display = item.display || '';
-    item.el.style.visibility = item.visibility || '';
-    item.el.style.pointerEvents = item.pointerEvents || '';
-  });
-  state.hiddenNativeDropdowns = [];
-}
-
-function getManualStatDropdown(state) {
-  if (state.dropdown && document.body.contains(state.dropdown)) return state.dropdown;
-  const dropdown = document.createElement('div');
-  dropdown.className = 'multiselect__content-wrapper poe2tq-native-stat-wrapper';
-  dropdown.setAttribute('role', 'listbox');
-  document.body.appendChild(dropdown);
-  state.dropdown = dropdown;
-  return dropdown;
-}
-
-function findVisibleNativeManualStatDropdown(input) {
-  const inputRect = input.getBoundingClientRect();
-  const containers = [
-    getManualStatRoot(input),
-    ...Array.from(document.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"], .multiselect'))
-  ];
-  let best = null;
-  containers.forEach(container => {
-    if (!container || container.closest?.('.poe2tq-native-stat-wrapper')) return;
-    const candidates = container.matches?.('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"]')
-      ? [container]
-      : Array.from(container.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"]'));
-    candidates.forEach(el => {
-      if (!isVisibleElement(el) || el.closest('.poe2tq-native-stat-wrapper')) return;
-      const rect = el.getBoundingClientRect();
-      const overlapsInputX = rect.right >= inputRect.left - 20 && rect.left <= inputRect.right + 20;
-      const isBelowInput = rect.bottom >= inputRect.bottom && rect.top <= inputRect.bottom + 220;
-      if (!overlapsInputX || !isBelowInput) return;
-      if (!best || rect.height > best.rect.height) best = { el, rect };
-    });
-  });
-  return best?.el || null;
-}
-
-function positionManualStatDropdown(state, dropdown) {
-  const rect = state.input.getBoundingClientRect();
-  const width = Math.max(280, Math.min(640, rect.width || 320, window.innerWidth - 16));
-  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-  dropdown.style.left = `${left}px`;
-  dropdown.style.top = `${Math.max(8, rect.bottom + 2)}px`;
-  dropdown.style.width = `${width}px`;
-}
-
-function renderManualStatDropdown(state) {
-  hideNativeManualStatDropdowns(state);
-  document.body.classList.add('poe2tq-stat-suggest-active');
-  const dropdown = getManualStatDropdown(state);
-  positionManualStatDropdown(state, dropdown);
-  dropdown.innerHTML = '';
-
-  const list = document.createElement('ul');
-  list.className = 'multiselect__content poe2tq-native-stat-list';
-  state.matches.forEach((entry, index) => {
-    const item = document.createElement('li');
-    item.className = 'multiselect__element poe2tq-native-stat-element';
-
-    const option = document.createElement('span');
-    option.className = 'multiselect__option poe2tq-native-stat-option';
-    if (index === state.selectedIndex) {
-      option.classList.add('multiselect__option--highlight');
-      option.classList.add('poe2tq-native-stat-option-active');
-    }
-    option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', index === state.selectedIndex ? 'true' : 'false');
-    option.dataset.index = String(index);
-
-    const text = document.createElement('span');
-    text.className = 'poe2tq-native-stat-text';
-    text.textContent = entry.text;
-
-    const meta = document.createElement('span');
-    meta.className = 'poe2tq-native-stat-meta';
-    meta.textContent = entry.groupLabel || entry.groupId || '';
-
-    option.appendChild(text);
-    option.appendChild(meta);
-    option.addEventListener('mousedown', event => event.preventDefault());
-    option.addEventListener('click', event => {
-      event.preventDefault();
-      selectManualStatMatch(state, entry);
-    });
-
-    item.appendChild(option);
-    list.appendChild(item);
-  });
-
-  dropdown.appendChild(list);
-  dropdown.style.display = 'block';
-  setTimeout(() => {
-    if (state.dropdown) positionManualStatDropdown(state, state.dropdown);
-  }, 50);
-}
-
-function hideManualStatDropdown(state) {
-  document.body.classList.remove('poe2tq-stat-suggest-active');
-  if (state.dropdown) {
-    state.dropdown.remove();
-    state.dropdown = null;
-  }
-  restoreNativeManualStatDropdowns(state);
-  state.matches = [];
-  state.selectedIndex = 0;
-  state.activeQuery = '';
-}
-
-function setManualStatSelectedIndex(state, index) {
-  if (!state.matches.length) return;
-  state.selectedIndex = Math.max(0, Math.min(index, state.matches.length - 1));
-  if (!state.dropdown) return;
-  state.dropdown.querySelectorAll('.poe2tq-native-stat-option').forEach((option, idx) => {
-    const active = idx === state.selectedIndex;
-    option.classList.toggle('multiselect__option--highlight', active);
-    option.classList.toggle('poe2tq-native-stat-option-active', active);
-    option.setAttribute('aria-selected', active ? 'true' : 'false');
-    if (active && typeof option.scrollIntoView === 'function') {
-      option.scrollIntoView({ block: 'nearest' });
-    }
-  });
-}
-
-function handleManualStatKeydown(event, state) {
-  if (!state.dropdown || !state.matches.length) return;
-  if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    event.stopPropagation();
-    clearTimeout(state.filterTimer);
-    setManualStatSelectedIndex(state, state.selectedIndex + 1);
-  } else if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    event.stopPropagation();
-    clearTimeout(state.filterTimer);
-    setManualStatSelectedIndex(state, state.selectedIndex - 1);
-  } else if (event.key === 'Enter' || event.key === 'Tab') {
-    const entry = state.matches[state.selectedIndex];
-    if (!entry) return;
-    event.preventDefault();
-    event.stopPropagation();
-    clearTimeout(state.filterTimer);
-    selectManualStatMatch(state, entry);
-  } else if (event.key === 'Escape') {
-    event.preventDefault();
-    event.stopPropagation();
-    clearTimeout(state.filterTimer);
-    hideManualStatDropdown(state);
-  }
-}
-
-function findNativeManualStatOption(input, entry) {
-  const root = getManualStatRoot(input);
-  const exact = normalizeManualStatSearchText(entry?.text || '');
-  const groupLabel = normalizeManualStatSearchText(entry?.groupLabel || entry?.groupId || '');
-  const selectors = '[role="option"], .multiselect__option, [class*="option"], li, span';
-  const containers = new Set([
-    root,
-    ...Array.from(document.querySelectorAll('.multiselect__content-wrapper, [class*="content-wrapper"], [role="listbox"], .multiselect'))
-  ]);
-  const candidates = [];
-  containers.forEach(container => {
-    if (!container || container.closest?.('.poe2tq-native-stat-wrapper')) return;
-    container.querySelectorAll(selectors).forEach(el => {
-      if (isVisibleElement(el) && !el.closest('.poe2tq-native-stat-wrapper')) candidates.push(el);
-    });
-  });
-
-  const found = candidates.find(el => {
-    const text = normalizeManualStatSearchText(el.textContent || '');
-    return text.includes(exact) && groupLabel && text.includes(groupLabel);
-  }) || candidates.find(el => normalizeManualStatSearchText(el.textContent || '') === exact)
-    || candidates.find(el => normalizeManualStatSearchText(el.textContent || '').includes(exact));
-
-  return found?.closest('.multiselect__option, [role="option"], li') || found || null;
-}
-
-function clickNativeManualStatOption(option) {
-  if (!option) return false;
-  option.focus?.();
-  option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
-  option.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
-  option.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', view: window }));
-  option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-  option.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'mouse', view: window }));
-  option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-  option.click();
-  return true;
-}
-
-function waitForNativeManualStatOption(input, entry, timeoutMs = 900) {
-  const startedAt = Date.now();
-  return new Promise(resolve => {
-    const tick = () => {
-      const option = findNativeManualStatOption(input, entry);
-      if (option) {
-        resolve(option);
-        return;
-      }
-      if (Date.now() - startedAt >= timeoutMs) {
-        resolve(null);
-        return;
-      }
-      setTimeout(tick, 50);
-    };
-    tick();
-  });
-}
-
-function dispatchManualStatKey(input, key, code, keyCode) {
-  ['keydown', 'keyup'].forEach(type => {
-    const event = new KeyboardEvent(type, {
-      key,
-      code,
-      bubbles: true,
-      cancelable: true,
-      composed: true
-    });
-    try {
-      Object.defineProperty(event, 'keyCode', { get: () => keyCode });
-      Object.defineProperty(event, 'which', { get: () => keyCode });
-    } catch {}
-    input.dispatchEvent(event);
-  });
-}
-
-function dispatchManualStatEnter(input) {
-  input.focus();
-  dispatchManualStatKey(input, 'ArrowDown', 'ArrowDown', 40);
-  dispatchManualStatKey(input, 'Enter', 'Enter', 13);
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getManualStatInputVariants(entry) {
-  const variants = [];
-  const add = value => {
-    const text = statTextToPlainLine(value);
-    if (text && !variants.includes(text)) variants.push(text);
-  };
-  add(entry?.text);
-  add(entry?.rawText);
-  if (entry?.normalized) add(entry.normalized);
-  return variants;
-}
-
-async function selectManualStatMatch(state, entry) {
-  if (!entry) return;
-  state.selecting = true;
-  hideManualStatDropdown(state);
-  let selected = false;
-
-  try {
-    const variants = getManualStatInputVariants(entry);
-    for (const text of variants) {
-      dispatchManualStatInputEvents(state.input, text);
-      await sleep(70);
-      const option = await waitForNativeManualStatOption(state.input, entry, 320);
-      if (!option) continue;
-      selected = clickNativeManualStatOption(option);
-      if (selected) break;
-    }
-  } catch {
-    selected = false;
-  } finally {
-    if (!selected) {
-      dispatchManualStatInputEvents(state.input, entry.text || entry.rawText || '');
-      showToast('거래소 후보를 자동 선택하지 못했습니다. 원래 목록에서 선택해 주세요.', 'warn');
-    }
-    setTimeout(() => {
-      state.selecting = false;
-    }, 120);
-  }
-}
-
-function setNativeInputValue(input, value) {
-  const proto = Object.getPrototypeOf(input);
-  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-  if (descriptor?.set) descriptor.set.call(input, value);
-  else input.value = value;
-}
-
-function dispatchManualStatInputEvents(input, value) {
-  try {
-    input.focus();
-    setNativeInputValue(input, value);
-    input.dispatchEvent(new InputEvent('input', {
-      bubbles: true,
-      cancelable: true,
-      inputType: 'insertReplacementText',
-      data: value
-    }));
-  } catch {
-    setNativeInputValue(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function shouldSkipStatLine(label, category, item) {

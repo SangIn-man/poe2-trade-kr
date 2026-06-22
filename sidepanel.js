@@ -3556,9 +3556,11 @@ const WAYSTONE_REGEX_GROUPS = [
 ];
 
 const WAYSTONE_REGEX_NUMERIC_STATS = {
-  quantity: { label: '아이템 수량', prefix: '템.수량.*', includeHundreds: true },
   rarity: { label: '아이템 희귀도', prefix: '귀도.*', includeHundreds: true },
-  packSize: { label: '무리 규모', prefix: '^무.*', includeHundreds: false }
+  packSize: { label: '무리 규모', prefix: '^무.*', includeHundreds: false },
+  monsterEfficiency: { label: '몬스터 효율', prefix: '몬스터.*효율.*', includeHundreds: true },
+  monsterRarity: { label: '몬스터 희귀도', prefix: '몬스터.*희귀도.*', includeHundreds: true },
+  waystoneChance: { label: '경로석 출현확률', prefix: '경로석.*출현.*확률.*', includeHundreds: true }
 };
 
 const WAYSTONE_REGEX_ITEMS = new Map();
@@ -3957,13 +3959,11 @@ function buildWaystoneRegex() {
   const numericPieces = getSelectedRegexNumericPieces();
   const optionGroups = getSelectedRegexOptionGroups();
   const mode = document.querySelector('input[name="regex-mode"]:checked')?.value || 'or';
-  const includePieces = [
-    ...numericPieces,
-    ...optionGroups.include
-  ];
+  const includePieces = optionGroups.include;
   const requiredPieces = [];
   const excludeTerm = combineNegatedRegexOrPieces(optionGroups.exclude);
 
+  requiredPieces.push(...numericPieces);
   if (mode === 'or') {
     const includeOr = combineRegexOrPieces(includePieces);
     if (includeOr) requiredPieces.push(includeOr);
