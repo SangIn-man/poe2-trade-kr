@@ -6,14 +6,17 @@
 const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|poe\.game\.daum\.net|pathofexile\.com)/i.test(location.hostname);
 const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v2';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
+const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
+const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit', 'enchant', 'skill']);
+const MANUAL_STAT_SEARCH_GROUP_LABELS = {
+  explicit: '비고정',
+  implicit: '고정',
+  enchant: '인챈트',
+  skill: '스킬'
+};
 const QUERY_SAVE_BUTTON_ID = 'poe2tq-save-query-filter';
 const QUERY_SAVE_BUTTON_INLINE_CLASS = 'poe2tq-save-query-inline';
 const QUERY_SAVE_BUTTON_FLOATING_CLASS = 'poe2tq-save-query-floating';
-
-// ─── 능력치 검색 입력 보정 ─────────────────────────────
-// 거래소의 내장 키워드 검색을 그대로 쓰기 위해 능력치 검색 입력값 앞에
-// "~" 접두사를 자동으로 유지한다.
-const MANUAL_STAT_KEYWORD_PREFIX = '~';
 
 // ─── tracked rows ─────────────────────────────────────
 const injected = new WeakSet();
@@ -58,6 +61,7 @@ if (IS_TRADE_SITE) {
       cachedTradeRates = result?.[TRADE_RATE_KEY] || null;
       scheduleEvaluation();
     }).catch(err => reportContentScriptError('trade-rate-load', err, false));
+
   } catch (err) {
     reportContentScriptError('content-bootstrap', err, true);
   }
@@ -858,8 +862,8 @@ function isVisibleElement(el) {
 
 function isOwnExtensionNode(node) {
   if (!(node instanceof Element)) return false;
-  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter')
-    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter');
+  return node.matches('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, .poe2tq-native-stat-wrapper')
+    || !!node.closest('#poe2-qs-sidebar-host, #poe2tq-toast, #poe2tq-stat-modal, #poe2tq-save-query-filter, .poe2tq-native-stat-wrapper');
 }
 
 function isOwnExtensionMutation(mutations) {
@@ -1586,6 +1590,8 @@ let cachedTradeStatMap = null;
 let cachedTradeStatMapPromise = null;
 let cachedTradeStatsPayload = null;
 let cachedTradeStatsPayloadPromise = null;
+let cachedManualStatEntries = null;
+let cachedManualStatEntriesPromise = null;
 
 function normalizeStatText(text) {
   return statTextToPlainLine(text)
@@ -1724,7 +1730,107 @@ function resolveTradeStatId(label, category, fallbackId) {
   return matches[0].id || '';
 }
 
+function normalizeManualStatSearchText(text) {
+  return statTextToPlainLine(text)
+    .replace(/[+#%~(),./\\[\]{}:;'"!?<>|=*_`-]+/g, ' ')
+    .replace(/\d+(?:\.\d+)?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function tokenizeManualStatSearch(text) {
+  return normalizeManualStatSearchText(text)
+    .split(' ')
+    .map(token => token.trim())
+    .filter(token => token && (token.length > 1 || !MANUAL_STAT_SEARCH_STOP_WORDS.has(token)));
+}
+
+function flattenManualStatEntries(parsed) {
+  const entries = [];
+  (parsed?.result || []).forEach(group => {
+    if (MANUAL_STAT_SEARCH_GROUPS && !MANUAL_STAT_SEARCH_GROUPS.has(group?.id)) return;
+    (group.entries || []).forEach(entry => {
+      if (!entry?.id || !entry?.text) return;
+      const text = statTextToPlainLine(entry.text);
+      const normalized = normalizeManualStatSearchText(text);
+      const tokens = tokenizeManualStatSearch(text);
+      if (!normalized || !tokens.length) return;
+      entries.push({
+        id: entry.id,
+        text,
+        rawText: entry.text,
+        type: entry.type || group.id || '',
+        groupId: group.id || '',
+        groupLabel: MANUAL_STAT_SEARCH_GROUP_LABELS[group.id] || group.label || group.id || '',
+        normalized,
+        compact: normalized.replace(/\s+/g, ''),
+        tokens
+      });
+    });
+  });
+  return entries;
+}
+
+async function ensureManualStatEntries() {
+  if (cachedManualStatEntries) return cachedManualStatEntries;
+  if (cachedManualStatEntriesPromise) return cachedManualStatEntriesPromise;
+
+  cachedManualStatEntriesPromise = (async () => {
+    try {
+      const parsed = await ensureTradeStatsPayload();
+      cachedManualStatEntries = flattenManualStatEntries(parsed);
+      return cachedManualStatEntries;
+    } catch {
+      cachedManualStatEntries = [];
+      return cachedManualStatEntries;
+    }
+  })();
+
+  try {
+    return await cachedManualStatEntriesPromise;
+  } finally {
+    cachedManualStatEntriesPromise = null;
+  }
+}
+
+function scoreManualStatEntry(entry, tokens, compactQuery) {
+  let score = 0;
+  for (const token of tokens) {
+    const compactToken = token.replace(/\s+/g, '');
+    const pos = entry.normalized.indexOf(token);
+    const compactPos = entry.compact.indexOf(compactToken);
+    if (pos === -1 && compactPos === -1) return -1;
+    score += pos === 0 || compactPos === 0 ? 24 : 12;
+    score += Math.max(0, 10 - Math.min(pos === -1 ? compactPos : pos, 10));
+  }
+  if (entry.normalized.includes(tokens.join(' '))) score += 18;
+  if (compactQuery && entry.compact.includes(compactQuery)) score += 10;
+  if (entry.groupId === 'explicit') score += 4;
+  if (entry.groupId === 'enchant') score += 3;
+  if (entry.groupId === 'skill') score += 3;
+  if (entry.groupId === 'implicit') score += 2;
+  score -= Math.min(entry.text.length, 120) / 12;
+  return score;
+}
+
+function findManualStatMatches(query, entries) {
+  const tokens = tokenizeManualStatSearch(query);
+  if (!tokens.length) return [];
+  const compactQuery = tokens.join('');
+  const matches = [];
+  (entries || []).forEach(entry => {
+    const score = scoreManualStatEntry(entry, tokens, compactQuery);
+    if (score >= 0) matches.push({ entry, score });
+  });
+  return matches
+    .sort((a, b) => b.score - a.score || a.entry.text.length - b.entry.text.length)
+    .slice(0, 12)
+    .map(match => match.entry);
+}
+
 const manualStatInputState = new WeakMap();
+const manualStatStates = new Set();
 let manualStatEnhanceTimer = null;
 
 function scheduleManualStatSearchEnhance() {
@@ -1813,68 +1919,6 @@ function isLikelyManualStatInput(input) {
   return isManualStatContext(input);
 }
 
-function setNativeInputValue(input, value) {
-  const proto = Object.getPrototypeOf(input);
-  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-  if (descriptor?.set) descriptor.set.call(input, value);
-  else input.value = value;
-}
-
-function buildManualStatKeywordValue(value, fillEmpty = false) {
-  const raw = String(value || '');
-  const trimmedLeft = raw.trimStart();
-  if (!trimmedLeft) return fillEmpty ? MANUAL_STAT_KEYWORD_PREFIX : '';
-
-  const withoutPrefix = trimmedLeft.replace(/^~+/, '');
-  if (!withoutPrefix) return MANUAL_STAT_KEYWORD_PREFIX;
-  return `${MANUAL_STAT_KEYWORD_PREFIX}${withoutPrefix}`;
-}
-
-function syncManualStatKeywordValue(input, state, nextValue, dispatchInput = false) {
-  const prevValue = String(input.value || '');
-  if (prevValue === nextValue) return;
-
-  const selectionStart = typeof input.selectionStart === 'number' ? input.selectionStart : null;
-  const selectionEnd = typeof input.selectionEnd === 'number' ? input.selectionEnd : null;
-  const addedPrefix = nextValue.startsWith(MANUAL_STAT_KEYWORD_PREFIX) && !prevValue.trimStart().startsWith(MANUAL_STAT_KEYWORD_PREFIX);
-
-  state.syncing = true;
-  try {
-    setNativeInputValue(input, nextValue);
-
-    if (document.activeElement === input && selectionStart != null && selectionEnd != null && typeof input.setSelectionRange === 'function') {
-      const delta = addedPrefix ? MANUAL_STAT_KEYWORD_PREFIX.length : 0;
-      const nextStart = Math.min(nextValue.length, selectionStart + delta);
-      const nextEnd = Math.min(nextValue.length, selectionEnd + delta);
-      input.setSelectionRange(nextStart, nextEnd);
-    }
-
-    if (dispatchInput) {
-      try {
-        input.dispatchEvent(new InputEvent('input', {
-          bubbles: true,
-          cancelable: true,
-          inputType: 'insertReplacementText',
-          data: nextValue
-        }));
-      } catch {
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }
-  } finally {
-    state.syncing = false;
-  }
-}
-
-function ensureManualStatKeywordPrefix(input, state, options = {}) {
-  const { fillEmpty = false, dispatchInput = false } = options;
-  const raw = String(input.value || '');
-  const nextValue = buildManualStatKeywordValue(raw, fillEmpty);
-  if (nextValue === raw) return;
-  if (!nextValue && !fillEmpty) return;
-  syncManualStatKeywordValue(input, state, nextValue, dispatchInput && !!raw);
-}
-
 function enhanceManualStatSearchInputs() {
   try {
     document.querySelectorAll('input, textarea').forEach(input => {
@@ -1884,20 +1928,59 @@ function enhanceManualStatSearchInputs() {
   } catch {}
 }
 
-function bindManualStatSearchInput(input) {
-  const state = { syncing: false };
-  manualStatInputState.set(input, state);
+const STAT_SEARCH_PREFIX = '~';
 
-  ensureManualStatKeywordPrefix(input, state, { fillEmpty: true });
-  input.addEventListener('focus', () => ensureManualStatKeywordPrefix(input, state, { fillEmpty: true }));
-  input.addEventListener('input', event => {
-    if (state.syncing || event.isComposing) return;
-    ensureManualStatKeywordPrefix(input, state, { dispatchInput: true });
+function ensureStatSearchPrefix(input) {
+  const val = input.value;
+  if (!val.startsWith(STAT_SEARCH_PREFIX)) {
+    const pos = input.selectionStart || 0;
+    input.value = STAT_SEARCH_PREFIX + val;
+    try { input.setSelectionRange(pos + 1, pos + 1); } catch (_) {}
+  }
+}
+
+function bindManualStatSearchInput(input) {
+  manualStatInputState.set(input, true);
+
+  input.addEventListener('focus', () => {
+    if (!input.value) input.value = STAT_SEARCH_PREFIX;
+    ensureStatSearchPrefix(input);
   });
-  input.addEventListener('compositionend', () => {
-    if (state.syncing) return;
-    ensureManualStatKeywordPrefix(input, state, { dispatchInput: true });
+
+  input.addEventListener('input', () => {
+    ensureStatSearchPrefix(input);
   });
+
+  input.addEventListener('keydown', event => {
+    if ((event.key === 'Backspace' || event.key === 'Delete') &&
+        input.selectionStart <= 1 && input.value.startsWith(STAT_SEARCH_PREFIX)) {
+      event.preventDefault();
+    }
+  });
+}
+
+function setNativeInputValue(input, value) {
+  const proto = Object.getPrototypeOf(input);
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (descriptor?.set) descriptor.set.call(input, value);
+  else input.value = value;
+}
+
+function dispatchManualStatInputEvents(input, value) {
+  try {
+    input.focus();
+    setNativeInputValue(input, value);
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      cancelable: true,
+      inputType: 'insertReplacementText',
+      data: value
+    }));
+  } catch {
+    setNativeInputValue(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function shouldSkipStatLine(label, category, item) {
