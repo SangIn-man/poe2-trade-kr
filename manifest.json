@@ -25,7 +25,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sidepanel.html", "data/passive-tree-ko-filled.json"],
+      "resources": ["sidepanel.html", "data/passive-tree-ko-csv-matched.json", "data/tree.json"],
       "matches": ["<all_urls>"]
     }
   ],

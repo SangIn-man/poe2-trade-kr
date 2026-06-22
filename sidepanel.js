@@ -3600,6 +3600,7 @@ let passiveTreeData = null;   // passive-tree-ko-filled.json nodes
 let passiveLiquids = {};      // { "Contempt": "경멸", ... }
 let passiveLang = 'ko';       // 'ko' | 'en'
 let passiveMode = 'search';   // 'search' | 'compare'
+let passiveFullTreeData = null; // tree.json nodes (모든 노드 영문 이름+스탯)
 let regexOptionFilter = 'all';
 let regexUserPresets = [];
 const regexOptionSelections = new Map();
@@ -4464,6 +4465,12 @@ async function runPassiveCompare() {
   }
   resultEl.innerHTML = '<div style="color:#888;text-align:center;padding:12px;font-size:12px;">비교 중...</div>';
   try {
+    if (!passiveFullTreeData) {
+      const url = chrome.runtime.getURL('data/tree.json');
+      const res = await fetch(url);
+      const json = await res.json();
+      passiveFullTreeData = json.nodes || {};
+    }
     const [text1, text2] = await Promise.all([file1.text(), file2.text()]);
     const parseNodes = xml => {
       const match = xml.match(/<Spec[^>]*\bnodes="([^"]+)"/);
@@ -4474,11 +4481,22 @@ async function runPassiveCompare() {
     const only1 = [...set1].filter(id => !set2.has(id));
     const only2 = [...set2].filter(id => !set1.has(id));
     const renderNodeCard = id => {
-      const n = passiveTreeData?.[id];
-      if (!n) return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:5px 9px;"><span style="color:#555;font-size:11px;">알 수 없는 노드 (ID: ${esc(id)})</span></div>`;
-      const name = passiveLang === 'ko' ? (n.koName || n.enName || '') : (n.enName || n.koName || '');
-      const stats = passiveLang === 'ko' ? (n.koStats || n.enStats || []) : (n.enStats || n.koStats || []);
-      const recipe = n.recipe || [];
+      const notable = passiveTreeData?.[id];
+      const full = passiveFullTreeData?.[id];
+      if (!notable && !full) {
+        return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:5px 9px;"><span style="color:#555;font-size:11px;">알 수 없는 노드 (ID: ${esc(id)})</span></div>`;
+      }
+      const isKo = passiveLang === 'ko';
+      let name, stats, recipe;
+      if (notable) {
+        name = isKo ? (notable.koName || notable.enName || '') : (notable.enName || notable.koName || '');
+        stats = isKo ? (notable.koStats || notable.enStats || []) : (notable.enStats || notable.koStats || []);
+        recipe = notable.recipe || [];
+      } else {
+        name = full.name || '';
+        stats = full.stats || [];
+        recipe = [];
+      }
       const recipeHtml = recipe.length
         ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">${recipe.map(r => {
             const ko = passiveLiquids[r] || r;
@@ -4486,8 +4504,11 @@ async function runPassiveCompare() {
           }).join('')}</div>` : '';
       const statsHtml = stats.length
         ? `<ul style="margin:3px 0 0 14px;padding:0;list-style:disc;">${stats.map(s => `<li style="color:#b0c0b0;font-size:11px;line-height:1.4;">${esc(s)}</li>`).join('')}</ul>` : '';
+      const badgeHtml = notable
+        ? `<span style="font-size:9px;color:#c8a84a;border:1px solid #5a3e10;border-radius:2px;padding:0 3px;margin-left:5px;vertical-align:middle;">Notable</span>`
+        : '';
       return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:6px 9px;">
-        <div style="color:#e8c84a;font-weight:600;font-size:12px;">${esc(name)}</div>
+        <div style="color:#e8c84a;font-weight:600;font-size:12px;">${esc(name)}${badgeHtml}</div>
         ${statsHtml}${recipeHtml}
       </div>`;
     };
@@ -4499,7 +4520,6 @@ async function runPassiveCompare() {
     resultEl.innerHTML = `<div style="padding:0 0 8px;">
       ${renderSection(only1, file1.name, '#e8c84a')}
       ${renderSection(only2, file2.name, '#6ab0ff')}
-      <div style="font-size:10px;color:#555;text-align:center;padding-top:4px;">Notable 노드만 이름 표시 (일반 노드는 ID만 표시)</div>
     </div>`;
   } catch (e) {
     resultEl.innerHTML = '<div style="color:#c04040;text-align:center;padding:12px;font-size:12px;">파일 분석 실패. XML 형식을 확인해주세요.</div>';
