@@ -3596,6 +3596,9 @@ const NINJA_CATEGORIES = [
 let currentNinjaCategory = 'Currency';
 let currentExRate = null;  // 1div = N ex (Currency 탭 로드 시 갱신)
 let currentUtilityTab = 'expedition';
+let passiveTreeData = null;   // passive-tree-ko-filled.json nodes
+let passiveLiquids = {};      // { "Contempt": "경멸", ... }
+let passiveLang = 'ko';       // 'ko' | 'en'
 let regexOptionFilter = 'all';
 let regexUserPresets = [];
 const regexOptionSelections = new Map();
@@ -4304,7 +4307,8 @@ function bindRegexGenerator() {
 }
 
 function switchUtilityTab(tabName = 'expedition') {
-  const next = tabName === 'regex' ? 'regex' : 'expedition';
+  const validTabs = ['expedition', 'passive', 'regex'];
+  const next = validTabs.includes(tabName) ? tabName : 'expedition';
   currentUtilityTab = next;
   document.querySelectorAll('[data-utility-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.utilityTab === next);
@@ -4314,9 +4318,109 @@ function switchUtilityTab(tabName = 'expedition') {
   });
   if (next === 'expedition') {
     renderExpedition(document.getElementById('expedition-search')?.value || '');
+  } else if (next === 'passive') {
+    loadAndRenderPassive(document.getElementById('passive-search')?.value || '');
   } else {
     updateRegexGenerator();
   }
+}
+
+async function loadAndRenderPassive(query) {
+  if (!passiveTreeData) {
+    const countEl = document.getElementById('passive-count');
+    if (countEl) countEl.textContent = '로딩 중...';
+    try {
+      const url = chrome.runtime.getURL('data/passive-tree-ko-filled.json');
+      const res = await fetch(url);
+      const json = await res.json();
+      passiveTreeData = json.nodes || {};
+      passiveLiquids = json.liquids || {};
+    } catch (e) {
+      const countEl = document.getElementById('passive-count');
+      if (countEl) countEl.textContent = '데이터 로드 실패';
+      return;
+    }
+    bindPassiveControls();
+  }
+  renderPassive(query);
+}
+
+function bindPassiveControls() {
+  const searchEl = document.getElementById('passive-search');
+  if (searchEl && !searchEl.dataset.bound) {
+    searchEl.dataset.bound = '1';
+    searchEl.addEventListener('input', e => renderPassive(e.target.value));
+  }
+  const toggleBtn = document.getElementById('passive-lang-toggle');
+  if (toggleBtn && !toggleBtn.dataset.bound) {
+    toggleBtn.dataset.bound = '1';
+    toggleBtn.addEventListener('click', () => {
+      passiveLang = passiveLang === 'ko' ? 'en' : 'ko';
+      toggleBtn.textContent = passiveLang === 'ko' ? '한/영' : '영/한';
+      renderPassive(document.getElementById('passive-search')?.value || '');
+    });
+  }
+}
+
+function renderPassive(query) {
+  const listEl = document.getElementById('passive-list');
+  const countEl = document.getElementById('passive-count');
+  if (!listEl || !passiveTreeData) return;
+
+  const q = (query || '').trim().toLowerCase();
+  const nodes = Object.values(passiveTreeData);
+
+  const filtered = q
+    ? nodes.filter(n => {
+        const name = passiveLang === 'ko' ? (n.koName || n.enName) : (n.enName || n.koName);
+        const altName = passiveLang === 'ko' ? (n.enName || '') : (n.koName || '');
+        const stats = passiveLang === 'ko'
+          ? (n.koStats || n.enStats || []).join(' ')
+          : (n.enStats || n.koStats || []).join(' ');
+        const recipe = (n.recipe || []).join(' ').toLowerCase();
+        return name.toLowerCase().includes(q)
+          || altName.toLowerCase().includes(q)
+          || stats.toLowerCase().includes(q)
+          || recipe.includes(q);
+      })
+    : nodes;
+
+  if (countEl) countEl.textContent = `${filtered.length}개 / 전체 ${nodes.length}개`;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div style="color:#666;text-align:center;padding:16px;font-size:12px;">검색 결과 없음</div>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(n => {
+    const name = passiveLang === 'ko' ? (n.koName || n.enName || '') : (n.enName || n.koName || '');
+    const altName = passiveLang === 'ko' ? (n.enName || '') : (n.koName || '');
+    const stats = passiveLang === 'ko'
+      ? (n.koStats || n.enStats || [])
+      : (n.enStats || n.koStats || []);
+    const recipe = n.recipe || [];
+    const recipeHtml = recipe.length
+      ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:3px;">${
+          recipe.map(r => {
+            const koName = passiveLiquids[r] || r;
+            return `<span style="background:#1e1a0e;border:1px solid #5a3e10;border-radius:3px;padding:1px 5px;font-size:10px;color:#c8a84a;" title="${esc(r)}">${esc(koName)}</span>`;
+          }).join('')
+        }</div>`
+      : '';
+    const statsHtml = stats.length
+      ? `<ul style="margin:4px 0 0 14px;padding:0;list-style:disc;">${
+          stats.map(s => `<li style="color:#b0c0b0;font-size:11px;line-height:1.5;">${esc(s)}</li>`).join('')
+        }</ul>`
+      : '';
+    return `<div style="background:#181410;border:1px solid #2e2810;border-radius:5px;padding:7px 9px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
+        <span style="color:#e8c84a;font-weight:600;font-size:12px;">${esc(name)}</span>
+        ${altName ? `<span style="color:#666;font-size:10px;flex-shrink:0;">${esc(altName)}</span>` : ''}
+      </div>
+      ${statsHtml}
+      ${recipeHtml}
+    </div>`;
+  }).join('');
 }
 
 function renderExpedition(query) {

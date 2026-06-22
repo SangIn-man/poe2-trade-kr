@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PoE2 Trade Quick Search",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Path of Exile 2 한국 거래소 즐겨찾기 & 원클릭 검색",
   "permissions": ["storage", "tabs", "clipboardWrite", "scripting", "activeTab"],
   "host_permissions": [
@@ -25,7 +25,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sidepanel.html"],
+      "resources": ["sidepanel.html", "data/passive-tree-ko-filled.json"],
       "matches": ["<all_urls>"]
     }
   ],

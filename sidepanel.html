@@ -1520,6 +1520,7 @@
   <div class="top-panel utility-panel" id="top-panel-utility">
     <div class="utility-sub-tabs">
       <button class="utility-sub-tab active" data-utility-tab="expedition">Expedition</button>
+      <button class="utility-sub-tab" data-utility-tab="passive">패시브 성유</button>
       <button class="utility-sub-tab" data-utility-tab="regex">정규식(미완성)</button>
     </div>
 
@@ -1538,6 +1539,17 @@
         <tbody id="expedition-tbody">
         </tbody>
       </table>
+    </div>
+
+    <div class="utility-sub-panel" id="utility-panel-passive">
+      <div style="padding:8px 8px 4px;">
+        <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+          <input type="text" id="passive-search" placeholder="이름 또는 능력 검색..." style="flex:1;padding:6px 8px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:12px;box-sizing:border-box;">
+          <button id="passive-lang-toggle" title="한/영 전환" style="padding:4px 8px;background:#2a2a2a;border:1px solid #555;border-radius:4px;color:#ccc;font-size:11px;cursor:pointer;white-space:nowrap;">한/영</button>
+        </div>
+        <div id="passive-count" style="font-size:11px;color:#666;margin-bottom:6px;">로딩 중...</div>
+      </div>
+      <div id="passive-list" style="padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;"></div>
     </div>
 
     <div class="utility-sub-panel" id="utility-panel-regex">
