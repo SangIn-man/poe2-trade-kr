@@ -1382,6 +1382,7 @@
     <button class="top-tab-btn active" id="top-tab-trade">TradeQuick</button>
     <button class="top-tab-btn" id="top-tab-economy">Economy</button>
     <button class="top-tab-btn" id="top-tab-utility">Utility</button>
+    <button class="top-tab-btn" id="top-tab-admin" hidden>Admin</button>
   </div>
 
   <!-- TradeQuick panel (existing content) -->
@@ -1458,6 +1459,16 @@
           <button class="btn-full btn-muted" id="btnClearDebug">🧹 에러 로그 비우기</button>
           <button class="btn-full btn-danger" id="btnClear">🗑 전체 삭제</button>
         </div>
+        <div class="settings-block">
+          <h3>관리자</h3>
+          <div class="setting-row">
+            <label>관리자 키</label>
+            <input type="password" id="adminKeyInput" placeholder="관리자 키 입력" autocomplete="off"/>
+          </div>
+          <button class="btn-full btn-gold" id="btnUnlockAdmin">관리자 활성화</button>
+          <button class="btn-full btn-muted" id="btnLockAdmin">관리자 해제</button>
+          <div class="notice" id="adminAccessStatus">관리자 탭이 비활성화되어 있습니다.</div>
+        </div>
         <div class="notice">
           🇰🇷 <strong>poe.kakaogames.com</strong> 한국 거래소를 사용합니다.<br/>
           거래소에서 아이템을 검색 후 <strong>⭐ 즐겨찾기</strong> 버튼을 클릭하면<br/>
@@ -1469,6 +1480,21 @@
           무관한 <strong>비공식 커뮤니티 도구</strong>입니다.<br/>
           <br/>
           📊 시세 데이터 제공: <a href="https://poe.ninja" target="_blank">poe.ninja</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="top-panel" id="top-panel-admin">
+    <div class="economy-header">
+      <span>Admin</span>
+      <span id="adminDeviceBadge" class="ninja-updated"></span>
+    </div>
+    <div class="scroll-area">
+      <div class="tab-content active">
+        <div class="settings-block">
+          <h3>관리자 전용</h3>
+          <div class="notice" id="adminPanelStatus">관리자 키가 등록된 PC에서만 표시됩니다.</div>
         </div>
       </div>
     </div>

@@ -538,11 +538,23 @@ const DEFAULT_LEAGUE = 'Runes of Aldur';
 const DEFAULT_BUILD_NAME = '기본 빌드';
 const KNOWN_LEAGUES = ['Runes of Aldur', 'HC Runes of Aldur', 'Standard', 'Hardcore'];
 const LEAGUE_ALIASES = { 'Rune of Aldur': 'Runes of Aldur', 'Hardcore Rune of Aldur': 'HC Runes of Aldur' };
+const ADMIN_ACCESS_KEY = 'adminAccess';
+const ADMIN_KEY_HASHES = {
+  work: {
+    label: '회사 PC',
+    hash: '39e9769ad4adfa48b46a313d1c1739c13c17e773adda72b5f648de68fee95e69'
+  },
+  home: {
+    label: '집 PC',
+    hash: '7ef8d527dd31729fcd8b6da6dd90e4703a41d5659f6746cef445fd3cceb290e4'
+  }
+};
 
 let filtersByLeague = {};
 let buildsByLeague = {};
 let buildUiByLeague = {};
 let settings = { league: DEFAULT_LEAGUE, resultCount: 10, allowGlobalSidebar: false };
+let adminAccess = { enabled: false, keyId: '' };
 let editingId = null;
 
 // UI 줌(zoom) — 브라우저(Whale/Chrome)별 배율 차이를 사용자가 직접 보정
@@ -1255,6 +1267,112 @@ function normalizeSavedFilter(filter) {
   return filter;
 }
 
+function normalizeAdminAccess(value) {
+  const keyId = String(value?.keyId || '');
+  return {
+    enabled: value?.enabled === true && Object.prototype.hasOwnProperty.call(ADMIN_KEY_HASHES, keyId),
+    keyId,
+    unlockedAt: value?.unlockedAt || ''
+  };
+}
+
+function getAdminDeviceLabel(keyId = adminAccess.keyId) {
+  return ADMIN_KEY_HASHES[keyId]?.label || '알 수 없음';
+}
+
+async function sha256Hex(text) {
+  const data = new TextEncoder().encode(String(text || ''));
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function findAdminKeyMatch(input) {
+  const hash = await sha256Hex(String(input || '').trim());
+  return Object.entries(ADMIN_KEY_HASHES).find(([, item]) => item.hash === hash)?.[0] || '';
+}
+
+function isAdminEnabled() {
+  return adminAccess.enabled === true && !!ADMIN_KEY_HASHES[adminAccess.keyId];
+}
+
+function updateAdminAccessUi() {
+  const enabled = isAdminEnabled();
+  const tab = document.getElementById('top-tab-admin');
+  const panel = document.getElementById('top-panel-admin');
+  const status = document.getElementById('adminAccessStatus');
+  const badge = document.getElementById('adminDeviceBadge');
+  const panelStatus = document.getElementById('adminPanelStatus');
+  const lockButton = document.getElementById('btnLockAdmin');
+
+  if (tab) tab.hidden = !enabled;
+  if (!enabled && panel?.classList.contains('active')) switchTopTab('trade');
+  if (status) {
+    status.textContent = enabled
+      ? `관리자 탭 활성화됨: ${getAdminDeviceLabel()}`
+      : '관리자 탭이 비활성화되어 있습니다.';
+  }
+  if (badge) badge.textContent = enabled ? getAdminDeviceLabel() : '';
+  if (panelStatus) {
+    panelStatus.textContent = enabled
+      ? `${getAdminDeviceLabel()} 키로 활성화된 관리자 영역입니다.`
+      : '관리자 키가 등록된 PC에서만 표시됩니다.';
+  }
+  if (lockButton) lockButton.disabled = !enabled;
+}
+
+async function unlockAdminAccess() {
+  const input = document.getElementById('adminKeyInput');
+  const key = input?.value || '';
+  const matchedKeyId = await findAdminKeyMatch(key);
+  if (!matchedKeyId) {
+    alert('관리자 키가 올바르지 않습니다.');
+    input?.focus();
+    return;
+  }
+
+  adminAccess = {
+    enabled: true,
+    keyId: matchedKeyId,
+    unlockedAt: new Date().toISOString()
+  };
+  await chrome.storage.local.set({ [ADMIN_ACCESS_KEY]: adminAccess });
+  if (input) input.value = '';
+  updateAdminAccessUi();
+  switchTopTab('admin');
+}
+
+async function lockAdminAccess() {
+  adminAccess = { enabled: false, keyId: '' };
+  await chrome.storage.local.remove(ADMIN_ACCESS_KEY);
+  updateAdminAccessUi();
+}
+
+function bindAdminAccessControls() {
+  const input = document.getElementById('adminKeyInput');
+  document.getElementById('btnUnlockAdmin')?.addEventListener('click', () => {
+    unlockAdminAccess().catch(err => {
+      appendSidepanelDebugLog({ kind: 'admin-unlock-error', error: serializeDebugError(err) });
+      alert('관리자 활성화 중 오류가 발생했습니다.');
+    });
+  });
+  document.getElementById('btnLockAdmin')?.addEventListener('click', () => {
+    lockAdminAccess().catch(err => {
+      appendSidepanelDebugLog({ kind: 'admin-lock-error', error: serializeDebugError(err) });
+      alert('관리자 해제 중 오류가 발생했습니다.');
+    });
+  });
+  input?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      unlockAdminAccess().catch(err => {
+        appendSidepanelDebugLog({ kind: 'admin-unlock-error', error: serializeDebugError(err) });
+        alert('관리자 활성화 중 오류가 발생했습니다.');
+      });
+    }
+  });
+  updateAdminAccessUi();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initSidepanelApp().catch(handleSidepanelInitError);
 });
@@ -1277,6 +1395,7 @@ async function initSidepanelApp() {
   bindHeader();
   bindModal();
   bindSettings();
+  bindAdminAccessControls();
   bindImportExport();
   bindSidepanelWheelProxy();
   chrome.storage.onChanged.addListener((changes) => {
@@ -1302,6 +1421,10 @@ async function initSidepanelApp() {
       if (allowGlobalSidebar) allowGlobalSidebar.checked = !!settings.allowGlobalSidebar;
       needsRender = true;
     }
+    if (changes[ADMIN_ACCESS_KEY]) {
+      adminAccess = normalizeAdminAccess(changes[ADMIN_ACCESS_KEY].newValue);
+      updateAdminAccessUi();
+    }
     if (changes.uiZoom) {
       const z = clampZoom(changes.uiZoom.newValue != null ? changes.uiZoom.newValue : DEFAULT_UI_ZOOM);
       applyZoom(z);
@@ -1319,6 +1442,7 @@ async function initSidepanelApp() {
   document.getElementById('top-tab-trade').addEventListener('click', () => switchTopTab('trade'));
   document.getElementById('top-tab-economy').addEventListener('click', () => switchTopTab('economy'));
   document.getElementById('top-tab-utility').addEventListener('click', () => switchTopTab('utility'));
+  document.getElementById('top-tab-admin').addEventListener('click', () => switchTopTab('admin'));
   document.getElementById('expedition-search').addEventListener('input', e => renderExpedition(e.target.value));
   document.querySelectorAll('[data-utility-tab]').forEach(btn => {
     btn.addEventListener('click', () => switchUtilityTab(btn.dataset.utilityTab));
@@ -1341,8 +1465,9 @@ async function initSidepanelApp() {
 }
 
 async function loadData() {
-  const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings']);
+  const r = await chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings', ADMIN_ACCESS_KEY]);
   if (r.settings) settings = { ...settings, ...r.settings };
+  adminAccess = normalizeAdminAccess(r[ADMIN_ACCESS_KEY]);
   filtersByLeague = r.filtersByLeague || {};
   buildsByLeague = r.buildsByLeague || {};
   buildUiByLeague = r.buildUiByLeague || {};
@@ -4231,6 +4356,9 @@ function renderExpedition(query) {
 }
 
 function switchTopTab(tabName) {
+  if (tabName === 'admin' && !isAdminEnabled()) {
+    tabName = 'trade';
+  }
   document.querySelectorAll('.top-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.top-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`top-panel-${tabName}`).classList.add('active');
