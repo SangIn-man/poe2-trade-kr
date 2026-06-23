@@ -3686,11 +3686,11 @@ const WAYSTONE_REGEX_GROUPS = [
 ];
 
 const WAYSTONE_REGEX_NUMERIC_STATS = {
-  rarity: { label: '아이템 희귀도', prefix: '귀도.*', includeHundreds: true },
-  packSize: { label: '무리 규모', prefix: '^무.*', includeHundreds: false },
-  waystoneChance: { label: '경로석 출현확률', prefix: '경로석.*', includeHundreds: false },
-  monsterEfficiency: { label: '몬스터 효율', prefix: '몬스터.*효율.*', includeHundreds: false },
-  monsterRarity: { label: '몬스터 희귀도', prefix: '몬스터.*희귀.*', includeHundreds: false }
+  rarity:            { label: '아이템 희귀도',     prefix: '귀도',    includeHundreds: true  },
+  packSize:          { label: '무리 규모',          prefix: '^무',     includeHundreds: false },
+  waystoneChance:    { label: '경로석 출현 확률',   prefix: '현.확',   includeHundreds: false },
+  monsterEfficiency: { label: '몬스터 효율',        prefix: '몬.*효',  includeHundreds: false },
+  monsterRarity:     { label: '몬스터 희귀도',      prefix: '몬.*희',  includeHundreds: false }
 };
 
 const WAYSTONE_REGEX_ITEMS = new Map();
