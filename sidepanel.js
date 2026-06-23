@@ -938,6 +938,10 @@ function buildQuerySignature(filter) {
       .filter(x => x.active !== false && x.id)
       .map(x => `${x.id}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}`)
       .sort(),
+    queryFilters: (filter.queryFilters || [])
+      .filter(x => x.active !== false && x.id && x.group)
+      .map(x => `${x.group}:${x.id}:${x.option || ''}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}:${x.noValue === true ? 'flag' : ''}`)
+      .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
       .map(x => {
@@ -1008,6 +1012,76 @@ function formatDebugLogEntry(entry, idx) {
     JSON.stringify(entry, null, 2),
     ''
   ].join('\n');
+}
+
+const QUERY_FILTER_EXCLUDE_KEYS = {
+  type_filters: new Set(['category', 'rarity', 'type']),
+  trade_filters: new Set(['sale_type']),
+  misc_filters: new Set(['ilvl', 'area_level', 'req_level']),
+  equipment_filters: null
+};
+
+function shouldSkipSavedTradeQueryFilter(groupName, id) {
+  if (!groupName || !id) return true;
+  if (groupName === 'equipment_filters') return true;
+  const excludeSet = QUERY_FILTER_EXCLUDE_KEYS[groupName];
+  return !!(excludeSet && excludeSet.has(id));
+}
+
+function formatTradeQueryFilterGroupLabel(groupName) {
+  const labels = {
+    type_filters: '유형',
+    trade_filters: '거래',
+    misc_filters: '기타',
+    map_filters: '경로석'
+  };
+  return labels[groupName] || String(groupName || '').replace(/_filters$/, '').replace(/_/g, ' ');
+}
+
+function formatTradeQueryFilterId(id) {
+  return String(id || '')
+    .replace(/^map_/, '')
+    .replace(/^waystone_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\biiq\b/gi, 'item quantity')
+    .replace(/\biir\b/gi, 'item rarity')
+    .replace(/\bpacksize\b/gi, 'pack size')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSavedTradeQueryFilterLabel(groupName, id, queryFilter) {
+  const explicitLabel = stripTradeTags(queryFilter?.label || queryFilter?.name || queryFilter?.text || '');
+  if (explicitLabel) return explicitLabel;
+  return formatTradeQueryFilterId(id) || `${groupName}.${id}`;
+}
+
+function collectSavedTradeQueryFilters(queryFilters) {
+  const savedFilters = [];
+  Object.entries(queryFilters || {}).forEach(([groupName, group]) => {
+    const filters = group?.filters;
+    if (!filters || typeof filters !== 'object') return;
+    Object.keys(filters).forEach(id => {
+      const queryFilter = filters[id];
+      if (!queryFilter || queryFilter.disabled === true || shouldSkipSavedTradeQueryFilter(groupName, id)) return;
+      const valueSource = queryFilter?.value && typeof queryFilter.value === 'object' ? queryFilter.value : queryFilter;
+      const min = numberOrNull(valueSource?.min);
+      const max = numberOrNull(valueSource?.max);
+      const option = queryFilter?.option != null ? String(queryFilter.option) : '';
+      savedFilters.push({
+        group: groupName,
+        id,
+        label: buildSavedTradeQueryFilterLabel(groupName, id, queryFilter),
+        value: min != null ? min : null,
+        min,
+        max,
+        option,
+        noValue: min == null && max == null && !option,
+        active: true
+      });
+    });
+  });
+  return savedFilters;
 }
 
 async function getDebugLogText(extraText = '') {
@@ -1206,6 +1280,16 @@ function summarizeFilterForDebug(filter) {
       max: e?.max ?? null,
       active: e?.active !== false
     })),
+    queryFilters: (filter?.queryFilters || []).map(q => ({
+      group: q?.group || '',
+      id: q?.id || '',
+      label: q?.label || '',
+      option: q?.option || '',
+      min: q?.min ?? null,
+      max: q?.max ?? null,
+      noValue: q?.noValue === true,
+      active: q?.active !== false
+    })),
     stats: (filter?.stats || []).map(s => ({
       id: s?.id || '',
       fallbackId: s?.fallbackId || '',
@@ -1233,7 +1317,11 @@ function normalizeSavedFilter(filter) {
     if (filter.tradeSaleTypeOption == null) filter.tradeSaleTypeOption = '';
   }
   filter.equipment = Array.isArray(filter.equipment) ? filter.equipment : [];
+  filter.queryFilters = Array.isArray(filter.queryFilters) ? filter.queryFilters : [];
   filter.stats = Array.isArray(filter.stats) ? filter.stats : [];
+  if (!filter.queryFilters.length && filter.tradeQueryTemplate?.filters) {
+    filter.queryFilters = collectSavedTradeQueryFilters(filter.tradeQueryTemplate.filters);
+  }
   filter.equipment.forEach(e => {
     if (!e) return;
     if (e.active == null) e.active = true;
@@ -1241,6 +1329,19 @@ function normalizeSavedFilter(filter) {
     if (numberOrNull(e.min) == null && numberOrNull(e.max) == null && e.value != null && isFinite(Number(e.value))) {
       e.min = roundFilterNumber(e.value);
     }
+  });
+  filter.queryFilters.forEach(q => {
+    if (!q) return;
+    if (q.active == null) q.active = true;
+    if (q.max === undefined) q.max = null;
+    if (q.option == null) q.option = '';
+    const hasRange = numberOrNull(q.min) != null || numberOrNull(q.max) != null;
+    if (q.noValue == null) q.noValue = !hasRange && !q.option;
+    if (q.noValue && !q.option) {
+      q.min = null;
+      q.max = null;
+    }
+    if (!q.label) q.label = formatTradeQueryFilterId(q.id);
   });
   filter.stats.forEach(s => {
     if (!s) return;
@@ -2536,6 +2637,8 @@ function makeCard(f) {
   if (ilvlLabel) summary.push(ilvlLabel);
   const activeEquipment = (f.equipment||[]).filter(e => e.active !== false);
   if (activeEquipment.length) summary.push(`장비 ${activeEquipment.length}개`);
+  const activeQueryFilters = (f.queryFilters||[]).filter(q => q.active !== false);
+  if (activeQueryFilters.length) summary.push(`거래 ${activeQueryFilters.length}개`);
   const activeStats = (f.stats||[]).filter(s => s.active !== false);
   if (activeStats.length) summary.push(`스탯 ${activeStats.length}개`);
 
@@ -2598,6 +2701,24 @@ function makeCard(f) {
     </div>`;
   }).join('');
 
+  const queryFilterRows = (f.queryFilters||[]).map((q, i) => {
+    const active = q.active !== false;
+    const optionHtml = q.option ? `<span class="stat-orig">${esc(q.option)}</span>` : '';
+    const minVal = numberOrNull(q.min);
+    const maxVal = numberOrNull(q.max);
+    const rangeHtml = q.noValue ? '' : `<span class="query-min-value${minVal == null ? ' range-empty' : ''}" data-filter-id="${esc(f.id)}" data-query-idx="${i}" data-range-bound="min" title="마우스 휠로 min 조정">${minVal != null ? esc(q.min) : ''}</span>
+        <span class="stat-range-sep">~</span>
+        <span class="query-max-value${maxVal == null ? ' range-empty' : ''}" data-filter-id="${esc(f.id)}" data-query-idx="${i}" data-range-bound="max" title="마우스 휠로 max 조정">${maxVal != null ? esc(q.max) : ''}</span>`;
+    return `<div class="stat-row-item" style="${active?'':'opacity:.4'}">
+      <span class="badge badge-cat">${esc(formatTradeQueryFilterGroupLabel(q.group))}</span>
+      <span class="stat-label-t">${esc(q.label)}</span>
+      <span class="stat-vals">
+        ${optionHtml}
+        ${rangeHtml}
+      </span>
+    </div>`;
+  }).join('');
+
   wrap.innerHTML = `
     <div class="filter-card-head" data-id="${f.id}">
       <button class="filter-drag-handle" type="button" title="드래그해서 순서 변경" aria-label="필터 순서 변경">⋮⋮</button>
@@ -2627,6 +2748,10 @@ function makeCard(f) {
         <div class="stat-table-title">장비 조건 (원본값 → min / max)</div>
         ${equipmentRows}
       </div>` : ''}
+      ${queryFilterRows ? `<div class="stat-table">
+        <div class="stat-table-title">거래소 조건</div>
+        ${queryFilterRows}
+      </div>` : ''}
       ${statRows ? `<div class="stat-table">
         <div class="stat-table-title">스탯 조건 (원본값 → min / max)</div>
         ${statRows}
@@ -2636,7 +2761,7 @@ function makeCard(f) {
   `;
 
   wrap.querySelector('.filter-card-head').addEventListener('click', e => {
-    if (e.target.closest('.filter-drag-handle, .cat-badge, .stat-delete-btn, .stat-min-value, .stat-max-value, .equip-min-value, .equip-max-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
+    if (e.target.closest('.filter-drag-handle, .cat-badge, .stat-delete-btn, .stat-min-value, .stat-max-value, .equip-min-value, .equip-max-value, .query-min-value, .query-max-value, .filter-name-edit, .type-line-badge, .btn-delete-small, button')) return;
     wrap.classList.toggle('open');
   });
 
@@ -2822,6 +2947,28 @@ function makeCard(f) {
       if (!target || !target.equipment || !target.equipment[equipIdx]) return;
       const delta = e.deltaY < 0 ? 1 : -1;
       adjustInlineRange(target.equipment[equipIdx], field, delta, false);
+      updateFilterSourceHash(target);
+      persist();
+      replaceCardKeepingOpen(target);
+    }, { passive: false });
+  });
+
+  wrap.querySelectorAll('.query-min-value, .query-max-value').forEach(span => {
+    span.addEventListener('wheel', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const filterId = span.dataset.filterId;
+      const queryIdx = parseInt(span.dataset.queryIdx, 10);
+      const field = span.dataset.rangeBound === 'max' ? 'max' : 'min';
+      const arr = getCurrentFilters();
+      const target = arr.find(x => String(x.id) === String(filterId));
+      if (!target || !target.queryFilters || !target.queryFilters[queryIdx]) return;
+      const delta = e.deltaY < 0 ? 1 : -1;
+      const queryFilter = target.queryFilters[queryIdx];
+      if (queryFilter.noValue && numberOrNull(queryFilter.min) == null && numberOrNull(queryFilter.max) == null) return;
+      adjustInlineRange(queryFilter, field, delta, false);
+      queryFilter.noValue = numberOrNull(queryFilter.min) == null && numberOrNull(queryFilter.max) == null && !queryFilter.option;
       updateFilterSourceHash(target);
       persist();
       replaceCardKeepingOpen(target);
@@ -3047,6 +3194,7 @@ function buildQueryFromTradeTemplate(f) {
   if (!query || typeof query !== 'object') return null;
   applyFilterStatsToTradeQuery(query, f);
   applyFilterEquipmentToTradeQuery(query, f);
+  applyFilterQueryFiltersToTradeQuery(query, f);
   return { query, sort: { price: 'asc' } };
 }
 
@@ -3098,6 +3246,50 @@ function applyFilterEquipmentToTradeQuery(query, filter) {
     if (Object.keys(value).length) {
       equipmentFilters[id] = value;
     }
+  });
+}
+
+function setTradeQueryFilterRangeValue(target, minVal, maxVal) {
+  const hasNestedValue = target?.value && typeof target.value === 'object';
+  if (hasNestedValue) {
+    const value = {};
+    if (minVal != null) value.min = minVal;
+    if (maxVal != null) value.max = maxVal;
+    if (Object.keys(value).length) target.value = value;
+    else delete target.value;
+    return;
+  }
+  if (minVal != null) target.min = minVal;
+  else delete target.min;
+  if (maxVal != null) target.max = maxVal;
+  else delete target.max;
+}
+
+function applyFilterQueryFiltersToTradeQuery(query, filter) {
+  const queryFilterByKey = new Map();
+  (filter.queryFilters || []).forEach(entry => {
+    if (!entry?.group || !entry?.id) return;
+    queryFilterByKey.set(`${entry.group}:${entry.id}`, entry);
+  });
+
+  Object.entries(query.filters || {}).forEach(([groupName, group]) => {
+    const filters = group?.filters;
+    if (!filters || typeof filters !== 'object') return;
+    Object.keys(filters).forEach(id => {
+      const entry = queryFilterByKey.get(`${groupName}:${id}`);
+      if (!entry) return;
+      const target = filters[id];
+      if (!target || typeof target !== 'object') return;
+      target.disabled = entry.active === false;
+      if (entry.option) target.option = entry.option;
+      const minVal = numberOrNull(entry.min);
+      const maxVal = numberOrNull(entry.max);
+      if (minVal == null && maxVal == null) {
+        setTradeQueryFilterRangeValue(target, null, null);
+        return;
+      }
+      setTradeQueryFilterRangeValue(target, minVal, maxVal);
+    });
   });
 }
 
@@ -3173,6 +3365,9 @@ async function hydrateTradeQueryTemplate(filter) {
   filter.tradeStatusOption = query.status?.option || filter.tradeStatusOption || '';
   filter.tradeSaleTypeActive = !!queryFilters.trade_filters?.filters?.sale_type;
   filter.tradeSaleTypeOption = queryFilters.trade_filters?.filters?.sale_type?.option || '';
+  if (!Array.isArray(filter.queryFilters) || !filter.queryFilters.length) {
+    filter.queryFilters = collectSavedTradeQueryFilters(queryFilters);
+  }
   updateFilterSourceHash(filter);
   await persist();
   appendSidepanelDebugLog({
