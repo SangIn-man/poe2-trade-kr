@@ -557,6 +557,72 @@ function getQueryFilterValueRange(value) {
   };
 }
 
+const QUERY_FILTER_EXCLUDE_KEYS = {
+  type_filters: new Set(['category', 'rarity', 'type']),
+  trade_filters: new Set(['sale_type']),
+  misc_filters: new Set(['ilvl', 'area_level', 'req_level']),
+  equipment_filters: null
+};
+
+function shouldSkipSavedTradeQueryFilter(groupName, id) {
+  if (!groupName || !id) return true;
+  if (groupName === 'equipment_filters') return true;
+  const excludeSet = QUERY_FILTER_EXCLUDE_KEYS[groupName];
+  return !!(excludeSet && excludeSet.has(id));
+}
+
+function formatTradeQueryFilterId(id) {
+  return String(id || '')
+    .replace(/^map_/, '')
+    .replace(/^waystone_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\biiq\b/gi, 'item quantity')
+    .replace(/\biir\b/gi, 'item rarity')
+    .replace(/\bpacksize\b/gi, 'pack size')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSavedTradeQueryFilterLabel(groupName, id, queryFilter, statIdMap) {
+  const statEntry = statIdMap.get(id);
+  if (statEntry?.text) return statEntry.text;
+  const explicitLabel = stripTags(queryFilter?.label || queryFilter?.name || queryFilter?.text || '');
+  if (explicitLabel) return explicitLabel;
+  return formatTradeQueryFilterId(id) || `${groupName}.${id}`;
+}
+
+function makeSavedTradeQueryFilter(groupName, id, queryFilter, statIdMap) {
+  if (!groupName || !id || queryFilter?.disabled === true || shouldSkipSavedTradeQueryFilter(groupName, id)) return null;
+  const valueSource = queryFilter?.value && typeof queryFilter.value === 'object' ? queryFilter.value : queryFilter;
+  const { min, max } = getQueryFilterValueRange(valueSource);
+  const option = queryFilter?.option != null ? String(queryFilter.option) : '';
+  const hasRange = min != null || max != null;
+  return {
+    group: groupName,
+    id,
+    label: buildSavedTradeQueryFilterLabel(groupName, id, queryFilter, statIdMap),
+    value: min != null ? min : null,
+    min,
+    max,
+    option,
+    noValue: !hasRange && !option,
+    active: true
+  };
+}
+
+function collectSavedTradeQueryFilters(queryFilters, statIdMap) {
+  const savedFilters = [];
+  Object.entries(queryFilters || {}).forEach(([groupName, group]) => {
+    const filters = group?.filters;
+    if (!filters || typeof filters !== 'object') return;
+    Object.keys(filters).forEach(id => {
+      const entry = makeSavedTradeQueryFilter(groupName, id, filters[id], statIdMap);
+      if (entry) savedFilters.push(entry);
+    });
+  });
+  return savedFilters;
+}
+
 function makeRangeValueLabel(min, max) {
   if (min != null && max != null) return `${min}~${max}`;
   if (min != null) return `${min}+`;
@@ -605,13 +671,19 @@ function hasQueryFilter(queryFilters, groupName, key) {
   return !!group?.[key];
 }
 
-function buildCurrentSearchFilterName(stats, equipment) {
+function buildCurrentSearchFilterName(stats, equipment, queryFilters) {
   const firstStats = (stats || []).slice(0, 2).map(stat => {
     const range = stat.noValue ? '' : makeRangeValueLabel(stat.min, stat.max);
     return `${stat.label}${range ? ` ${range}` : ''}`;
   });
   if (firstStats.length) return `거래소 검색: ${firstStats.join(' / ')}`;
   if ((equipment || []).length) return `거래소 검색: 장비 조건 ${equipment.length}개`;
+  const firstQueryFilters = (queryFilters || []).slice(0, 2).map(filter => {
+    const optionText = filter.option ? ` ${filter.option}` : '';
+    const rangeText = filter.noValue ? '' : makeRangeValueLabel(filter.min, filter.max);
+    return `${filter.label}${optionText}${rangeText ? ` ${rangeText}` : ''}`;
+  });
+  if (firstQueryFilters.length) return `거래소 검색: ${firstQueryFilters.join(' / ')}`;
   return '거래소 검색 조건';
 }
 
@@ -657,6 +729,7 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
   const queryFilters = query.filters || {};
   const stats = [];
   const equipment = [];
+  const savedQueryFilters = collectSavedTradeQueryFilters(queryFilters, statIdMap);
 
   (query.stats || []).forEach(group => {
     if (group?.disabled === true) return;
@@ -674,7 +747,7 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
 
   const filter = {
     id: Date.now() + Math.random(),
-    name: buildCurrentSearchFilterName(stats, equipment),
+    name: buildCurrentSearchFilterName(stats, equipment, savedQueryFilters),
     category: getFirstFilterValue(queryFilters, 'type_filters', 'category'),
     rarity: getFirstFilterValue(queryFilters, 'type_filters', 'rarity'),
     itemName: '',
@@ -692,6 +765,7 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
     tradeQueryId: queryId,
     tradeQueryTemplate: cloneJsonSafe(query),
     equipment,
+    queryFilters: savedQueryFilters,
     stats,
     note: `거래소 검색조건에서 저장 (${league}, ${queryId})`,
     sourceHash: '',
@@ -788,7 +862,7 @@ async function handleSaveCurrentTradeSearch(event) {
   try {
     const { queryId, league, url, payload } = await fetchCurrentTradeSearchPayload();
     const filter = await buildFilterFromTradeSearchPayload(payload, league, queryId);
-    if (!filter.stats.length && !filter.equipment.length && !filter.category && !filter.rarity && !filter.typeLine) {
+    if (!filter.stats.length && !filter.equipment.length && !(filter.queryFilters || []).length && !filter.category && !filter.rarity && !filter.typeLine) {
       throw new Error('저장할 검색 조건이 없습니다');
     }
 
@@ -818,7 +892,8 @@ async function handleSaveCurrentTradeSearch(event) {
 
     const res = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter, league });
     if (!res?.ok) throw new Error('필터 저장 실패');
-    showToast(`현재 검색조건 저장 완료 (${filter.stats.length}개 속성)`, 'ok');
+    const savedConditionCount = filter.stats.length + filter.equipment.length + (filter.queryFilters || []).length;
+    showToast(`현재 검색조건 저장 완료 (${savedConditionCount}개 조건)`, 'ok');
     btn.textContent = '저장 완료';
   } catch (err) {
     showToast('검색조건 저장 실패: ' + err.message, 'err');
@@ -2084,6 +2159,10 @@ function buildQuerySignature(filter) {
     equipment: (filter.equipment || [])
       .filter(x => x.active !== false && x.id)
       .map(x => `${x.id}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}`)
+      .sort(),
+    queryFilters: (filter.queryFilters || [])
+      .filter(x => x.active !== false && x.id && x.group)
+      .map(x => `${x.group}:${x.id}:${x.option || ''}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}:${x.noValue === true ? 'flag' : ''}`)
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
