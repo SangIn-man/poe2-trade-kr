@@ -7661,7 +7661,7 @@ function translatePoe1FlaskPropertyText(value) {
 }
 
 function translatePoe1CharacterText(value) {
-  const source = String(value || '').trim();
+  const source = stripTradeTags(value);
   const translated = translatePoe1NinjaStatText(source);
   return translated !== source ? translated : translatePoe1FlaskPropertyText(source);
 }
