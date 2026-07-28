@@ -62,6 +62,7 @@ foreach ($relativePath in $runtimeFiles) {
 
 Copy-Item -LiteralPath (Join-Path $repoRoot 'data') -Destination $stagingDir -Recurse
 Copy-Item -LiteralPath (Join-Path $repoRoot 'icons') -Destination $stagingDir -Recurse
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs') -Destination $stagingDir -Recurse
 
 $requiredManifestPaths = @(
   [string]$manifest.background.service_worker
