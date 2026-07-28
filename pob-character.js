@@ -309,6 +309,42 @@
     return rows;
   }
 
+  function normalizeTradeModText(value, depth = 0) {
+    if (value == null || depth > 8) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value).trim();
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '';
+      const looksLikeValueTuple = value.length <= 3
+        && (value.length === 1 || typeof value[1] === 'number' || typeof value[1] === 'string' || value[1] == null);
+      if (looksLikeValueTuple) return normalizeTradeModText(value[0], depth + 1);
+      return value.map(entry => normalizeTradeModText(entry, depth + 1)).filter(Boolean).join(' ').trim();
+    }
+    if (typeof value !== 'object') return '';
+
+    for (const key of ['text', 'string', 'name', 'label', 'line', 'mod', 'descrText', 'description', 'displayText']) {
+      if (value[key] == null || value[key] === value) continue;
+      const template = normalizeTradeModText(value[key], depth + 1);
+      if (!template) continue;
+      const rawValues = Array.isArray(value.values)
+        ? value.values
+        : (Array.isArray(value.magnitudes) ? value.magnitudes : []);
+      const values = rawValues.map(entry => normalizeTradeModText(entry, depth + 1)).filter(Boolean);
+      if (!values.length) return template;
+      const rendered = template.replace(/\{(\d+)\}/g, (_, index) => values[Number(index)] || '');
+      if (value.displayMode === 1) return `${values.join(' ')} ${rendered}`.trim();
+      if (value.displayMode === 3 || rendered !== template) return rendered.trim();
+      const missingValues = values.filter(entry => !rendered.includes(entry));
+      return missingValues.length ? `${rendered} ${missingValues.join(' ')}`.trim() : rendered.trim();
+    }
+
+    for (const key of ['value', 'typeLine', 'baseType']) {
+      if (value[key] != null && value[key] !== value) return normalizeTradeModText(value[key], depth + 1);
+    }
+    return '';
+  }
+
   function localizeTradeItem(item, itemNames, translateStat) {
     if (!item || typeof item !== 'object') return item;
     const localizeStat = typeof translateStat === 'function' ? translateStat : value => value;
@@ -323,10 +359,25 @@
       'enchantMods', 'implicitMods', 'explicitMods', 'craftedMods',
       'fracturedMods', 'utilityMods', 'skillMods', 'runeMods', 'mutatedMods'
     ].forEach(key => {
-      if (Array.isArray(item[key])) result[key] = item[key].map(value => localizeStat(value));
+      if (Array.isArray(item[key])) {
+        result[key] = item[key]
+          .map(value => normalizeTradeModText(value))
+          .filter(Boolean)
+          .map(value => localizeStat(value));
+      }
     });
     return result;
   }
 
-  return { mapSlotName, cleanPobText, parseSockets, resolvePobRanges, dedupePobMods, parseItemText, buildStatRows, localizeTradeItem };
+  return {
+    mapSlotName,
+    cleanPobText,
+    parseSockets,
+    resolvePobRanges,
+    dedupePobMods,
+    parseItemText,
+    buildStatRows,
+    normalizeTradeModText,
+    localizeTradeItem
+  };
 });

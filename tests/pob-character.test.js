@@ -1,6 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mapSlotName, parseSockets, resolvePobRanges, parseItemText, buildStatRows, localizeTradeItem } = require('../pob-character.js');
+const {
+  mapSlotName,
+  parseSockets,
+  resolvePobRanges,
+  parseItemText,
+  buildStatRows,
+  normalizeTradeModText,
+  localizeTradeItem
+} = require('../pob-character.js');
 
 test('maps active PoB equipment slots to character API inventory ids', () => {
   assert.deepEqual(mapSlotName('Weapon 1'), { inventoryId: 'Weapon', x: 0, w: 2, h: 4 });
@@ -128,4 +136,33 @@ test('localizes PoB unique names, base types, and mods for the Korean trade API'
   assert.deepEqual(localized.implicitMods, ['시전 속도 10% 증가']);
   assert.deepEqual(localized.explicitMods, ['스킬이 투사체 3개 추가 발사']);
   assert.equal(source.name, 'Mystic Refractor');
+});
+
+test('normalizes object-shaped character API modifiers before localization', () => {
+  assert.equal(normalizeTradeModText({ text: '+75 to maximum Life' }), '+75 to maximum Life');
+  assert.equal(normalizeTradeModText({ value: '+30% to Fire Resistance' }), '+30% to Fire Resistance');
+  assert.equal(normalizeTradeModText({
+    text: 'Adds {0} to {1} Fire Damage',
+    values: [['12', 0], ['24', 0]]
+  }), 'Adds 12 to 24 Fire Damage');
+
+  const localized = localizeTradeItem({
+    implicitMods: [
+      { text: '+12% to all Elemental Resistances' },
+      '10% increased Cast Speed'
+    ],
+    explicitMods: [
+      { value: '+75 to maximum Life' },
+      { line: '+30% to Fire Resistance' }
+    ]
+  }, {}, value => value
+    .replace('+12% to all Elemental Resistances', '모든 원소 저항 +12%')
+    .replace('10% increased Cast Speed', '시전 속도 10% 증가')
+    .replace('+75 to maximum Life', '최대 생명력 +75')
+    .replace('+30% to Fire Resistance', '화염 저항 +30%'));
+
+  assert.deepEqual(localized.implicitMods, ['모든 원소 저항 +12%', '시전 속도 10% 증가']);
+  assert.deepEqual(localized.explicitMods, ['최대 생명력 +75', '화염 저항 +30%']);
+  assert.ok(localized.implicitMods.every(value => value !== '[object Object]'));
+  assert.ok(localized.explicitMods.every(value => value !== '[object Object]'));
 });
