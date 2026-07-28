@@ -5546,13 +5546,11 @@ function buildWaystoneRegex() {
   const numericPieces = getSelectedRegexNumericPieces();
   const optionGroups = getSelectedRegexOptionGroups();
   const mode = document.querySelector('input[name="regex-mode"]:checked')?.value || 'or';
-  const includePieces = [
-    ...numericPieces,
-    ...optionGroups.include
-  ];
+  const includePieces = optionGroups.include;
   const requiredPieces = [];
   const excludeTerm = combineNegatedRegexOrPieces(optionGroups.exclude);
 
+  requiredPieces.push(...numericPieces);
   if (mode === 'or') {
     const includeOr = combineRegexOrPieces(includePieces);
     if (includeOr) requiredPieces.push(includeOr);
