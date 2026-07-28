@@ -1,3 +1,5 @@
+importScripts('trade-compat.js', 'league-data.js');
+
 // in-page iframe 사이드바 방식으로 전환됨.
 // 클린 설치 직후 이미 열려 있던 거래소 탭에는 content script가 없을 수 있으므로,
 // 메시지 실패 시 content.js/content.css를 즉시 주입한 뒤 다시 토글한다.
@@ -34,7 +36,7 @@ async function injectSidebarContentScript(tabId) {
   });
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content.js']
+    files: ['trade-compat.js', 'content.js']
   });
 }
 
@@ -92,9 +94,61 @@ async function handleActionClick(tab) {
 }
 
 const DEFAULT_LEAGUE = 'Runes of Aldur';
+const TRADE_REALM_POE1 = 'poe1';
+const TRADE_REALM_POE2 = 'poe2';
 const DEBUG_LOG_KEY = 'debugLogs';
 const ERROR_LOG_KEY = 'errorLogs';
 const DEFAULT_BUILD_NAME = '기본 빌드';
+const APP_STATE_REVISION_KEY = 'appStateRevision';
+let appStateMutationQueue = Promise.resolve();
+const TRADE_LEAGUE_CACHE_TTL_MS = 30 * 60 * 1000;
+const tradeLeagueCache = new Map();
+
+async function fetchTradeLeagues(realm, forceRefresh = false) {
+  const normalizedRealm = POE2TQLeagueData.normalizeRealm(realm);
+  const cached = tradeLeagueCache.get(normalizedRealm);
+  if (!forceRefresh && cached && Date.now() - cached.fetchedAt < TRADE_LEAGUE_CACHE_TTL_MS) {
+    return cached.leagues.slice();
+  }
+
+  const url = normalizedRealm === TRADE_REALM_POE1
+    ? 'https://poe.game.daum.net/api/trade/data/leagues'
+    : 'https://poe.kakaogames.com/api/trade2/data/leagues';
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const payload = await response.json();
+  const leagues = POE2TQLeagueData.normalizeLeagueResponse(payload, normalizedRealm);
+  tradeLeagueCache.set(normalizedRealm, { leagues, fetchedAt: Date.now() });
+  return leagues.slice();
+}
+
+function enqueueAppStateMutation(task) {
+  const operation = appStateMutationQueue.then(task, task);
+  appStateMutationQueue = operation.catch(() => {});
+  return operation;
+}
+
+function getLegacyFiltersForRealm(filtersByLeague, league, realm) {
+  return (filtersByLeague?.[league] || []).filter(filter => {
+    return normalizeTradeRealm(filter?.tradeRealm) === normalizeTradeRealm(realm);
+  });
+}
+
+function mergeConcurrentFilters(incomingMaps, currentMaps, baseRevision) {
+  return POE2TQTradeCompat.mergeConcurrentFilters(incomingMaps, currentMaps, baseRevision);
+}
+
+function carryForwardFilterRevisions(nextMaps, currentMaps, nextRevision) {
+  return POE2TQTradeCompat.carryForwardFilterRevisions(nextMaps, currentMaps, nextRevision);
+}
+
+function getDuplicateFilter(filtersByLeague, storageKey, league, realm, sourceHash) {
+  if (!sourceHash) return null;
+  const scoped = filtersByLeague?.[storageKey] || [];
+  return scoped.find(filter => filter?.sourceHash === sourceHash)
+    || getLegacyFiltersForRealm(filtersByLeague, league, realm).find(filter => filter?.sourceHash === sourceHash)
+    || null;
+}
 
 function getExtensionVersion() {
   try {
@@ -142,11 +196,128 @@ function getCurrentLeague(result) {
   return (result.settings && result.settings.league) || DEFAULT_LEAGUE;
 }
 
+function normalizeTradeRealm(realm) {
+  return realm === TRADE_REALM_POE1 ? TRADE_REALM_POE1 : TRADE_REALM_POE2;
+}
+
+function getRealmLeagueStorageKey(realm, league) {
+  return POE2TQTradeCompat.makeRealmLeagueKey(normalizeTradeRealm(realm), league);
+}
+
+function buildTradeFetchUrl(itemId, realm, queryId = '') {
+  const normalizedRealm = normalizeTradeRealm(realm);
+  const apiBase = normalizedRealm === TRADE_REALM_POE1
+    ? 'https://www.pathofexile.com/api/trade'
+    : 'https://www.pathofexile.com/api/trade2';
+  const baseUrl = `${apiBase}/fetch/${encodeURIComponent(itemId)}?query=${encodeURIComponent(queryId)}`;
+  return normalizedRealm === TRADE_REALM_POE2 ? `${baseUrl}&realm=poe2` : baseUrl;
+}
+
+const POE1_ITEM_ICON_CACHE_TTL_MS = 30 * 60 * 1000;
+const poe1ItemIconCatalogCache = new Map();
+let poe1BundledFlaskIconsPromise = null;
+
+function normalizePoe1ItemIconKey(value) {
+  return String(value || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+async function fetchPoe1NinjaItemLines(league, itemType) {
+  const url = `https://poe.ninja/poe1/api/economy/stash/current/item/overview?league=${encodeURIComponent(league)}&type=${encodeURIComponent(itemType)}&withItems=true`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${itemType}: HTTP ${response.status}`);
+  const payload = await response.json();
+  return Array.isArray(payload?.lines) ? payload.lines : [];
+}
+
+function loadPoe1BundledFlaskIcons() {
+  if (!poe1BundledFlaskIconsPromise) {
+    poe1BundledFlaskIconsPromise = fetch(chrome.runtime.getURL('data/poe1-flask-icons.json'))
+      .then(response => {
+        if (!response.ok) throw new Error(`플라스크 이미지 데이터: HTTP ${response.status}`);
+        return response.json();
+      })
+      .catch(() => ({}));
+  }
+  return poe1BundledFlaskIconsPromise;
+}
+
+async function loadPoe1ItemIconCatalog(league) {
+  const cacheKey = String(league || 'Standard');
+  const cached = poe1ItemIconCatalogCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < POE1_ITEM_ICON_CACHE_TTL_MS) return cached.catalog;
+  if (cached?.promise) return cached.promise;
+
+  const promise = (async () => {
+    const types = ['BaseType', 'UniqueWeapon', 'UniqueArmour', 'UniqueAccessory', 'UniqueJewel', 'UniqueFlask'];
+    const [settled, bundledFlaskIcons] = await Promise.all([
+      Promise.allSettled(types.map(type => fetchPoe1NinjaItemLines(cacheKey, type))),
+      loadPoe1BundledFlaskIcons()
+    ]);
+    const baseIcons = new Map();
+    const uniqueIcons = new Map();
+    Object.entries(bundledFlaskIcons || {}).forEach(([name, icon]) => {
+      const key = normalizePoe1ItemIconKey(name);
+      if (key && icon) baseIcons.set(key, String(icon));
+    });
+    settled.forEach((result, index) => {
+      if (result.status !== 'fulfilled') return;
+      const target = types[index] === 'BaseType' ? baseIcons : uniqueIcons;
+      result.value.forEach(line => {
+        const icon = String(line?.icon || line?.image || '').trim();
+        if (!icon) return;
+        const values = types[index] === 'BaseType'
+          ? [line?.name, line?.baseType]
+          : [line?.name];
+        values.forEach(value => {
+          const key = normalizePoe1ItemIconKey(value);
+          if (key && !target.has(key)) target.set(key, icon);
+        });
+      });
+    });
+    if (!baseIcons.size && !uniqueIcons.size) {
+      const reasons = settled
+        .filter(result => result.status === 'rejected')
+        .map(result => result.reason?.message || String(result.reason));
+      throw new Error(reasons.join(', ') || '아이콘 카탈로그가 비어 있습니다.');
+    }
+    const catalog = { baseIcons, uniqueIcons };
+    poe1ItemIconCatalogCache.set(cacheKey, { catalog, fetchedAt: Date.now() });
+    return catalog;
+  })();
+  poe1ItemIconCatalogCache.set(cacheKey, { promise, fetchedAt: Date.now() });
+  try {
+    return await promise;
+  } catch (error) {
+    poe1ItemIconCatalogCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+async function resolvePoe1ItemIcons(league, items) {
+  const catalog = await loadPoe1ItemIconCatalog(league);
+  return (Array.isArray(items) ? items : []).map(item => {
+    const nameKey = normalizePoe1ItemIconKey(item?.name);
+    const baseKey = normalizePoe1ItemIconKey(item?.baseType || item?.typeLine);
+    const isUnique = Number(item?.frameType) === 3 || Number(item?.frameType) === 9;
+    return (isUnique ? catalog.uniqueIcons.get(nameKey) : '')
+      || catalog.baseIcons.get(baseKey)
+      || catalog.uniqueIcons.get(nameKey)
+      || '';
+  });
+}
+
 function getMigratedFiltersByLeague(result) {
   let filtersByLeague = result.filtersByLeague || {};
   if (Array.isArray(result.filters) && result.filters.length && !result.filtersByLeague) {
     const league = getCurrentLeague(result);
-    filtersByLeague = { ...filtersByLeague, [league]: result.filters };
+    filtersByLeague = {
+      ...filtersByLeague,
+      [getRealmLeagueStorageKey(TRADE_REALM_POE2, league)]: result.filters
+    };
   }
   return filtersByLeague;
 }
@@ -165,14 +336,26 @@ function makeBuildTab(name, type, key) {
   };
 }
 
-function makeBuild(name) {
-  const equipTab = makeBuildTab('장비', 'equipment', 'equipment');
-  const slateTab = makeBuildTab('서판', 'slate', 'slate');
+function getMandatoryBuildTabSpecs(realm) {
+  return normalizeTradeRealm(realm) === TRADE_REALM_POE1
+    ? [
+        { key: 'equipment', name: '장비', type: 'equipment' },
+        { key: 'map', name: '지도', type: 'map' },
+        { key: 'contract', name: '계약', type: 'contract' }
+      ]
+    : [
+        { key: 'equipment', name: '장비', type: 'equipment' },
+        { key: 'slate', name: '서판', type: 'slate' }
+      ];
+}
+
+function makeBuild(name, realm) {
+  const tabs = getMandatoryBuildTabSpecs(realm).map(spec => makeBuildTab(spec.name, spec.type, spec.key));
   return {
     id: makeId('build'),
     name: name || DEFAULT_BUILD_NAME,
-    tabs: [equipTab, slateTab],
-    activeTabId: equipTab.id,
+    tabs,
+    activeTabId: tabs[0].id,
     savedAt: new Date().toISOString()
   };
 }
@@ -181,19 +364,50 @@ function ensureBuildState(league, filtersByLeague, buildsByLeague, buildUiByLeag
   const filters = filtersByLeague[league] || [];
   const builds = Array.isArray(buildsByLeague[league]) ? buildsByLeague[league].slice() : [];
   const ui = { ...(buildUiByLeague[league] || {}) };
+  const realm = POE2TQTradeCompat.parseRealmLeagueKey(league)?.realm || TRADE_REALM_POE2;
+  const mandatorySpecs = getMandatoryBuildTabSpecs(realm);
   let changed = false;
 
   if (!builds.length) {
-    builds.push(makeBuild(DEFAULT_BUILD_NAME));
+    builds.push(makeBuild(DEFAULT_BUILD_NAME, realm));
     changed = true;
   }
 
   builds.forEach(build => {
     if (!Array.isArray(build.tabs) || !build.tabs.length) {
-      const next = makeBuild(build.name || DEFAULT_BUILD_NAME);
+      const next = makeBuild(build.name || DEFAULT_BUILD_NAME, realm);
       build.tabs = next.tabs;
       build.activeTabId = next.activeTabId;
       changed = true;
+    }
+    const retiredTabs = realm === TRADE_REALM_POE1
+      ? build.tabs.filter(tab => tab.key === 'slate' || tab.type === 'slate')
+      : [];
+    const mandatoryTabs = mandatorySpecs.map(spec => {
+      let tab = build.tabs.find(entry => entry.key === spec.key || entry.type === spec.type);
+      if (!tab) {
+        tab = makeBuildTab(spec.name, spec.type, spec.key);
+        build.tabs.push(tab);
+        changed = true;
+      }
+      tab.key = spec.key;
+      tab.type = spec.type;
+      if (!tab.name) tab.name = spec.name;
+      return tab;
+    });
+    if (retiredTabs.length) {
+      const equipmentTab = mandatoryTabs.find(tab => tab.key === 'equipment');
+      equipmentTab.filterIds = Array.from(new Set([
+        ...(equipmentTab.filterIds || []),
+        ...retiredTabs.flatMap(tab => tab.filterIds || [])
+      ].map(String)));
+      const mandatoryIds = new Set(mandatoryTabs.map(tab => tab.id));
+      const retiredIds = new Set(retiredTabs.map(tab => tab.id));
+      build.tabs = mandatoryTabs.concat(build.tabs.filter(tab => !mandatoryIds.has(tab.id) && !retiredIds.has(tab.id)));
+      changed = true;
+    } else {
+      const mandatoryIds = new Set(mandatoryTabs.map(tab => tab.id));
+      build.tabs = mandatoryTabs.concat(build.tabs.filter(tab => !mandatoryIds.has(tab.id)));
     }
     if (!build.tabs.some(tab => tab.id === build.activeTabId)) {
       build.activeTabId = build.tabs[0].id;
@@ -225,6 +439,22 @@ function ensureBuildState(league, filtersByLeague, buildsByLeague, buildUiByLeag
     }
   });
 
+  const filterById = new Map(filters.map(filter => [String(filter.id), filter]));
+  builds.forEach(build => {
+    const mandatoryKeys = new Set(mandatorySpecs.map(spec => spec.key));
+    const mandatoryTabs = new Map(build.tabs.filter(tab => mandatoryKeys.has(tab.key)).map(tab => [tab.key, tab]));
+    mandatoryTabs.forEach((tab, tabKey) => {
+      [...(tab.filterIds || [])].forEach(filterId => {
+        const preferredKey = inferTargetTabKey(filterById.get(String(filterId)));
+        if (!preferredKey || preferredKey === tabKey || !mandatoryTabs.has(preferredKey)) return;
+        tab.filterIds = tab.filterIds.filter(id => String(id) !== String(filterId));
+        const target = mandatoryTabs.get(preferredKey);
+        if (!target.filterIds.some(id => String(id) === String(filterId))) target.filterIds.push(String(filterId));
+        changed = true;
+      });
+    });
+  });
+
   buildsByLeague[league] = builds;
   buildUiByLeague[league] = ui;
 
@@ -234,41 +464,8 @@ function ensureBuildState(league, filtersByLeague, buildsByLeague, buildUiByLeag
   return { buildsByLeague, buildUiByLeague, selectedBuild, activeTab, changed };
 }
 
-function getFilterSearchText(filter) {
-  const category = String(filter?.category || '').toLowerCase();
-  const name = String(filter?.name || '').toLowerCase();
-  const itemName = String(filter?.itemName || '').toLowerCase();
-  const typeLine = String(filter?.typeLine || '').toLowerCase();
-  const note = String(filter?.note || '').toLowerCase();
-  const stats = (filter?.stats || []).map(stat => [
-    stat?.label,
-    stat?.id,
-    stat?.fallbackId
-  ].filter(Boolean).join(' ')).join(' ');
-  const equipment = (filter?.equipment || []).map(entry => [
-    entry?.label,
-    entry?.id
-  ].filter(Boolean).join(' ')).join(' ');
-  return `${category} ${name} ${itemName} ${typeLine} ${note} ${stats} ${equipment}`.toLowerCase();
-}
-
 function inferTargetTabKey(filter) {
-  const category = String(filter?.category || '').toLowerCase();
-  const haystack = getFilterSearchText(filter);
-
-  if (/(tablet|slate|waystone|map|ritual|abyss|expedition|sanctum|breach|delirium|서판|지도|의식|심연|탐험|사원|균열|환영)/i.test(haystack)) {
-    return 'slate';
-  }
-
-  if (
-    /^(weapon|armour|accessory)\./.test(category)
-    || /^(jewel|flask)$/.test(category)
-    || /(helmet|gloves|boots|belt|ring|amulet|quiver|shield|focus|buckler|wand|sceptre|spear|flail|claw|dagger|sword|axe|mace|staff|crossbow|활|반지|목걸이|장갑|투구|장화|갑옷|방패|주얼|플라스크)/i.test(haystack)
-  ) {
-    return 'equipment';
-  }
-
-  return '';
+  return POE2TQTradeCompat.getPreferredBuildTabKey(filter, filter?.tradeRealm);
 }
 
 function resolveTargetTab(selectedBuild, activeTab, filter) {
@@ -343,6 +540,17 @@ chrome.tabs.onZoomChange.addListener((info) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'FETCH_TRADE_LEAGUES') {
+    fetchTradeLeagues(msg.realm, msg.forceRefresh === true)
+      .then(leagues => sendResponse({ ok: true, leagues }))
+      .catch(error => sendResponse({
+        ok: false,
+        leagues: POE2TQLeagueData.getFallbackLeagues(msg.realm),
+        error: serializeDebugError(error).message
+      }));
+    return true;
+  }
+
   if (msg.type === 'GET_TAB_ZOOM') {
     const tabId = sender?.tab?.id;
     if (!tabId) {
@@ -355,17 +563,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'INSTALL_TRADE_FETCH_BRIDGE') {
+    const tabId = sender?.tab?.id;
+    if (!tabId) {
+      sendResponse({ ok: false, error: 'missing-tab-id' });
+      return false;
+    }
+    chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['page-trade-fetch-bridge.js'],
+      world: 'MAIN'
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch(error => sendResponse({ ok: false, error: serializeDebugError(error).message }));
+    return true;
+  }
+
   if (msg.type === 'SAVE_FILTER') {
-    chrome.storage.local.get(['filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings'], (result) => {
+    enqueueAppStateMutation(async () => {
+      const result = await chrome.storage.local.get([
+        'filters', 'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings', APP_STATE_REVISION_KEY
+      ]);
       const league = msg.league || msg.filter?.league || getCurrentLeague(result);
+      const realm = normalizeTradeRealm(msg.realm || msg.filter?.tradeRealm || result.settings?.tradeRealm);
+      const storageKey = getRealmLeagueStorageKey(realm, league);
       const filtersByLeague = getMigratedFiltersByLeague(result);
       const buildsByLeague = result.buildsByLeague || {};
       const buildUiByLeague = result.buildUiByLeague || {};
-      const buildState = ensureBuildState(league, filtersByLeague, buildsByLeague, buildUiByLeague);
-      const arr = (filtersByLeague[league] || []).slice();
-      const savedFilter = { ...msg.filter, league };
+      const duplicate = getDuplicateFilter(filtersByLeague, storageKey, league, realm, msg.filter?.sourceHash);
+      if (duplicate) {
+        return { ok: true, duplicate: true, name: duplicate.name, league, realm };
+      }
+      const nextRevision = Number(result[APP_STATE_REVISION_KEY] || 0) + 1;
+      const buildState = ensureBuildState(storageKey, filtersByLeague, buildsByLeague, buildUiByLeague);
+      const arr = (filtersByLeague[storageKey] || []).slice();
+      const savedFilter = { ...msg.filter, league, tradeRealm: realm, _storageRevision: nextRevision };
       arr.push(savedFilter);
-      filtersByLeague[league] = arr;
+      filtersByLeague[storageKey] = arr;
       const targetTab = resolveTargetTab(buildState.selectedBuild, buildState.activeTab, savedFilter);
       const filterId = String(savedFilter.id);
       if (targetTab && !targetTab.filterIds.includes(filterId)) {
@@ -377,29 +611,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const writes = {
         filtersByLeague,
         buildsByLeague: buildState.buildsByLeague,
-        buildUiByLeague: buildState.buildUiByLeague
+        buildUiByLeague: buildState.buildUiByLeague,
+        [APP_STATE_REVISION_KEY]: nextRevision
       };
-      chrome.storage.local.set(writes, () => {
-        if (Array.isArray(result.filters)) chrome.storage.local.remove('filters');
-        sendResponse({
-          ok: true,
-          total: arr.length,
-          league,
-          buildId: buildState.selectedBuild?.id || '',
-          tabId: targetTab?.id || ''
-        });
-      });
+      await chrome.storage.local.set(writes);
+      if (Array.isArray(result.filters)) await chrome.storage.local.remove('filters');
+      return {
+        ok: true,
+        total: arr.length,
+        league,
+        realm,
+        revision: nextRevision,
+        buildId: buildState.selectedBuild?.id || '',
+        tabId: targetTab?.id || ''
+      };
+    }).then(sendResponse).catch(error => {
+      sendResponse({ ok: false, error: serializeDebugError(error).message });
     });
     return true;
   }
 
   if (msg.type === 'CHECK_DUPLICATE') {
-    chrome.storage.local.get(['filters', 'filtersByLeague', 'settings'], (result) => {
+    appStateMutationQueue.then(async () => {
+      const result = await chrome.storage.local.get(['filters', 'filtersByLeague', 'settings']);
       const league = msg.league || getCurrentLeague(result);
+      const realm = normalizeTradeRealm(msg.realm || result.settings?.tradeRealm);
+      const storageKey = getRealmLeagueStorageKey(realm, league);
       const filtersByLeague = getMigratedFiltersByLeague(result);
-      const arr = filtersByLeague[league] || [];
-      const dup = arr.find(f => f.sourceHash === msg.hash);
-      sendResponse({ duplicate: !!dup, name: dup?.name, league });
+      const duplicate = getDuplicateFilter(filtersByLeague, storageKey, league, realm, msg.hash);
+      return { duplicate: !!duplicate, name: duplicate?.name, league, realm };
+    }).then(sendResponse).catch(error => {
+      sendResponse({ duplicate: false, error: serializeDebugError(error).message });
+    });
+    return true;
+  }
+
+  if (msg.type === 'PERSIST_APP_STATE') {
+    enqueueAppStateMutation(async () => {
+      const result = await chrome.storage.local.get([
+        'filtersByLeague', 'buildsByLeague', 'buildUiByLeague', 'settings', APP_STATE_REVISION_KEY
+      ]);
+      const currentRevision = Number(result[APP_STATE_REVISION_KEY] || 0);
+      const baseRevision = Number(msg.baseRevision || 0);
+      const incomingFilters = msg.filtersByLeague || {};
+      const filtersByLeague = currentRevision > baseRevision
+        ? mergeConcurrentFilters(incomingFilters, result.filtersByLeague || {}, baseRevision)
+        : incomingFilters;
+      const nextRevision = currentRevision + 1;
+      carryForwardFilterRevisions(filtersByLeague, result.filtersByLeague || {}, nextRevision);
+
+      const buildsByLeague = msg.buildsByLeague || {};
+      const buildUiByLeague = msg.buildUiByLeague || {};
+      Object.keys(filtersByLeague).forEach(storageKey => {
+        ensureBuildState(storageKey, filtersByLeague, buildsByLeague, buildUiByLeague);
+      });
+
+      await chrome.storage.local.set({
+        filtersByLeague,
+        buildsByLeague,
+        buildUiByLeague,
+        settings: msg.settings || result.settings || {},
+        [APP_STATE_REVISION_KEY]: nextRevision
+      });
+      return { ok: true, revision: nextRevision };
+    }).then(sendResponse).catch(error => {
+      sendResponse({ ok: false, error: serializeDebugError(error).message });
     });
     return true;
   }
@@ -445,11 +721,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'FETCH_NINJA') {
     const league = msg.league || 'Runes of Aldur';
     const itemType = msg.itemType || 'Currency';
-    const url = `https://poe.ninja/poe2/api/economy/exchange/current/overview?league=${encodeURIComponent(league)}&type=${encodeURIComponent(itemType)}&withItems=true`;
+    const realm = normalizeTradeRealm(msg.realm);
+    const endpoint = msg.endpoint || 'exchange';
+    const path = realm === TRADE_REALM_POE1 && endpoint === 'stash-item'
+      ? 'stash/current/item'
+      : 'exchange/current';
+    const url = `https://poe.ninja/${realm}/api/economy/${path}/overview?league=${encodeURIComponent(league)}&type=${encodeURIComponent(itemType)}&withItems=true`;
     fetch(url)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(data => sendResponse({ ok: true, data }))
       .catch(e => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (msg.type === 'FETCH_POE1_ITEM_ICONS') {
+    resolvePoe1ItemIcons(msg.league || 'Standard', msg.items)
+      .then(icons => sendResponse({ ok: true, icons }))
+      .catch(error => sendResponse({ ok: false, error: error?.message || String(error) }));
     return true;
   }
 
@@ -471,8 +759,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'FETCH_POB') {
-    fetch(`https://www.pathofexile.com/api/trade2/fetch/${msg.itemId}?query=&realm=poe2`)
-      .then(r => r.json())
+    fetch(buildTradeFetchUrl(msg.itemId, msg.realm, msg.queryId), { credentials: 'include' })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(data => sendResponse({ ok: true, data }))
       .catch(e => sendResponse({ ok: false, error: e.message }));
     return true;
