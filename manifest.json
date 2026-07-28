@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "PoE2 Trade Quick Search",
-  "version": "1.3.1",
-  "description": "Path of Exile 2 한국 거래소 즐겨찾기 & 원클릭 검색",
+  "name": "PoE Trade Quick Search",
+  "version": "2.0.0",
+  "description": "Path of Exile 1·2 한국 거래소 즐겨찾기 & 원클릭 검색",
   "permissions": ["storage", "tabs", "clipboardWrite", "scripting", "activeTab"],
   "host_permissions": [
     "https://poe.kakaogames.com/*",
@@ -10,10 +10,11 @@
     "https://www.pathofexile.com/*",
     "https://poe.ninja/*",
     "https://web.poecdn.com/*",
+    "https://cdn.poedb.tw/*",
     "file:///*"
   ],
   "action": {
-    "default_title": "PoE2 Trade Quick",
+    "default_title": "PoE Trade Quick",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -25,14 +26,14 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sidepanel.html", "data/passive-tree-ko-csv-matched.json", "data/tree.json"],
+      "resources": ["sidepanel.html", "page-trade-fetch-bridge.js", "data/passive-tree-ko-csv-matched.json", "data/poe1-passive-tree-3.28.json", "data/poe1-divination-cards.json", "data/poe1-flask-icons.json", "data/poe1-item-effects-ko.json", "data/poe1-item-names-ko.json", "data/poe1-stat-text-ko.json", "data/tree.json"],
       "matches": ["<all_urls>"]
     }
   ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["trade-compat.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }

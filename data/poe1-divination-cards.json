@@ -1,0 +1,284 @@
+{
+  "A Mother's Parting Gift": {
+    "stackSize": 6
+  },
+  "A Stone Perfected": {
+    "stackSize": 5
+  },
+  "Akil's Prophecy": {
+    "stackSize": 3
+  },
+  "Alluring Bounty": {
+    "stackSize": 7
+  },
+  "Arrogance of the Vaal": {
+    "stackSize": 8
+  },
+  "Avian Pursuit": {
+    "stackSize": 3
+  },
+  "Baited Expectations": {
+    "stackSize": 8
+  },
+  "Broken Promises": {
+    "stackSize": 2
+  },
+  "Brother's Gift": {
+    "stackSize": 1
+  },
+  "Call to the First Ones": {
+    "stackSize": 5
+  },
+  "Cartographer's Delight": {
+    "stackSize": 3
+  },
+  "Damnation": {
+    "stackSize": 16
+  },
+  "Darker Half": {
+    "stackSize": 3
+  },
+  "Dementophobia": {
+    "stackSize": 11
+  },
+  "Desecrated Virtue": {
+    "stackSize": 9
+  },
+  "Destined to Crumble": {
+    "stackSize": 5
+  },
+  "Divine Beauty": {
+    "stackSize": 12
+  },
+  "Doedre's Madness": {
+    "stackSize": 9
+  },
+  "Doryani's Epiphany": {
+    "stackSize": 3
+  },
+  "Dying Anguish": {
+    "stackSize": 8
+  },
+  "Eldritch Perfection": {
+    "stackSize": 4
+  },
+  "Emperor's Luck": {
+    "stackSize": 5
+  },
+  "Fateful Meeting": {
+    "stackSize": 9
+  },
+  "Fire Of Unknown Origin": {
+    "stackSize": 7
+  },
+  "Gemcutter's Mercy": {
+    "stackSize": 3
+  },
+  "History": {
+    "stackSize": 5
+  },
+  "Home": {
+    "stackSize": 3
+  },
+  "House of Mirrors": {
+    "stackSize": 9
+  },
+  "Imperfect Memories": {
+    "stackSize": 5
+  },
+  "Lachrymal Necrosis": {
+    "stackSize": 3
+  },
+  "Lantador's Lost Love": {
+    "stackSize": 7
+  },
+  "Love Through Ice": {
+    "stackSize": 4
+  },
+  "Lucky Connections": {
+    "stackSize": 7
+  },
+  "Luminous Trove": {
+    "stackSize": 7
+  },
+  "Magnum Opus": {
+    "stackSize": 5
+  },
+  "Matryoshka": {
+    "stackSize": 8
+  },
+  "Mawr Blaidd": {
+    "stackSize": 16
+  },
+  "Monochrome": {
+    "stackSize": 3
+  },
+  "More is Never Enough": {
+    "stackSize": 7
+  },
+  "One Last Score": {
+    "stackSize": 5
+  },
+  "Outfoxed": {
+    "stackSize": 2
+  },
+  "Rebirth and Renewal": {
+    "stackSize": 4
+  },
+  "Remembrance": {
+    "stackSize": 8
+  },
+  "Runic Luck": {
+    "stackSize": 4
+  },
+  "Sambodhi's Vow": {
+    "stackSize": 3
+  },
+  "Seven Years Bad Luck": {
+    "stackSize": 13
+  },
+  "Something Dark": {
+    "stackSize": 5
+  },
+  "Squandered Prosperity": {
+    "stackSize": 5
+  },
+  "Temperance": {
+    "stackSize": 4
+  },
+  "The Admirer": {
+    "stackSize": 9
+  },
+  "The Apothecary": {
+    "stackSize": 5
+  },
+  "The Breach": {
+    "stackSize": 4
+  },
+  "The Catch": {
+    "stackSize": 18
+  },
+  "The Demon": {
+    "stackSize": 10
+  },
+  "The Doctor": {
+    "stackSize": 8
+  },
+  "The Dragon's Heart": {
+    "stackSize": 11
+  },
+  "The Eye of Terror": {
+    "stackSize": 8
+  },
+  "The Eye of the Dragon": {
+    "stackSize": 10
+  },
+  "The Fiend": {
+    "stackSize": 11
+  },
+  "The Forbidden Fruit": {
+    "stackSize": 1
+  },
+  "The Formless Sea": {
+    "stackSize": 7
+  },
+  "The Fortunate": {
+    "stackSize": 12
+  },
+  "The Garish Power": {
+    "stackSize": 4
+  },
+  "The Hook": {
+    "stackSize": 8
+  },
+  "The Immortal": {
+    "stackSize": 10
+  },
+  "The Insane Cat": {
+    "stackSize": 9
+  },
+  "The Journey": {
+    "stackSize": 4
+  },
+  "The Lake": {
+    "stackSize": 8
+  },
+  "The Metalsmith's Gift": {
+    "stackSize": 6
+  },
+  "The Miracle": {
+    "stackSize": 3
+  },
+  "The Nurse": {
+    "stackSize": 8
+  },
+  "The One With All": {
+    "stackSize": 6
+  },
+  "The Patient": {
+    "stackSize": 8
+  },
+  "The Price of Devotion": {
+    "stackSize": 7
+  },
+  "The Price of Prescience": {
+    "stackSize": 5
+  },
+  "The Rusted Bard": {
+    "stackSize": 9
+  },
+  "The Sephirot": {
+    "stackSize": 11
+  },
+  "The Shieldbearer": {
+    "stackSize": 8
+  },
+  "The Side Quest": {
+    "stackSize": 5
+  },
+  "The Silly Boy": {
+    "stackSize": 9
+  },
+  "The Slumbering Beast": {
+    "stackSize": 5
+  },
+  "The Soul": {
+    "stackSize": 9
+  },
+  "The Summoner": {
+    "stackSize": 6
+  },
+  "The Thaumaturgist": {
+    "stackSize": 8
+  },
+  "The Tireless Extractor": {
+    "stackSize": 8
+  },
+  "The Union": {
+    "stackSize": 7
+  },
+  "The Void": {
+    "stackSize": 1
+  },
+  "The Wilted Rose": {
+    "stackSize": 7
+  },
+  "The Wrath": {
+    "stackSize": 8
+  },
+  "Time-Lost Relic": {
+    "stackSize": 10
+  },
+  "Unrequited Love": {
+    "stackSize": 16
+  },
+  "Vanity": {
+    "stackSize": 9
+  },
+  "Wealth and Power": {
+    "stackSize": 11
+  },
+  "Winter's Embrace": {
+    "stackSize": 2
+  }
+}

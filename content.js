@@ -4,8 +4,11 @@
 // content.js 는 <all_urls> 에 주입되므로, 거래소 전용 로직(⭐ 버튼,
 // MutationObserver, 매물 평가 등)은 거래소 호스트에서만 실행한다.
 const IS_TRADE_SITE = /(?:poe\.kakaogames\.com|poe\.game\.daum\.net|pathofexile\.com)/i.test(location.hostname);
-const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade2stats-cache-v2';
+const STAT_SEARCH_CACHE_KEY = 'poe2tq-trade-stats-cache-v3';
 const STAT_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
+const TRADE_REALM_POE1 = 'poe1';
+const TRADE_REALM_POE2 = 'poe2';
+const DEFAULT_TRADE_REALM = TRADE_REALM_POE2;
 const MANUAL_STAT_SEARCH_STOP_WORDS = new Set(['내', '시', '의', '이', '가', '을', '를', '은', '는', '도', '및']);
 const MANUAL_STAT_SEARCH_GROUPS = new Set(['explicit', 'implicit', 'enchant', 'skill']);
 const MANUAL_STAT_SEARCH_GROUP_LABELS = {
@@ -69,7 +72,10 @@ if (IS_TRADE_SITE) {
 
 // ─── DOM-based search evaluation ──────────────────────
 function getRatePerDivine(currency) {
-  const rates = cachedTradeRates?.rates || {};
+  const realm = getTradeRealmFromPath();
+  const realmPayload = cachedTradeRates?.[realm]
+    || (cachedTradeRates?.tradeRealm === realm ? cachedTradeRates : null);
+  const rates = realmPayload?.rates || {};
   if (!currency) return null;
   if (currency === 'divine') return 1;
   const aliases = {
@@ -109,6 +115,7 @@ function parseListingPrice(row) {
     const ratePerDivine = getRatePerDivine(currency);
     if (currency === 'divine') normalized = amount;
     else if (ratePerDivine && isFinite(ratePerDivine) && ratePerDivine > 0) normalized = amount / ratePerDivine;
+    else if (getTradeRealmFromPath() === TRADE_REALM_POE1) normalized = null;
     else if (currency === 'exalted') normalized = amount / 100;
     else if (currency === 'chaos') normalized = amount / 1000;
   }
@@ -214,12 +221,16 @@ function summarizeAffixes(affixes) {
 
 function formatNormalizedPrice(normalizedPrice) {
   if (!(normalizedPrice > 0)) return '';
-  if (normalizedPrice >= 200) {
-    const div = normalizedPrice / 200;
-    const rounded = div >= 10 ? div.toFixed(1) : div.toFixed(2);
+  if (normalizedPrice >= 1) {
+    const rounded = normalizedPrice >= 10 ? normalizedPrice.toFixed(1) : normalizedPrice.toFixed(2);
     return `${rounded.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')} div`;
   }
-  return `${Number(normalizedPrice.toFixed(1))} chaos`;
+  const currency = getTradeRealmFromPath() === TRADE_REALM_POE1 ? 'chaos' : 'exalted';
+  const rate = getRatePerDivine(currency);
+  if (rate && isFinite(rate) && rate > 0) {
+    return `${Number((normalizedPrice * rate).toFixed(1))} ${currency === 'chaos' ? 'chaos' : 'ex'}`;
+  }
+  return `${Number(normalizedPrice.toFixed(3))} div`;
 }
 
 function guessCategoryFromIcon(src) {
@@ -228,7 +239,7 @@ function guessCategoryFromIcon(src) {
   if (/BodyArmou?rs?|Chests?/i.test(icon)) return 'armour.chest';
   if (/Gloves?/i.test(icon)) return 'armour.gloves';
   if (/Boots?/i.test(icon)) return 'armour.boots';
-  if (/Belts?/i.test(icon)) return 'armour.belt';
+  if (/Belts?/i.test(icon)) return 'accessory.belt';
   if (/Rings?/i.test(icon)) return 'accessory.ring';
   if (/Amulets?/i.test(icon)) return 'accessory.amulet';
   if (/Quivers?/i.test(icon)) return 'armour.quiver';
@@ -496,20 +507,75 @@ function scanItems() {
 
 // ─── URL / API helpers ────────────────────────────────
 function getQueryId() {
-  // /trade2/search/poe2/<league>/<queryId>
-  const m = location.pathname.match(/\/trade2\/search\/poe2\/[^\/]+\/([^\/?#]+)/);
-  return m ? m[1] : null;
+  return getTradeContextFromPath()?.queryId || null;
 }
 
-function getApiBase() {
-  return location.hostname === 'poe.kakaogames.com'
-    ? 'https://poe.kakaogames.com/api/trade2'
-    : 'https://www.pathofexile.com/api/trade2';
+function normalizeTradeRealm(realm) {
+  return realm === TRADE_REALM_POE1 ? TRADE_REALM_POE1 : TRADE_REALM_POE2;
+}
+
+function decodeTradePathSegment(value) {
+  try {
+    return decodeURIComponent(String(value || '').replace(/\+/g, ' '));
+  } catch {
+    return String(value || '').replace(/\+/g, ' ');
+  }
+}
+
+function getTradeContextFromPath(pathname = location.pathname) {
+  let m = String(pathname || '').match(/^\/trade2\/search\/poe2\/([^\/?#]+)(?:\/([^\/?#]+))?/i);
+  if (m) {
+    return {
+      realm: TRADE_REALM_POE2,
+      league: decodeTradePathSegment(m[1]),
+      queryId: m[2] || ''
+    };
+  }
+
+  m = String(pathname || '').match(/^\/trade\/search\/([^\/?#]+)(?:\/([^\/?#]+))?/i);
+  if (m) {
+    return {
+      realm: TRADE_REALM_POE1,
+      league: decodeTradePathSegment(m[1]),
+      queryId: m[2] || ''
+    };
+  }
+
+  return null;
+}
+
+function getTradeRealmFromPath() {
+  return getTradeContextFromPath()?.realm || DEFAULT_TRADE_REALM;
+}
+
+function getApiBase(realm = getTradeRealmFromPath()) {
+  if (normalizeTradeRealm(realm) === TRADE_REALM_POE1) {
+    return `${location.origin}/api/trade`;
+  }
+  const apiPath = '/api/trade2';
+  return `${location.origin}${apiPath}`;
 }
 
 function getTradeLeagueFromPath() {
-  const m = location.pathname.match(/\/trade2\/search\/poe2\/([^\/?#]+)/);
-  return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+  return getTradeContextFromPath()?.league || '';
+}
+
+function buildTradeSearchPayloadUrl(context) {
+  const realm = normalizeTradeRealm(context?.realm);
+  const league = encodeURIComponent(context?.league || '');
+  const queryId = encodeURIComponent(context?.queryId || '');
+  const apiBase = getApiBase(realm);
+  return realm === TRADE_REALM_POE1
+    ? `${apiBase}/search/${league}/${queryId}`
+    : `${apiBase}/search/poe2/${league}/${queryId}`;
+}
+
+function buildTradeFetchUrl(itemIds, queryId, realm = getTradeRealmFromPath()) {
+  const normalizedRealm = normalizeTradeRealm(realm);
+  const sourceIds = Array.isArray(itemIds) ? itemIds : [itemIds];
+  const encodedIds = sourceIds.map(id => encodeURIComponent(id)).join(',');
+  const baseUrl = `${getApiBase(normalizedRealm)}/fetch/${encodedIds}?query=${encodeURIComponent(queryId || '')}`;
+  return normalizedRealm === TRADE_REALM_POE2 ? `${baseUrl}&realm=poe2` : baseUrl;
 }
 
 function numberOrNull(value) {
@@ -524,6 +590,14 @@ function cloneJsonSafe(value) {
   } catch {
     return null;
   }
+}
+
+async function fetchTradeItemPayload(itemId, queryId, realm) {
+  const normalizedRealm = normalizeTradeRealm(realm);
+  const url = buildTradeFetchUrl(itemId, queryId, normalizedRealm);
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) throw new Error(`API 응답 오류 (HTTP ${res.status})`);
+  return { data: await res.json(), url };
 }
 
 function buildTradeStatIdMapFromParsed(parsed) {
@@ -560,13 +634,13 @@ function getQueryFilterValueRange(value) {
 const QUERY_FILTER_EXCLUDE_KEYS = {
   type_filters: new Set(['category', 'rarity', 'type']),
   trade_filters: new Set(['sale_type']),
-  misc_filters: new Set(['ilvl', 'area_level', 'req_level']),
-  equipment_filters: null
+  misc_filters: new Set(['ilvl', 'area_level', 'req_level'])
 };
+const EQUIPMENT_QUERY_FILTER_GROUPS = new Set(['equipment_filters', 'weapon_filters', 'armour_filters', 'socket_filters']);
 
 function shouldSkipSavedTradeQueryFilter(groupName, id) {
   if (!groupName || !id) return true;
-  if (groupName === 'equipment_filters') return true;
+  if (EQUIPMENT_QUERY_FILTER_GROUPS.has(groupName)) return true;
   const excludeSet = QUERY_FILTER_EXCLUDE_KEYS[groupName];
   return !!(excludeSet && excludeSet.has(id));
 }
@@ -595,7 +669,8 @@ function makeSavedTradeQueryFilter(groupName, id, queryFilter, statIdMap) {
   if (!groupName || !id || queryFilter?.disabled === true || shouldSkipSavedTradeQueryFilter(groupName, id)) return null;
   const valueSource = queryFilter?.value && typeof queryFilter.value === 'object' ? queryFilter.value : queryFilter;
   const { min, max } = getQueryFilterValueRange(valueSource);
-  const option = queryFilter?.option != null ? String(queryFilter.option) : '';
+  const textKey = queryFilter?.input != null ? 'input' : (queryFilter?.option != null ? 'option' : '');
+  const textValue = textKey ? String(queryFilter[textKey] || '') : '';
   const hasRange = min != null || max != null;
   return {
     group: groupName,
@@ -604,8 +679,9 @@ function makeSavedTradeQueryFilter(groupName, id, queryFilter, statIdMap) {
     value: min != null ? min : null,
     min,
     max,
-    option,
-    noValue: !hasRange && !option,
+    textKey,
+    textValue,
+    noValue: !hasRange && !textValue,
     active: true
   };
 }
@@ -679,9 +755,9 @@ function buildCurrentSearchFilterName(stats, equipment, queryFilters) {
   if (firstStats.length) return `거래소 검색: ${firstStats.join(' / ')}`;
   if ((equipment || []).length) return `거래소 검색: 장비 조건 ${equipment.length}개`;
   const firstQueryFilters = (queryFilters || []).slice(0, 2).map(filter => {
-    const optionText = filter.option ? ` ${filter.option}` : '';
+    const textValue = filter.textValue ? ` ${filter.textValue}` : '';
     const rangeText = filter.noValue ? '' : makeRangeValueLabel(filter.min, filter.max);
-    return `${filter.label}${optionText}${rangeText ? ` ${rangeText}` : ''}`;
+    return `${filter.label}${textValue}${rangeText ? ` ${rangeText}` : ''}`;
   });
   if (firstQueryFilters.length) return `거래소 검색: ${firstQueryFilters.join(' / ')}`;
   return '거래소 검색 조건';
@@ -700,6 +776,9 @@ function summarizeTradeQueryForDebug(query) {
     tradeFilters: summarizeFilterObject(filters.trade_filters?.filters),
     miscFilters: summarizeFilterObject(filters.misc_filters?.filters),
     equipmentFilters: summarizeFilterObject(filters.equipment_filters?.filters),
+    weaponFilters: summarizeFilterObject(filters.weapon_filters?.filters),
+    armourFilters: summarizeFilterObject(filters.armour_filters?.filters),
+    socketFilters: summarizeFilterObject(filters.socket_filters?.filters),
     stats: (query?.stats || []).map(group => ({
       type: group?.type || '',
       disabled: group?.disabled === true,
@@ -713,17 +792,18 @@ function summarizeTradeQueryForDebug(query) {
 }
 
 async function fetchCurrentTradeSearchPayload() {
-  const queryId = getQueryId();
-  const league = getTradeLeagueFromPath();
+  const context = getTradeContextFromPath();
+  const queryId = context?.queryId || '';
+  const league = context?.league || '';
   if (!queryId || !league) throw new Error('검색 결과 URL에서 queryId/리그를 찾을 수 없습니다');
-  const url = `${getApiBase()}/search/poe2/${encodeURIComponent(league)}/${encodeURIComponent(queryId)}`;
+  const url = buildTradeSearchPayloadUrl(context);
   const res = await fetch(url, { credentials: 'include' });
   if (!res.ok) throw new Error(`검색 조건 조회 실패 (HTTP ${res.status})`);
   const payload = await res.json();
-  return { queryId, league, url, payload };
+  return { queryId, league, realm: context.realm, url, payload };
 }
 
-async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
+async function buildFilterFromTradeSearchPayload(payload, league, queryId, realm = DEFAULT_TRADE_REALM) {
   const statIdMap = await ensureTradeStatIdMap();
   const query = payload?.query || {};
   const queryFilters = query.filters || {};
@@ -739,19 +819,24 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
     });
   });
 
-  const equipmentQueryFilters = queryFilters.equipment_filters?.filters || {};
-  Object.keys(equipmentQueryFilters).forEach(id => {
-    const equipmentFilter = makeEquipmentFromQueryFilter(id, equipmentQueryFilters[id]);
-    if (equipmentFilter) equipment.push(equipmentFilter);
+  POE2TQTradeCompat.getEquipmentFilterGroups(realm).forEach(groupName => {
+    const equipmentQueryFilters = queryFilters[groupName]?.filters || {};
+    Object.keys(equipmentQueryFilters).forEach(id => {
+      const equipmentFilter = makeEquipmentFromQueryFilter(id, equipmentQueryFilters[id]);
+      if (equipmentFilter) equipment.push(equipmentFilter);
+    });
   });
 
+  const typeLine = getFirstFilterValue(queryFilters, 'type_filters', 'type') || tradeValueToText(query.type);
+  const canonicalTypeLine = await resolveCanonicalItemType(typeLine, realm);
   const filter = {
     id: Date.now() + Math.random(),
     name: buildCurrentSearchFilterName(stats, equipment, savedQueryFilters),
     category: getFirstFilterValue(queryFilters, 'type_filters', 'category'),
     rarity: getFirstFilterValue(queryFilters, 'type_filters', 'rarity'),
-    itemName: '',
-    typeLine: getFirstFilterValue(queryFilters, 'type_filters', 'type'),
+    itemName: tradeValueToText(query.name),
+    typeLine,
+    canonicalTypeLine,
     typeLineActive: true,
     ilvlMin: numberOrNull(queryFilters.misc_filters?.filters?.ilvl?.min) || 0,
     ilvlMax: numberOrNull(queryFilters.misc_filters?.filters?.ilvl?.max),
@@ -762,6 +847,7 @@ async function buildFilterFromTradeSearchPayload(payload, league, queryId) {
     tradeStatusOption: query.status?.option || '',
     tradeSaleTypeActive: hasQueryFilter(queryFilters, 'trade_filters', 'sale_type'),
     tradeSaleTypeOption: getFirstFilterValue(queryFilters, 'trade_filters', 'sale_type'),
+    tradeRealm: normalizeTradeRealm(realm),
     tradeQueryId: queryId,
     tradeQueryTemplate: cloneJsonSafe(query),
     equipment,
@@ -781,7 +867,7 @@ function createCurrentSearchSaveButton() {
   btn.id = QUERY_SAVE_BUTTON_ID;
   btn.type = 'button';
   btn.textContent = '＋ 현재 검색조건 저장';
-  btn.title = '현재 거래소 검색 조건을 PoE2 Trade Quick 필터로 저장';
+  btn.title = '현재 거래소 검색 조건을 PoE Trade Quick 필터로 저장';
   btn.addEventListener('click', handleSaveCurrentTradeSearch);
   return btn;
 }
@@ -860,8 +946,8 @@ async function handleSaveCurrentTradeSearch(event) {
   const prevText = btn.textContent;
   btn.textContent = '저장 중...';
   try {
-    const { queryId, league, url, payload } = await fetchCurrentTradeSearchPayload();
-    const filter = await buildFilterFromTradeSearchPayload(payload, league, queryId);
+    const { queryId, league, realm, url, payload } = await fetchCurrentTradeSearchPayload();
+    const filter = await buildFilterFromTradeSearchPayload(payload, league, queryId, realm);
     if (!filter.stats.length && !filter.equipment.length && !(filter.queryFilters || []).length && !filter.category && !filter.rarity && !filter.typeLine) {
       throw new Error('저장할 검색 조건이 없습니다');
     }
@@ -869,7 +955,8 @@ async function handleSaveCurrentTradeSearch(event) {
     const dup = await chrome.runtime.sendMessage({
       type: 'CHECK_DUPLICATE',
       hash: filter.sourceHash,
-      league
+      league,
+      realm
     });
     if (dup?.duplicate) {
       showToast(`이미 저장된 필터입니다: "${dup.name}"`, 'warn');
@@ -881,6 +968,7 @@ async function handleSaveCurrentTradeSearch(event) {
       type: 'APPEND_DEBUG_LOG',
       entry: {
         kind: 'save-current-query',
+        realm,
         league,
         queryId,
         sourceUrl: url,
@@ -890,7 +978,7 @@ async function handleSaveCurrentTradeSearch(event) {
       }
     }).catch(() => {});
 
-    const res = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter, league });
+    const res = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter, league, realm });
     if (!res?.ok) throw new Error('필터 저장 실패');
     const savedConditionCount = filter.stats.length + filter.equipment.length + (filter.queryFilters || []).length;
     showToast(`현재 검색조건 저장 완료 (${savedConditionCount}개 조건)`, 'ok');
@@ -1190,7 +1278,7 @@ function injectStarButton(row) {
   const starBtn = document.createElement('button');
   starBtn.className = 'poe2tq-star-btn';
   starBtn.textContent = '⭐ 즐겨찾기';
-  starBtn.title = 'PoE2 Trade Quick에 필터로 저장';
+  starBtn.title = 'PoE Trade Quick에 필터로 저장';
 
   starBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1279,18 +1367,18 @@ async function handleStar(btn, row) {
 
   try {
     const itemId = row.dataset.id;
-    const queryId = getQueryId();
+    const tradeContext = getTradeContextFromPath();
+    const queryId = tradeContext?.queryId || '';
     if (!itemId) throw new Error('아이템 ID를 찾을 수 없습니다');
     if (!queryId) throw new Error('검색 결과 페이지에서만 사용 가능합니다');
 
-    const apiUrl = `${getApiBase()}/fetch/${encodeURIComponent(itemId)}?query=${encodeURIComponent(queryId)}&realm=poe2`;
-    const res = await fetch(apiUrl, { credentials: 'include' });
-    if (!res.ok) throw new Error(`API 응답 오류 (HTTP ${res.status})`);
-    const data = await res.json();
+    const fetched = await fetchTradeItemPayload(itemId, queryId, tradeContext?.realm);
+    const apiUrl = fetched.url;
+    const data = fetched.data;
     const result = data?.result?.[0];
     if (!result?.item) throw new Error('아이템 데이터를 받지 못했습니다');
 
-    const built = await buildFilterFromApi(result.item, result.listing);
+    const built = await buildFilterFromApi(result.item, result.listing, tradeContext);
     const filter = built?.filter;
     if (!filter) throw new Error('필터 생성 실패');
 
@@ -1301,6 +1389,8 @@ async function handleStar(btn, row) {
       entry: {
         kind: 'favorite',
         host: location.hostname,
+        realm: tradeContext?.realm || DEFAULT_TRADE_REALM,
+        league: tradeContext?.league || '',
         itemId,
         queryId,
         sourceFetchUrl: apiUrl,
@@ -1333,7 +1423,9 @@ async function handleStar(btn, row) {
 
     const dup = await chrome.runtime.sendMessage({
       type: 'CHECK_DUPLICATE',
-      hash: selectedFilter.sourceHash
+      hash: selectedFilter.sourceHash,
+      league: selectedFilter.league,
+      realm: selectedFilter.tradeRealm
     });
 
     if (dup?.duplicate) {
@@ -1342,7 +1434,12 @@ async function handleStar(btn, row) {
       return;
     }
 
-    const saveRes = await chrome.runtime.sendMessage({ type: 'SAVE_FILTER', filter: selectedFilter });
+    const saveRes = await chrome.runtime.sendMessage({
+      type: 'SAVE_FILTER',
+      filter: selectedFilter,
+      league: selectedFilter.league,
+      realm: selectedFilter.tradeRealm
+    });
     if (saveRes?.ok) {
       btn.textContent = '✅ 저장완료!';
       btn.classList.add('saved');
@@ -1394,13 +1491,6 @@ async function handleTierDebug(row, btn) {
   }
 }
 
-// ─── frame type → rarity ──────────────────────────────
-const FRAME_TYPES = {
-  0: 'normal', 1: 'magic', 2: 'rare', 3: 'unique',
-  4: 'gem', 5: 'currency', 6: 'divcard',
-  7: 'quest', 8: 'prophecy', 9: 'foil'
-};
-
 const EQUIPMENT_PROPERTY_RULES = [
   { id: 'damage', label: '피해', patterns: [/(?:damage|피해)/i] },
   { id: 'aps', label: '초당 공격', patterns: [/(?:attacks per second|초당 공격(?: 횟수)?)/i] },
@@ -1418,65 +1508,9 @@ const EQUIPMENT_PROPERTY_RULES = [
 
 const EXACT_EQUIPMENT_FILTERS = new Set(['rune_sockets']);
 
-// ─── icon path → category ─────────────────────────────
-function guessCategoryFromItem(item) {
-  console.log('[cat]', JSON.stringify(item?.category), item?.typeLine);
-  const directCategory = item?.category;
-  if (Array.isArray(directCategory) && directCategory.length) return directCategory.join('.');
-  if (typeof directCategory === 'string' && directCategory) return directCategory;
-  if (directCategory && typeof directCategory === 'object' && !Array.isArray(directCategory)) {
-    const mainKey = Object.keys(directCategory)[0];
-    const subArr = directCategory[mainKey];
-    if (mainKey) {
-      const singular = mainKey === 'accessories' ? 'accessory' : mainKey.replace(/s$/, '');
-      if (Array.isArray(subArr) && subArr.length) return `${singular}.${subArr[0]}`;
-      return singular;
-    }
-  }
-  const icon = item?.icon || '';
-  // PoE icon paths contain category hints: /Helmets/, /BodyArmours/, etc.
-  if (/Helmets?/i.test(icon))      return 'armour.helmet';
-  if (/BodyArmou?rs?|Chests?/i.test(icon)) return 'armour.chest';
-  if (/Gloves?/i.test(icon))       return 'armour.gloves';
-  if (/Boots?/i.test(icon))        return 'armour.boots';
-  if (/Belts?/i.test(icon))        return 'armour.belt';
-  if (/Rings?/i.test(icon))        return 'accessory.ring';
-  if (/Amulets?/i.test(icon))      return 'accessory.amulet';
-  if (/Quivers?/i.test(icon))      return 'armour.quiver';
-  if (/Shields?/i.test(icon))      return 'armour.shield';
-  if (/Foci|Focuses?/i.test(icon)) return 'armour.focus';
-  if (/Bucklers?/i.test(icon))     return 'armour.buckler';
-  if (/Bows?/i.test(icon))         return 'weapon.bow';
-  if (/Wands?/i.test(icon))        return 'weapon.wand';
-  if (/Sceptres?/i.test(icon))     return 'weapon.sceptre';
-  if (/Spears?/i.test(icon))       return 'weapon.spear';
-  if (/Flails?/i.test(icon))       return 'weapon.flail';
-  if (/Claws?/i.test(icon))        return 'weapon.claw';
-  if (/Daggers?/i.test(icon))      return 'weapon.dagger';
-  if (/OneHandSwords?|ThrustingOneHandSwords?/i.test(icon)) return 'weapon.onesword';
-  if (/OneHandAxes?/i.test(icon))  return 'weapon.oneaxe';
-  if (/OneHandMaces?/i.test(icon)) return 'weapon.onemace';
-  if (/TwoHandSwords?/i.test(icon))return 'weapon.twosword';
-  if (/TwoHandAxes?/i.test(icon))  return 'weapon.twoaxe';
-  if (/TwoHandMaces?/i.test(icon)) return 'weapon.twomace';
-  if (/Warstaves?/i.test(icon))    return 'weapon.warstaff';
-  if (/Staves|Staffs?/i.test(icon))return 'weapon.staff';
-  if (/Crossbows?/i.test(icon))    return 'weapon.crossbow';
-  if (/Flasks?/i.test(icon))        return 'flask';
-  if (/Jewels?/i.test(icon))         return 'jewel';
-  // PoE2 uses hashed CDN icon URLs — fall back to typeLine keyword matching
-  const typeStr = (item?.typeLine || item?.baseType || '');
-  if (/목걸이/u.test(typeStr))        return 'accessory.amulet';
-  if (/부적/u.test(typeStr))          return 'weapon.talisman';
-  if (/반지/u.test(typeStr))         return 'accessory.ring';
-  if (/벨트/u.test(typeStr))         return 'armour.belt';
-  if (/투구/u.test(typeStr))         return 'armour.helmet';
-  if (/장갑/u.test(typeStr))         return 'armour.gloves';
-  if (/장화|신발/u.test(typeStr))    return 'armour.boots';
-  if (/방패/u.test(typeStr))         return 'armour.shield';
-  if (/집중도|포커스/u.test(typeStr)) return 'armour.focus';
-  if (/화살통|퀴버/u.test(typeStr))  return 'armour.quiver';
-  return '';
+// ─── realm-aware item category ────────────────────────
+function guessCategoryFromItem(item, realm = getTradeRealmFromPath(), fallbackRoot = '') {
+  return POE2TQTradeCompat.inferItemCategory(item, realm, fallbackRoot);
 }
 
 function tradeEntryValueToText(value, depth) {
@@ -1667,6 +1701,127 @@ let cachedTradeStatsPayload = null;
 let cachedTradeStatsPayloadPromise = null;
 let cachedManualStatEntries = null;
 let cachedManualStatEntriesPromise = null;
+const cachedTradeItemCategoryMaps = new Map();
+const cachedTradeItemCategoryPromises = new Map();
+const cachedTradeItemTypeMaps = new Map();
+const cachedTradeItemTypeMapPromises = new Map();
+
+function normalizeItemTypeKey(value) {
+  return statTextToPlainLine(value).toLowerCase();
+}
+
+function getItemTypeKeyVariants(value) {
+  const key = normalizeItemTypeKey(value);
+  if (!key) return [];
+  const variants = new Set([key]);
+  const parts = key.split(' ');
+  const last = parts[parts.length - 1] || '';
+  const replaceLast = replacement => {
+    if (!replacement || replacement === last) return;
+    variants.add(parts.slice(0, -1).concat(replacement).join(' '));
+  };
+  if (last.endsWith('ies') && last.length > 3) replaceLast(`${last.slice(0, -3)}y`);
+  if (last.endsWith('ves') && last.length > 3) replaceLast(`${last.slice(0, -3)}f`);
+  if (last.endsWith('es') && last.length > 2) replaceLast(last.slice(0, -2));
+  if (last.endsWith('s') && last.length > 1) replaceLast(last.slice(0, -1));
+  if (!last.endsWith('s')) {
+    replaceLast(`${last}s`);
+    if (/(?:s|x|z|ch|sh)$/.test(last)) replaceLast(`${last}es`);
+    if (!/[aeiou]y$/.test(last) && last.endsWith('y') && last.length > 1) {
+      replaceLast(`${last.slice(0, -1)}ies`);
+    }
+  }
+  return [...variants];
+}
+
+async function ensureTradeItemTypeMap(realm = getTradeRealmFromPath()) {
+  const normalizedRealm = normalizeTradeRealm(realm);
+  if (cachedTradeItemTypeMaps.has(normalizedRealm)) return cachedTradeItemTypeMaps.get(normalizedRealm);
+  if (cachedTradeItemTypeMapPromises.has(normalizedRealm)) return cachedTradeItemTypeMapPromises.get(normalizedRealm);
+
+  const pending = (async () => {
+    const map = new Map();
+    try {
+      const res = await fetch(`${getApiBase(normalizedRealm)}/data/items`, { credentials: 'include' });
+      if (!res.ok) return map;
+      const parsed = await res.json();
+      (parsed?.result || []).forEach(group => {
+        (group?.entries || []).forEach(entry => {
+          const canonical = tradeValueToText(entry?.type || entry?.name);
+          if (!canonical) return;
+          [entry?.type, entry?.name, canonical].forEach(value => {
+            getItemTypeKeyVariants(tradeValueToText(value)).forEach(key => {
+              if (key && !map.has(key)) map.set(key, canonical);
+            });
+          });
+        });
+      });
+      if (normalizedRealm === TRADE_REALM_POE1) {
+        const explicitPoe1Aliases = {
+          'arcane vestments': 'Arcane Vestment'
+        };
+        Object.entries(explicitPoe1Aliases).forEach(([alias, canonical]) => {
+          getItemTypeKeyVariants(alias).forEach(key => map.set(key, canonical));
+          getItemTypeKeyVariants(canonical).forEach(key => map.set(key, canonical));
+        });
+      }
+    } catch {}
+    return map;
+  })();
+
+  cachedTradeItemTypeMapPromises.set(normalizedRealm, pending);
+  try {
+    const map = await pending;
+    cachedTradeItemTypeMaps.set(normalizedRealm, map);
+    return map;
+  } finally {
+    cachedTradeItemTypeMapPromises.delete(normalizedRealm);
+  }
+}
+
+async function resolveCanonicalItemType(value, realm = getTradeRealmFromPath()) {
+  const text = tradeValueToText(value);
+  if (!text) return '';
+  const map = await ensureTradeItemTypeMap(realm);
+  return getItemTypeKeyVariants(text).map(key => map.get(key)).find(Boolean) || '';
+}
+
+async function ensureTradeItemCategoryMap(realm = getTradeRealmFromPath()) {
+  const normalizedRealm = normalizeTradeRealm(realm);
+  if (cachedTradeItemCategoryMaps.has(normalizedRealm)) return cachedTradeItemCategoryMaps.get(normalizedRealm);
+  if (cachedTradeItemCategoryPromises.has(normalizedRealm)) return cachedTradeItemCategoryPromises.get(normalizedRealm);
+
+  const pending = (async () => {
+    const map = new Map();
+    try {
+      const res = await fetch(`${getApiBase(normalizedRealm)}/data/items`, { credentials: 'include' });
+      if (!res.ok) return map;
+      const parsed = await res.json();
+      (parsed?.result || []).forEach(group => {
+        const rootCategory = POE2TQTradeCompat.normalizeCategoryForRealm(group?.id || '', normalizedRealm);
+        if (!rootCategory) return;
+        (group?.entries || []).forEach(entry => {
+          [entry?.type, entry?.name].forEach(value => {
+            const key = normalizeItemTypeKey(value);
+            if (key && !map.has(key)) map.set(key, rootCategory);
+          });
+        });
+      });
+      return map;
+    } catch {
+      return map;
+    }
+  })();
+
+  cachedTradeItemCategoryPromises.set(normalizedRealm, pending);
+  try {
+    const map = await pending;
+    cachedTradeItemCategoryMaps.set(normalizedRealm, map);
+    return map;
+  } finally {
+    cachedTradeItemCategoryPromises.delete(normalizedRealm);
+  }
+}
 
 function normalizeStatText(text) {
   return statTextToPlainLine(text)
@@ -1705,9 +1860,13 @@ function buildTradeStatMapFromParsed(parsed) {
   return map;
 }
 
-function readCachedTradeStatsPayload() {
+function getTradeStatsCacheKey(realm = getTradeRealmFromPath()) {
+  return `${STAT_SEARCH_CACHE_KEY}:${normalizeTradeRealm(realm)}`;
+}
+
+function readCachedTradeStatsPayload(realm = getTradeRealmFromPath()) {
   try {
-    const raw = localStorage.getItem(STAT_SEARCH_CACHE_KEY);
+    const raw = localStorage.getItem(getTradeStatsCacheKey(realm));
     if (raw) {
       const cached = JSON.parse(raw);
       if (cached?.payload && Date.now() - Number(cached.savedAt || 0) < STAT_SEARCH_CACHE_TTL) {
@@ -1716,17 +1875,19 @@ function readCachedTradeStatsPayload() {
     }
   } catch {}
 
-  try {
-    const raw = localStorage.getItem('lscache-trade2stats');
-    if (raw) return JSON.parse(raw);
-  } catch {}
+  if (normalizeTradeRealm(realm) === TRADE_REALM_POE2) {
+    try {
+      const raw = localStorage.getItem('lscache-trade2stats');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+  }
 
   return null;
 }
 
-function writeCachedTradeStatsPayload(payload) {
+function writeCachedTradeStatsPayload(payload, realm = getTradeRealmFromPath()) {
   try {
-    localStorage.setItem(STAT_SEARCH_CACHE_KEY, JSON.stringify({
+    localStorage.setItem(getTradeStatsCacheKey(realm), JSON.stringify({
       savedAt: Date.now(),
       payload
     }));
@@ -1738,19 +1899,20 @@ async function ensureTradeStatsPayload() {
   if (cachedTradeStatsPayloadPromise) return cachedTradeStatsPayloadPromise;
 
   cachedTradeStatsPayloadPromise = (async () => {
+    const realm = getTradeRealmFromPath();
     try {
-      const res = await fetch(`${getApiBase()}/data/stats`, { credentials: 'include' });
+      const res = await fetch(`${getApiBase(realm)}/data/stats`, { credentials: 'include' });
       if (res.ok) {
         const parsed = await res.json();
         if (Array.isArray(parsed?.result)) {
           cachedTradeStatsPayload = parsed;
-          writeCachedTradeStatsPayload(parsed);
+          writeCachedTradeStatsPayload(parsed, realm);
           return parsed;
         }
       }
     } catch {}
 
-    const cached = readCachedTradeStatsPayload();
+    const cached = readCachedTradeStatsPayload(realm);
     cachedTradeStatsPayload = cached || { result: [] };
     return cachedTradeStatsPayload;
   })();
@@ -2081,7 +2243,7 @@ function upsertStatFilter(target, entry) {
   target.push(entry);
 }
 
-function upsertEquipmentFilter(target, id, label, value) {
+function upsertEquipmentFilter(target, id, label, value, details = null) {
   if (!isFinite(value) || value <= 0) return;
   const existing = target.find(x => x.id === id);
   if (existing) {
@@ -2090,19 +2252,29 @@ function upsertEquipmentFilter(target, id, label, value) {
       existing.min = calcDefaultMin(id, value);
       existing.label = label || existing.label;
     }
+    if (details && typeof details === 'object') Object.assign(existing, details);
     return;
   }
-  target.push({
+  const entry = {
     id,
     label,
     value,
     min: calcDefaultMin(id, value),
     max: null,
     active: true
-  });
+  };
+  if (details && typeof details === 'object') Object.assign(entry, details);
+  target.push(entry);
 }
 
-function collectEquipmentFilters(item) {
+function formatSocketColourCounts(colours) {
+  return [['r', 'R'], ['g', 'G'], ['b', 'B'], ['w', 'W'], ['a', 'A']]
+    .filter(([key]) => Number(colours?.[key]) > 0)
+    .map(([key, label]) => `${label}${Math.round(Number(colours[key]))}`)
+    .join(' ');
+}
+
+function collectEquipmentFilters(item, realm = getTradeRealmFromPath()) {
   const equipment = [];
   const properties = [];
   ['properties', 'additionalProperties', 'notableProperties'].forEach(key => {
@@ -2134,11 +2306,30 @@ function collectEquipmentFilters(item) {
     }
   });
 
-  const runeSocketCount = Array.isArray(item?.sockets)
-    ? item.sockets.filter(s => s?.type === 'rune').length
-    : 0;
-  if (runeSocketCount > 0) {
-    upsertEquipmentFilter(equipment, 'rune_sockets', '룬 소켓', runeSocketCount);
+  const socketSummary = POE2TQTradeCompat.getSocketSummary(item, realm);
+  if (normalizeTradeRealm(realm) === TRADE_REALM_POE1) {
+    if (socketSummary.sockets > 0) {
+      const colourText = formatSocketColourCounts(socketSummary.colours);
+      upsertEquipmentFilter(
+        equipment,
+        'sockets',
+        colourText ? `홈 ${colourText}` : '홈',
+        socketSummary.sockets,
+        { socketColours: socketSummary.colours }
+      );
+    }
+    if (socketSummary.links > 1) {
+      const linkColourText = formatSocketColourCounts(socketSummary.linkColours);
+      upsertEquipmentFilter(
+        equipment,
+        'links',
+        linkColourText ? `그룹 연결 ${linkColourText}` : '그룹 연결',
+        socketSummary.links,
+        { socketColours: socketSummary.linkColours }
+      );
+    }
+  } else if (socketSummary.runeSockets > 0) {
+    upsertEquipmentFilter(equipment, 'rune_sockets', '룬 소켓', socketSummary.runeSockets);
   }
 
   return equipment;
@@ -2146,9 +2337,11 @@ function collectEquipmentFilters(item) {
 
 function buildQuerySignature(filter) {
   return JSON.stringify({
+    tradeRealm: normalizeTradeRealm(filter.tradeRealm),
     category: filter.category || '',
     rarity: filter.rarity || '',
-    typeLine: filter.typeLineActive === false ? '' : (filter.typeLine || ''),
+    itemName: filter.rarity === 'unique' ? (filter.itemName || '') : '',
+    typeLine: filter.typeLineActive === false ? '' : (filter.canonicalTypeLine || filter.typeLine || ''),
     tradeStatusOption: filter.tradeStatusOption || '',
     tradeSaleTypeActive: filter.tradeSaleTypeActive === false ? false : true,
     tradeSaleTypeOption: filter.tradeSaleTypeOption || '',
@@ -2158,11 +2351,11 @@ function buildQuerySignature(filter) {
     areaLvlMin: Number(filter.areaLvlMin) || 0,
     equipment: (filter.equipment || [])
       .filter(x => x.active !== false && x.id)
-      .map(x => `${x.id}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}`)
+      .map(x => `${x.id}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}:${JSON.stringify(x.socketColours || {})}`)
       .sort(),
     queryFilters: (filter.queryFilters || [])
       .filter(x => x.active !== false && x.id && x.group)
-      .map(x => `${x.group}:${x.id}:${x.option || ''}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}:${x.noValue === true ? 'flag' : ''}`)
+      .map(x => `${x.group}:${x.id}:${x.textKey || ''}:${x.textValue || ''}:${numberOrNull(x.min) ?? ''}:${numberOrNull(x.max) ?? ''}:${x.noValue === true ? 'flag' : ''}`)
       .sort(),
     stats: (filter.stats || [])
       .filter(x => x.active !== false && x.id)
@@ -2176,9 +2369,34 @@ function buildQuerySignature(filter) {
 }
 
 // ─── build filter from API response ───────────────────
-async function buildFilterFromApi(item, listing) {
+function buildFallbackIdsByModIndex(catHashes) {
+  const idsByModIndex = new Map();
+  let sequentialIndex = 0;
+  (catHashes || []).forEach(entry => {
+    if (!Array.isArray(entry) || !entry[0]) return;
+    const id = entry[0];
+    const hasExplicitIndexes = Array.isArray(entry[1]) && entry[1].length;
+    const indexes = hasExplicitIndexes ? entry[1] : [sequentialIndex++];
+    indexes.forEach(index => {
+      if (!Number.isInteger(index) || index < 0) return;
+      sequentialIndex = Math.max(sequentialIndex, index + 1);
+      if (!idsByModIndex.has(index)) idsByModIndex.set(index, []);
+      idsByModIndex.get(index).push(id);
+    });
+  });
+  return idsByModIndex;
+}
+
+async function buildFilterFromApi(item, listing, tradeContext = null) {
   cachedTradeStatMap = null;
-  const statMap = await ensureTradeStatMap();
+  const tradeRealm = normalizeTradeRealm(tradeContext?.realm || getTradeRealmFromPath());
+  const [statMap, itemCategoryMap] = await Promise.all([
+    ensureTradeStatMap(),
+    ensureTradeItemCategoryMap(tradeRealm)
+  ]);
+  const metadataCategory = itemCategoryMap.get(normalizeItemTypeKey(item?.baseType || item?.typeLine || '')) || '';
+  const typeLine = item.typeLine || item.baseType || '';
+  const canonicalTypeLine = await resolveCanonicalItemType(item?.baseType || item?.typeLine || '', tradeRealm);
   const debug = {
     tradeStatMapSize: statMap.size,
     equipmentLines: [],
@@ -2187,10 +2405,11 @@ async function buildFilterFromApi(item, listing) {
   const filter = {
     id:             Date.now() + Math.random(),
     name:           item.name || item.typeLine || '이름없는 아이템',
-    category:       guessCategoryFromItem(item),
-    rarity:         FRAME_TYPES[item.frameType] || '',
+    category:       guessCategoryFromItem(item, tradeRealm, metadataCategory),
+    rarity:         POE2TQTradeCompat.getTradeRarity(item),
     itemName:       item.name || item.typeLine || '',
-    typeLine:       item.typeLine || item.baseType || '',
+    typeLine,
+    canonicalTypeLine,
     typeLineActive: true,
     ilvlMin:        0,
     ilvlMax:        null,
@@ -2198,17 +2417,19 @@ async function buildFilterFromApi(item, listing) {
     reqLvlMin:      0,
     priceMax:       0,
     savedPrice:     listing?.price ? { amount: listing.price.amount, currency: listing.price.currency } : null,
+    tradeRealm,
     equipment:      [],
     stats:          [],
     note:           '',
     sourceHash:     '',
-    savedAt:        new Date().toISOString()
+    savedAt:        new Date().toISOString(),
+    league:         tradeContext?.league || getTradeLeagueFromPath()
   };
 
   // ilvl
   if (typeof item.ilvl === 'number') filter.ilvlMin = item.ilvl;
 
-  filter.equipment = collectEquipmentFilters(item);
+  filter.equipment = collectEquipmentFilters(item, tradeRealm);
   debug.equipmentLines = (filter.equipment || []).map(x => ({
     id: x.id,
     label: x.label,
@@ -2230,6 +2451,9 @@ async function buildFilterFromApi(item, listing) {
     { key: 'skill', prop: 'skillMods' },
     { key: 'rune', prop: 'runeMods' },
     { key: 'fractured', prop: 'fracturedMods' },
+    { key: 'mutated', prop: 'mutatedMods' },
+    { key: 'scourge', prop: 'scourgeMods' },
+    { key: 'crucible', prop: 'crucibleMods' },
     { key: 'desecrated', prop: 'desecratedMods' },
     { key: 'utility', prop: 'utilityMods' }
   ];
@@ -2238,9 +2462,7 @@ async function buildFilterFromApi(item, listing) {
     const cat = spec.key;
     const catHashes = hashes[cat] || [];
     const renderedTexts = item[spec.prop] || [];
-    const fallbackIds = catHashes
-      .filter(entry => Array.isArray(entry) && entry[0])
-      .map(entry => entry[0]);
+    const fallbackIdsByModIndex = buildFallbackIdsByModIndex(catHashes);
 
     renderedTexts.forEach((renderedLine, modIdx) => {
       const label = stripTags(renderedLine);
@@ -2256,7 +2478,8 @@ async function buildFilterFromApi(item, listing) {
         return;
       }
       let parsedValue = extractStatValueFromText(label);
-      const fallbackId = fallbackIds[modIdx] || fallbackIds[0] || '';
+      const fallbackIds = fallbackIdsByModIndex.get(modIdx) || [];
+      const fallbackId = fallbackIds[0] || '';
       const statId = resolveTradeStatId(label, cat, fallbackId);
       const isResolved = !!(statId || fallbackId);
       const resolvedId = statId || fallbackId || `${cat}.unknown_${simpleHash(label + ':' + fallbackId)}`;
@@ -2338,7 +2561,13 @@ async function handlePobCopy(row, btn) {
 
   try {
     const data = await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ type: 'FETCH_POB', itemId }, res => {
+      const tradeContext = getTradeContextFromPath();
+      chrome.runtime.sendMessage({
+        type: 'FETCH_POB',
+        itemId,
+        realm: tradeContext?.realm || getTradeRealmFromPath(),
+        queryId: tradeContext?.queryId || ''
+      }, res => {
         if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
         if (!res || !res.ok) return reject(new Error(res?.error || 'fetch failed'));
         resolve(res.data);
@@ -2348,7 +2577,7 @@ async function handlePobCopy(row, btn) {
     const result = data?.result?.[0];
     if (!result?.item) throw new Error('아이템 데이터 없음');
 
-    const pobText = buildPoBFormat(result.item);
+    const pobText = buildPoBFormat(result.item, getTradeRealmFromPath());
 
     // clipboard 복사 (navigator.clipboard 우선, execCommand fallback)
     try {
@@ -2392,7 +2621,77 @@ function collectPobModTexts(item, prop, extKey) {
   return extEntries.map(cleanPobText).filter(Boolean);
 }
 
-function buildPoBFormat(item) {
+function renderPoe1PropertyLine(property) {
+  const name = cleanPobText(property?.name || '');
+  const values = (property?.values || [])
+    .map(value => cleanPobText(Array.isArray(value) ? value[0] : value))
+    .filter(Boolean);
+  if (!name) return values.join(' ');
+  if (!values.length) return name;
+  if (property?.displayMode === 1) return `${values.join(' ')} ${name}`.trim();
+  if (property?.displayMode === 3) {
+    return name.replace(/\{(\d+)\}/g, (_, index) => values[Number(index)] || '').trim();
+  }
+  return `${name}: ${values.join(', ')}`;
+}
+
+function buildPoe1PoBFormat(item) {
+  const lines = [];
+  const rarity = String(item?.rarity || ({ 0: 'Normal', 1: 'Magic', 2: 'Rare', 3: 'Unique' })[item?.frameType] || 'Normal');
+  const itemName = cleanPobText(item?.name);
+  const baseName = cleanPobText(item?.baseType || item?.typeLine || '');
+  lines.push(`Rarity: ${rarity}`);
+  if (itemName && itemName !== baseName) lines.push(itemName);
+  if (baseName) lines.push(baseName);
+
+  const propertyLines = [
+    ...(item?.properties || []),
+    ...(item?.additionalProperties || [])
+  ].map(renderPoe1PropertyLine).filter(Boolean);
+  if (propertyLines.length) {
+    lines.push('--------');
+    propertyLines.forEach(line => lines.push(line));
+  }
+
+  const requirementLines = (item?.requirements || []).map(renderPoe1PropertyLine).filter(Boolean);
+  if (requirementLines.length) {
+    lines.push('--------', 'Requirements:');
+    requirementLines.forEach(line => lines.push(line));
+  }
+
+  const socketSummary = POE2TQTradeCompat.getSocketSummary(item, TRADE_REALM_POE1);
+  if (socketSummary.text) lines.push('--------', `Sockets: ${socketSummary.text}`);
+  if (item?.ilvl != null) lines.push('--------', `Item Level: ${item.ilvl}`);
+
+  const implicitLines = [
+    ...collectPobModTexts(item, 'enchantMods', 'enchant').map(text => `{enchant}${text}`),
+    ...collectPobModTexts(item, 'implicitMods', 'implicit')
+  ];
+  if (implicitLines.length) {
+    lines.push('--------', `Implicits: ${implicitLines.length}`);
+    implicitLines.forEach(line => lines.push(line));
+  }
+
+  const fracturedTexts = collectPobModTexts(item, 'fracturedMods', 'fractured');
+  const craftedTexts = collectPobModTexts(item, 'craftedMods', 'crafted');
+  const mutatedTexts = collectPobModTexts(item, 'mutatedMods', 'mutated');
+  const scourgeTexts = collectPobModTexts(item, 'scourgeMods', 'scourge');
+  const crucibleTexts = collectPobModTexts(item, 'crucibleMods', 'crucible');
+  const taggedTexts = new Set([...fracturedTexts, ...craftedTexts, ...mutatedTexts, ...scourgeTexts, ...crucibleTexts]);
+  const explicitTexts = collectPobModTexts(item, 'explicitMods', 'explicit').filter(text => !taggedTexts.has(text));
+  if (explicitTexts.length || taggedTexts.size) lines.push('--------');
+  fracturedTexts.forEach(text => lines.push(`{fractured}${text}`));
+  mutatedTexts.forEach(text => lines.push(text));
+  scourgeTexts.forEach(text => lines.push(text));
+  crucibleTexts.forEach(text => lines.push(text));
+  explicitTexts.forEach(text => lines.push(text));
+  craftedTexts.forEach(text => lines.push(`{crafted}${text}`));
+  if (item?.corrupted) lines.push('Corrupted');
+  return lines.join('\n');
+}
+
+function buildPoBFormat(item, realm = getTradeRealmFromPath()) {
+  if (normalizeTradeRealm(realm) === TRADE_REALM_POE1) return buildPoe1PoBFormat(item);
   const lines = [];
 
   // 1. 아이템 이름 / 베이스 타입
@@ -2530,7 +2829,7 @@ function formatContentErrorText(phase, error) {
   const serialized = serializeContentError(error);
   const context = getContentDebugContext();
   return [
-    'PoE2 Trade Quick 오류',
+    'PoE Trade Quick 오류',
     `phase: ${phase}`,
     `version: ${context.extensionVersion}`,
     `url: ${context.url}`,
@@ -2589,7 +2888,7 @@ function showContentInitError(phase, error) {
   ].join(';');
 
   const title = document.createElement('div');
-  title.textContent = 'PoE2 Trade Quick 초기화 오류';
+  title.textContent = 'PoE Trade Quick 초기화 오류';
   title.style.cssText = 'font-weight:700;color:#ff9a80;margin-bottom:5px;';
 
   const message = document.createElement('div');
@@ -2791,6 +3090,42 @@ function initSidebar() {
     .side-toggle:hover {
       background: #3a3a3a;
     }
+    .ninja-external-tooltip {
+      position: fixed;
+      z-index: 2147483647;
+      max-height: calc(100vh - 16px);
+      overflow: hidden;
+      pointer-events: auto;
+      box-sizing: border-box;
+      background: #0b0b0d;
+      border: 1px solid #6a522c;
+      border-radius: 4px;
+      color: #c8c2ae;
+      box-shadow: 0 10px 28px rgba(0,0,0,.75);
+      font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+    }
+    .ninja-external-tooltip[hidden] { display: none; }
+    .ninja-tooltip-head { display:flex; align-items:center; gap:9px; padding:9px 10px; background:#15130f; border-bottom:1px solid #4a3920; }
+    .ninja-tooltip-icon { width:54px; height:54px; object-fit:contain; flex-shrink:0; }
+    .ninja-tooltip-title-wrap { flex:1; min-width:0; }
+    .ninja-tooltip-title { color:#eee2bd; font-size:16px; font-weight:700; line-height:1.35; overflow-wrap:anywhere; }
+    .ninja-tooltip-title.unique { color:#cf7f38; }
+    .ninja-tooltip-meta { color:#aaa086; font-size:12px; margin-top:2px; }
+    .ninja-tooltip-variant { color:#edbd60; font-size:12px; margin-top:3px; line-height:1.4; }
+    .ninja-tooltip-price { color:#f1d36d; font-size:15px; font-weight:700; white-space:nowrap; align-self:flex-start; }
+    .ninja-tooltip-body { padding:7px 10px 8px; max-height:calc(100vh - 92px); overflow-y:auto; overscroll-behavior:contain; }
+    .ninja-tooltip-body::-webkit-scrollbar { width:4px; }
+    .ninja-tooltip-body::-webkit-scrollbar-thumb { background:#4a3920; border-radius:2px; }
+    .ninja-tooltip-section { padding:5px 0; border-bottom:1px solid #26231c; }
+    .ninja-tooltip-section-title { color:#aaa18d; font-size:11px; margin-bottom:4px; }
+    .ninja-tooltip-mod { color:#adb8ff; font-size:13px; line-height:1.45; overflow-wrap:anywhere; white-space:normal; }
+    .ninja-tooltip-section.implicit .ninja-tooltip-mod { color:#9ba5df; }
+    .ninja-tooltip-section.mutated .ninja-tooltip-mod { color:#d7a84d; }
+    .ninja-tooltip-section.passive .ninja-tooltip-mod { color:#d7a84d; }
+    .ninja-tooltip-section.effect .ninja-tooltip-effect { color:#ddd4b5; font-size:13px; line-height:1.5; overflow-wrap:anywhere; white-space:normal; }
+    .ninja-tooltip-effect-label { display:inline-block; color:#edbd60; font-weight:700; margin-right:5px; }
+    .ninja-tooltip-empty { color:#948b73; font-size:11px; padding:5px 0 7px; }
+    .ninja-tooltip-market { display:flex; flex-wrap:wrap; gap:10px; color:#9d947d; font-size:11px; padding-top:7px; }
   `;
   shadow.appendChild(style);
 
@@ -2800,12 +3135,12 @@ function initSidebar() {
   const handle = document.createElement('button');
   handle.className = 'handle';
   handle.type = 'button';
-  handle.title = 'PoE2 사이드바 열기/닫기';
+  handle.title = 'PoE 사이드바 열기/닫기';
 
   const sideToggle = document.createElement('button');
   sideToggle.className = 'side-toggle';
   sideToggle.type = 'button';
-  sideToggle.title = 'PoE2 사이드바 좌/우 위치 전환';
+  sideToggle.title = 'PoE 사이드바 좌/우 위치 전환';
   sideToggle.textContent = '⇄';
 
   const panel = document.createElement('div');
@@ -2824,10 +3159,120 @@ function initSidebar() {
   wrap.appendChild(panel);
   shadow.appendChild(wrap);
 
+  const ninjaTooltip = document.createElement('div');
+  ninjaTooltip.className = 'ninja-external-tooltip';
+  ninjaTooltip.hidden = true;
+  shadow.appendChild(ninjaTooltip);
+  ninjaTooltip.addEventListener('mouseenter', () => {
+    iframe.contentWindow?.postMessage({ type: 'POE2TQ_NINJA_TOOLTIP_HOVER', hovering: true }, '*');
+  });
+  ninjaTooltip.addEventListener('mouseleave', () => {
+    iframe.contentWindow?.postMessage({ type: 'POE2TQ_NINJA_TOOLTIP_HOVER', hovering: false }, '*');
+  });
+
+  function installPageTradeFetchBridge() {
+    if (document.documentElement.dataset.poe2tqTradeFetchBridge === '1') return;
+    document.documentElement.dataset.poe2tqTradeFetchBridge = '1';
+    chrome.runtime.sendMessage({ type: 'INSTALL_TRADE_FETCH_BRIDGE' }, response => {
+      if (chrome.runtime.lastError || !response?.ok) {
+        appendContentDebugLog({
+          kind: 'trade-fetch-bridge-install-failed',
+          error: chrome.runtime.lastError?.message || response?.error || 'unknown'
+        });
+      }
+    });
+  }
+
   let state = { open: true, width: DEFAULT_WIDTH, side: 'right' };
   let stateTouched = false;
   let currentTabZoom = 1;
   let zoomSyncTimer = null;
+  let ninjaTooltipAnchorRatio = 0;
+
+  function hideExternalNinjaTooltip() {
+    ninjaTooltip.hidden = true;
+    ninjaTooltip.innerHTML = '';
+  }
+
+  function positionExternalNinjaTooltip() {
+    if (ninjaTooltip.hidden || !state.open) return;
+    const displayedSidebarWidth = state.width / Math.max(currentTabZoom, 0.25);
+    const availableWidth = Math.floor(window.innerWidth - displayedSidebarWidth - 18);
+    if (availableWidth < 180) {
+      hideExternalNinjaTooltip();
+      return;
+    }
+    const width = Math.min(500, availableWidth);
+    ninjaTooltip.style.width = `${width}px`;
+    ninjaTooltip.style.left = state.side === 'left' ? `${displayedSidebarWidth + 9}px` : 'auto';
+    ninjaTooltip.style.right = state.side === 'right' ? `${displayedSidebarWidth + 9}px` : 'auto';
+    const height = ninjaTooltip.offsetHeight;
+    const desiredTop = ninjaTooltipAnchorRatio * window.innerHeight;
+    const top = Math.max(8, Math.min(desiredTop, window.innerHeight - height - 8));
+    ninjaTooltip.style.top = `${top}px`;
+  }
+
+  function handleNinjaTooltipMessage(event) {
+    if (event.source !== iframe.contentWindow) return;
+    const message = event.data;
+    if (!message || message.type !== 'POE2TQ_NINJA_TOOLTIP') return;
+    if (message.action !== 'show') {
+      hideExternalNinjaTooltip();
+      return;
+    }
+    if (!state.open || typeof message.html !== 'string' || message.html.length > 200000) return;
+    ninjaTooltipAnchorRatio = Math.max(0, Math.min(1, Number(message.anchorRatio) || 0));
+    ninjaTooltip.innerHTML = message.html;
+    ninjaTooltip.hidden = false;
+    positionExternalNinjaTooltip();
+  }
+
+  async function handleCharacterFilterMessage(event) {
+    if (event.source !== iframe.contentWindow) return;
+    const message = event.data;
+    if (!message || message.type !== 'POE2TQ_BUILD_CHARACTER_FILTER' || !message.requestId) return;
+    const respond = payload => iframe.contentWindow?.postMessage({
+      type: 'POE2TQ_CHARACTER_FILTER_RESULT',
+      requestId: message.requestId,
+      ...payload
+    }, '*');
+    try {
+      if (!message.item || typeof message.item !== 'object') throw new Error('캐릭터 아이템 데이터가 없습니다.');
+      const built = await buildFilterFromApi(message.item, null, {
+        realm: normalizeTradeRealm(message.realm || TRADE_REALM_POE1),
+        league: message.league || getTradeLeagueFromPath()
+      });
+      const filter = built?.filter;
+      if (!filter) throw new Error('아이템 검색 필터를 생성하지 못했습니다.');
+      filter.note = message.characterName ? `${message.characterName} 장착 장비에서 등록` : '캐릭터 장착 장비에서 등록';
+      const selectedFilter = await showStatSelectionModal(filter);
+      const duplicate = await chrome.runtime.sendMessage({
+        type: 'CHECK_DUPLICATE',
+        hash: selectedFilter.sourceHash,
+        league: selectedFilter.league,
+        realm: selectedFilter.tradeRealm
+      });
+      if (duplicate?.duplicate) {
+        respond({ ok: true, duplicate: true, name: duplicate.name || selectedFilter.name });
+        return;
+      }
+      const saved = await chrome.runtime.sendMessage({
+        type: 'SAVE_FILTER',
+        filter: selectedFilter,
+        league: selectedFilter.league,
+        realm: selectedFilter.tradeRealm
+      });
+      if (!saved?.ok) throw new Error(saved?.error || '즐겨찾기 저장에 실패했습니다.');
+      showToast(`"${selectedFilter.name}" 저장 완료!`, 'ok');
+      respond({ ok: true, duplicate: Boolean(saved.duplicate), name: selectedFilter.name });
+    } catch (error) {
+      const cancelled = error?.message === '취소됨';
+      respond({ ok: false, cancelled, error: cancelled ? '취소됨' : (error?.message || '즐겨찾기 등록 실패') });
+    }
+  }
+
+  window.addEventListener('message', handleNinjaTooltipMessage);
+  window.addEventListener('message', handleCharacterFilterMessage);
 
   function clampTabZoom(zoom) {
     const n = Number(zoom);
@@ -2846,6 +3291,7 @@ function initSidebar() {
     wrap.style.setProperty('--tab-zoom', String(currentTabZoom));
     wrap.style.setProperty('--zoom-correction', String(1 / currentTabZoom));
     syncSidebarHeight();
+    positionExternalNinjaTooltip();
   }
 
   function requestTabZoomCorrection() {
@@ -2866,6 +3312,7 @@ function initSidebar() {
 
   function handleWindowResize() {
     syncSidebarHeight();
+    positionExternalNinjaTooltip();
     scheduleTabZoomSync();
   }
 
@@ -2893,6 +3340,8 @@ function initSidebar() {
     wrap.classList.toggle('side-right', !isLeft);
     wrap.style.setProperty('--w', `${state.width}px`);
     wrap.classList.toggle('collapsed', !state.open);
+    if (!state.open) hideExternalNinjaTooltip();
+    else positionExternalNinjaTooltip();
     // 오른쪽 패널: 접기 ▶ / 펼치기 ◀, 왼쪽 패널: 좌우 반전
     if (isLeft) {
       handle.textContent = state.open ? '◀' : '▶';
@@ -2937,7 +3386,12 @@ function initSidebar() {
     toggle,
     open: () => setOpen(true),
     close: () => setOpen(false),
-    applyTabZoomCorrection
+    applyTabZoomCorrection,
+    destroy: () => {
+      hideExternalNinjaTooltip();
+      window.removeEventListener('message', handleNinjaTooltipMessage);
+      window.removeEventListener('resize', handleWindowResize);
+    }
   };
 
   // 초기 상태 로드
@@ -3007,6 +3461,7 @@ function initSidebar() {
   });
 
   wrap.addEventListener('wheel', forwardWheelToIframe, { passive: false, capture: true });
+  installPageTradeFetchBridge();
   window.addEventListener('resize', handleWindowResize);
   syncSidebarHeight();
   requestTabZoomCorrection();
@@ -3029,6 +3484,8 @@ function initSidebar() {
 }
 
 function removeSidebar() {
+  sidebarController?.destroy?.();
+  sidebarController = null;
   const host = document.getElementById(SIDEBAR_HOST_ID);
   if (host) host.remove();
 }
