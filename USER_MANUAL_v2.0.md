@@ -11,11 +11,6 @@ PoE Trade Quick Search는 Path of Exile 1과 Path of Exile 2 한국 거래소를
 - Naver Whale
 - 그 밖의 Chromium 기반 브라우저
 
-지원 거래소:
-
-- PoE1: `https://poe.game.daum.net/trade`
-- PoE2: `https://poe.kakaogames.com/trade2`
-
 ## 2. 설치
 
 1. GitHub Releases에서 `poe-trade-quick-v2.0.0.zip`을 받습니다.
